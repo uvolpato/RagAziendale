@@ -1017,6 +1017,16 @@ Il piano "noleggiare una GPU un pomeriggio" (§11.8) diventa **una variabile d'a
 9. **Noleggio GPU un pomeriggio**: 14B / 32B / 70B a retrieval costante.
 10. **Acquisto**, sapendo cosa. Poi accensione della rotta `ragionamento_interno` e ingestion del corpus sensibile.
 
+### Evoluzioni future — idee tracciate, da riprendere al momento indicato
+
+Non sono lavoro della fase 1. Sono scritte qui perché non vadano perse. Le scelte da fare sono in `DECISIONI-APERTE.md`.
+
+| Idea | Proposta (19/09/2026) | Quando riprenderla | Rif. |
+|---|---|---|---|
+| **Motore documentale open source con grafo dei concetti** (lettura dei file, ricerca, collegamenti tra concetti, tipo «LLM wiki») | **Cognee** (Apache 2.0, grafo + pgvector su Postgres) **dietro il nostro gate**: una fonte = un dataset. Il gate sceglie i dataset permessi e Cognee cerca solo in quelli. Scartati RAGFlow (permessi solo «io / team»), Onyx (permessi sui documenti a pagamento), Open WebUI (seconda chat), LightRAG (nessun permesso), R2R (manutenzione incerta). Da SWSB (`C:\llm_wiki`) si recuperano la preparazione dei file (MarkItDown, OCR) e i controlli di qualità | Quando la ricerca della fase 1 funziona sulla cartella pilota e c'è il modello locale (D1). Prima una prova di 1–2 giorni: chi non ha il permesso su una fonte non deve ricevere nulla, grafo compreso | D13 |
+| **Agente personale per ogni utente** (posta, calendario, attività pianificate) | **Agenti di LibreChat + server MCP con accesso delegato del singolo utente** (per Microsoft 365: `ms-365-mcp-server` di Softeria). Memoria personale in Cognee, in un dataset privato di ogni utente. Regole fisse: nessun invio senza conferma; la posta si legge solo con il modello locale; destinatari solo l'utente stesso o quelli che conferma; ogni azione nel registro. Scartati OpenClaw (nato per uso personale, con terminale e skill esterne) e Letta (solo motore, niente utenti né login) | Dopo che la chat è in uso vero (vedi il criterio qui sotto) e dopo aver risposto a S6 (che posta usate). Verificare prima che la nostra versione di LibreChat abbia attività pianificate e approvazione delle azioni | D14, S6 |
+| **Altri connettori documentali** oltre alla cartella | In ordine di utilità probabile: SharePoint / OneDrive / file di Teams; Google Drive; Nextcloud o WebDAV; Dropbox; caselle di posta condivise e PEC (certificati, comunicazioni dei fornitori); allegati e archivio documentale del gestionale; sito o catalogo B2B; Confluence o Notion; cartella dello scanner con OCR. Regola: la fonte prende i gruppi dal pannello, **non** si copiano i permessi file per file della sorgente | Uno alla volta, quando un ufficio ne ha davvero bisogno | 62 |
+
 ### Il criterio che governa tutto
 
 **Adozione reale, non completezza tecnica.** Se dopo la fase 1 nessuno usa la chat, le fasi successive sono soldi buttati — e il problema sarà la qualità dei documenti, non il modello.

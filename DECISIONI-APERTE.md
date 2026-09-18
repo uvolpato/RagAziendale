@@ -25,6 +25,9 @@ Aggiornato: 18/09/2026
 | **D10** | **Arricchimento con l'AI dei dati personali** (referenti, dipendenti) | Sì, con valutazione d'impatto (DPIA) · no | No finché non c'è una DPIA | Arricchimenti |
 | **D11** | **Ricerche sul web sulle aziende clienti** | Sì, come proposte da confermare, solo aziende · no | Sì, con revisione umana, mai su persone | Arricchimenti |
 | **D12** | **Prima cartella di documenti per il pilota** | Quale cartella, quale ufficio | Documenti non sensibili, con un responsabile (manuali, cataloghi) | Indicizzazione, prova vera della chat |
+| **D13** | **Motore documentale open source** (lettura dei file, ricerca, grafo dei concetti) | **Cognee** (Apache 2.0; permessi per dataset; grafo + pgvector su Postgres) · RAGFlow (ottima lettura dei documenti, ma permessi solo «io / team» e accesso con Keycloak difettoso) · Onyx (permessi sui documenti solo nella versione a pagamento) · Open WebUI (seconda chat, clausola sul marchio) · LightRAG (solo spazi separati, nessun permesso) · R2R (manutenzione incerta) · motore di SWSB portato in casa | **Cognee dietro il nostro gate**: una fonte = un dataset. Il gate sceglie i dataset permessi (gruppi, azienda, stato) e Cognee cerca solo in quelli. Prima una prova di 1–2 giorni sulla cartella D12 con il modello D1 | Indicizzazione, grafo |
+| **D14** | **Agente personale per ogni utente** (posta, calendario, attività) | **Agenti di LibreChat + server MCP con accesso delegato del singolo utente** · OpenClaw (nato per uso personale, con accesso a terminale e skill esterne) · Letta · piattaforma a parte | Agenti di LibreChat: sono già dentro la chat, con Keycloak e con i permessi per utente. Ogni utente collega il **proprio** account di posta, quindi l'agente agisce solo come lui. Invio, risposta, inoltro e accettazione di inviti sempre con conferma. La posta si legge solo con il modello locale. La memoria personale va in Cognee, in un dataset privato di ogni utente | Agente personale |
+| **D15** | **Dove stanno le cartelle dei documenti e chi fa rispettare i permessi di scrittura** (modello: una cartella per gruppo, scritta e letta dai suoi membri; una cartella generale letta da tutti e scritta da pochi gruppi) | Condivisione Windows con gruppi di Active Directory (serve D8: Keycloak collegato ad AD) · **Nextcloud con cartelle di gruppo e accesso con Keycloak** (stessi gruppi, caricamento dal web e sincronizzazione da PC; in futuro anche SharePoint e Google Drive) · caricamento dal nostro pannello | Se l'azienda ha già un file server con AD → quello. Altrimenti Nextcloud. **Da sapere prima**: c'è un file server? c'è AD? | Cartelle dei gruppi |
 
 ---
 
@@ -37,6 +40,7 @@ Aggiornato: 18/09/2026
 | **S3** | **Prezzo netto per cliente in Integra**: esiste una funzione o vista da interrogare? | Fornitore di Integra | Lettura in diretta del prezzo (decisione 48: non si ricostruisce) |
 | **S4** | **`psg_liberon1` è sempre il multiplo di vendita?** (campo libero di `prosoggetti`) | Chi gestisce Integra | Condizioni di acquisto corrette |
 | **S5** | **La VPN verso Integra sarà sempre attiva sul server di produzione?** | Sistemisti | Oggi funziona solo con la VPN accesa (vedi *Decise*): in produzione serve un collegamento stabile |
+| **S6** | **Che posta e calendario usate?** Microsoft 365, Google Workspace o un altro server di posta | Sistemisti | Serve per scegliere il connettore MCP e per registrare l'app con le autorizzazioni delegate |
 
 ---
 
