@@ -1,0 +1,620 @@
+/* ===================================================================
+ * Pagina di accesso SSO — resa del prototipo
+ * Prototipi/login-sso-keycloak.html
+ *
+ * Si CARICA DOPO css/login.css del tema keycloak (vedi theme.properties):
+ * aggiunge, non sostituisce. Il file non puo' chiamarsi login.css o
+ * finirebbe per oscurare quello del genitore.
+ *
+ * I valori non sono inventati: sono la palette aziendale Decobrands,
+ * letta dai token di Decobrands_Marketing/assets/css/tokens.css
+ * (fonte canonica docs/STILE-GUIDA-DECOBRANDS.md sez. 2 e 2.5). I ruoli
+ * semantici leggono quei token, ridichiarati sotto per essere
+ * autonomi a runtime. I ruoli scuri sono quelli ufficiali della guida
+ * (sez. 2.5), qui mirati sul login.
+ *
+ * Chiaro e scuro seguono prefers-color-scheme. La lingua la gestisce
+ * Keycloak dai messages_*: qui non c'e' un solo testo.
+ * =================================================================== */
+
+:root {
+  /* --- Palette aziendale Decobrands (fonte canonica: tokens.css di
+   * Decobrands_Marketing, sotto docs/STILE-GUIDA-DECOBRANDS.md sez. 2).
+   * Ridichiarata qui col prefisso --db-* per essere autonoma a runtime:
+   * se la palette cambia, si aggiorna da li' e basta. -------------- */
+  --db-bg:        #f5f6f8;
+  --db-border:    #dee2e6;
+  --db-primary:   #0d6efd;
+  --db-secondary: #6c757d;
+  --db-dark:      #212529;
+  --db-danger:    #dc3545;
+  --db-success:   #198754;
+  --db-muted-dim: #adb5bd;
+
+  /* --- Ruoli, tema chiaro ----------------------------------------- */
+  --sfondo:       var(--db-bg);
+  --superficie:   #fff;
+  --testo:        var(--db-dark);
+  --testo-tenue:  var(--db-secondary);
+  --bordo:        var(--db-border);
+  --azione:       var(--db-primary);
+  --azione-hover: #0b5ed7;      /* hover btn-primary di Bootstrap 5 */
+  --azione-testo: #fff;
+  --errore:       var(--db-danger);
+  --successo:     var(--db-success);
+
+  --raggio: .5rem;
+  --ring: color-mix(in srgb, var(--azione) 25%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Ruoli scuri UFFICIALI Decobrands (STILE-GUIDA sez. 2.5 /
+       palette-colori-decobrands.md sez. 8), mirati sul login:
+       sfondo      #212529 = --db-bg (dark)
+       superficie  #2b3035 = --db-dark (dark, superfici elevate)
+       testo       #dee2e6 = body-color Bootstrap dark
+       tenue       #adb5bd = --db-secondary (dark)
+       bordo       #495057 = --db-border (dark) */
+    --sfondo:     #212529;
+    --superficie: #2b3035;
+    --testo:      #dee2e6;
+    --testo-tenue:#adb5bd;
+    --bordo:      #495057;
+  }
+}
+
+/* ===================================================================
+ * Pagina: la card al centro dello schermo.
+ *
+ * Il tema keycloak posiziona la card con la griglia Bootstrap
+ * (col-sm-8 col-sm-offset-2 ...). Si neutralizza quella colonna e si
+ * centra con il flusso, cosi' la larghezza e' 400px come nel prototipo
+ * invece di una frazione dello schermo.
+ * =================================================================== */
+html.login-pf,
+html.login-pf body {
+  background: var(--sfondo);
+  height: auto;
+}
+
+body.login-pf-page,
+.login-pf-page {
+  background: var(--sfondo) !important;
+  color: var(--testo);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  padding: 24px 0;
+}
+
+.login-pf-page .container-fluid,
+.login-pf-page [class*="col-sm-"],
+.login-pf-page [class*="col-md-"],
+.login-pf-page [class*="col-lg-"] {
+  /* Annulla la griglia: la centratura la fa il margin auto sulla card. */
+  width: auto !important;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  left: auto !important;
+  padding-left: 0;
+  padding-right: 0;
+  float: none !important;
+}
+
+/* Intestazione del tema base: contiene il nome del realm e sta FUORI
+   dalla card. Il prototipo ha il logo dentro la card, quindi si nasconde.
+   Il selettore di lingua vive qui e va riportato a vista. */
+.login-pf-page .login-pf-page-header,
+#kc-header {
+  display: block;
+  margin: 0;
+  min-height: 0;
+}
+
+#kc-header-wrapper {
+  display: none;
+}
+
+/* Il <h1> della sezione "header" resta vuoto: il titolo lo rende
+   login.ftl dentro la card, sotto il logo. */
+#kc-page-title:empty,
+.login-pf-header h1:empty {
+  display: none;
+}
+
+.login-pf-page .login-pf-header {
+  margin-bottom: 0;
+}
+
+/* ===================================================================
+ * La card
+ * =================================================================== */
+.login-pf-page .card-pf {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: var(--superficie);
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  box-shadow: none;
+  border-top: 1px solid var(--bordo);   /* il tema base mette un bordo top spesso */
+
+  /* Flex in colonna per poter riordinare: il selettore di lingua vive
+     dentro <header class="login-pf-header">, che Keycloak rende come PRIMO
+     figlio della card. Nel prototipo sta in fondo, dopo un separatore.
+     Con l'ordine si sposta senza copiare template.ftl. */
+  display: flex;
+  flex-direction: column;
+}
+
+.login-pf-page .card-pf > #kc-content {
+  order: 1;
+}
+
+.login-pf-page .card-pf > .login-pf-header {
+  order: 2;
+  margin: 1.25rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--bordo);
+}
+
+/* Se il realm non ha l'i18n attiva l'header resta vuoto: niente
+   separatore sospeso in fondo alla card. */
+.login-pf-page .card-pf > .login-pf-header:not(:has(#kc-locale)) {
+  display: none;
+}
+
+/* --- Logo, titolo, sottotitolo (resi da login.ftl) ---------------- */
+#az-intestazione {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+/* Logo adattivo: `contain` fa entrare il file nello spazio disponibile senza
+   deformarlo, qualunque sia il rapporto. Funziona sia con un marchio
+   orizzontale (es. 267x68) sia con un'icona quadrata, senza cambiare regola.
+   Il prototipo aveva un riquadro 48x48 con bordo, adatto a un'icona: su un
+   marchio con testo lo schiacciava, quindi il riquadro e' stato tolto.
+   Il file e branding/logo.png, montato qui dal compose: UN SOLO logo per
+   chat e login. Quello in resources/img/ e solo il punto di innesto. */
+#az-logo {
+  width: 100%;
+  height: 44px;
+  margin: 0 auto 1.5rem;
+  background: center / contain no-repeat url("../img/logo.png");
+}
+
+#az-titolo {
+  margin: 0 0 .5rem;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--testo);
+}
+
+#az-sottotitolo {
+  margin: 0;
+  color: var(--testo-tenue);
+  font-size: .9rem;
+}
+
+#az-nota {
+  margin: 1.2rem 0 0;
+  color: var(--testo-tenue);
+  font-size: .82rem;
+  text-align: center;
+}
+
+/* ===================================================================
+ * Campi
+ * =================================================================== */
+.login-pf-page .form-group {
+  margin-bottom: 1.1rem;
+}
+
+.login-pf-page .pf-c-form__label,
+.login-pf-page .pf-c-form__label-text,
+.login-pf-page label {
+  display: block;
+  margin-bottom: .4rem;
+  color: var(--testo-tenue);
+  font-size: .86rem;
+  font-weight: 400;
+}
+
+.login-pf-page .pf-c-form-control,
+.login-pf-page input[type="text"],
+.login-pf-page input[type="password"],
+.login-pf-page input[type="email"] {
+  width: 100%;
+  padding: .7rem .85rem;
+  height: auto;
+  background: var(--superficie);
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  color: var(--testo);
+  font: inherit;
+}
+
+.login-pf-page .pf-c-form-control::placeholder {
+  color: color-mix(in srgb, var(--testo) 45%, transparent);
+}
+
+.login-pf-page .pf-c-form-control:focus,
+.login-pf-page .pf-c-form-control:focus-visible,
+.login-pf-page input[type="text"]:focus,
+.login-pf-page input[type="password"]:focus {
+  outline: none;
+  border-color: var(--azione);
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.login-pf-page .pf-c-form-control[aria-invalid="true"] {
+  border-color: var(--errore);
+}
+
+/* Gruppo input + pulsante nativo di visibilita' della password.
+   Il pulsante e' di Keycloak (data-password-toggle), non del prototipo:
+   si stila, non si rimuove. */
+.login-pf-page .pf-c-input-group {
+  position: relative;
+  display: block;
+  /* PatternFly gli assegna background bianco: in tema scuro diventa un alone
+     luminoso attorno al solo campo password. */
+  background: transparent;
+  border: 0;
+}
+
+.login-pf-page .pf-c-input-group .pf-c-form-control {
+  padding-right: 3rem;
+}
+
+.login-pf-page .pf-c-input-group .pf-c-button,
+.login-pf-page .pf-c-input-group .pf-c-button.pf-m-control {
+  position: absolute;
+  top: 50%;
+  right: .4rem;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--raggio);
+  color: var(--testo-tenue);
+  box-shadow: none;
+  text-decoration: none;
+}
+
+/* Il riquadro attorno all'occhio NON e' un bordo: PatternFly lo disegna con
+   uno ::after. Azzerare `border` non basta, va spento lo pseudo-elemento. */
+.login-pf-page .pf-c-input-group .pf-c-button::after,
+.login-pf-page .pf-c-input-group .pf-c-button::before {
+  display: none;
+  content: none;
+  border: 0;
+}
+
+.login-pf-page .pf-c-input-group .pf-c-button:hover,
+.login-pf-page .pf-c-input-group .pf-c-button.pf-m-control:hover {
+  color: var(--testo);
+  background: transparent;
+  box-shadow: none;
+  text-decoration: none;
+}
+
+.login-pf-page .pf-c-input-group .pf-c-button:focus,
+.login-pf-page .pf-c-input-group .pf-c-button:focus-visible {
+  outline: none;
+  background: transparent;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* L'icona dentro il pulsante: nessuna decorazione ereditata. */
+.login-pf-page .pf-c-input-group .pf-c-button i,
+.login-pf-page .pf-c-input-group .pf-c-button svg {
+  text-decoration: none;
+  border: 0;
+}
+
+/* ===================================================================
+ * Riga opzioni: ricordami + password dimenticata
+ * =================================================================== */
+/* Due righe, non due colonne: la casella "ricordami" sulla prima, il link
+   "password dimenticata" su una riga PROPRIA sotto.
+   Affiancarli non funziona: nei 336px utili della card i due testi insieme
+   non stanno, e il risultato e' una frase spezzata a meta'
+   ("Password / dimenticata?"). */
+.login-pf-page .login-pf-settings {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .6rem;
+  margin: 0 0 1.4rem;
+  font-size: .86rem;
+  color: var(--testo-tenue);
+}
+
+.login-pf-page #kc-form-options {
+  margin: 0;
+  width: 100%;
+}
+
+.login-pf-page .login-pf-settings > div:not(#kc-form-options) {
+  width: 100%;
+  text-align: left;
+}
+
+/* La frase del link non si spezza. */
+.login-pf-page .login-pf-settings > div:not(#kc-form-options) span,
+.login-pf-page .login-pf-settings a {
+  white-space: nowrap;
+}
+
+.login-pf-page .checkbox {
+  margin: 0;
+  padding-left: 0;          /* Bootstrap lo usa per far spazio all'input */
+}
+
+.login-pf-page .checkbox label {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  margin: 0;
+  padding-left: 0;
+  cursor: pointer;
+  font-size: .86rem;
+}
+
+/* position:static e' la correzione che conta: Bootstrap posiziona l'input in
+   assoluto con un margine negativo, e il quadratino finisce SOPRA il testo
+   dell'etichetta. */
+.login-pf-page .checkbox input[type="checkbox"] {
+  position: static;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--azione);
+  cursor: pointer;
+}
+
+.login-pf-page .login-pf-settings a {
+  color: var(--azione);
+  font-size: .86rem;
+  text-decoration: none;
+}
+
+.login-pf-page .login-pf-settings a:hover {
+  color: var(--azione-hover);
+  text-decoration: none;
+}
+
+/* ===================================================================
+ * Pulsante di accesso: unico CTA primario
+ * =================================================================== */
+.login-pf-page #kc-form-buttons {
+  margin: 0;
+}
+
+.login-pf-page #kc-login,
+.login-pf-page .pf-c-button.pf-m-primary {
+  width: 100%;
+  padding: .7rem 1rem;
+  height: auto;
+  background-color: var(--azione) !important;
+  border: 1px solid var(--azione) !important;
+  border-radius: var(--raggio);
+  color: var(--azione-testo) !important;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+
+.login-pf-page #kc-login:hover,
+.login-pf-page .pf-c-button.pf-m-primary:hover {
+  background-color: var(--azione-hover) !important;
+  border-color: var(--azione-hover) !important;
+}
+
+.login-pf-page #kc-login:active {
+  transform: translateY(1px);
+}
+
+.login-pf-page #kc-login:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* ===================================================================
+ * Errori e testi di aiuto
+ * =================================================================== */
+.login-pf-page .pf-c-alert,
+.login-pf-page .alert {
+  padding: .7rem .85rem;
+  margin-bottom: 1.1rem;
+  border-radius: var(--raggio);
+  font-size: .86rem;
+  color: var(--testo);
+  background: color-mix(in srgb, var(--errore) 8%, var(--superficie));
+  border: 1px solid color-mix(in srgb, var(--errore) 40%, transparent);
+}
+
+.login-pf-page .pf-c-alert.pf-m-success,
+.login-pf-page .alert-success {
+  background: color-mix(in srgb, var(--successo) 10%, var(--superficie));
+  border-color: color-mix(in srgb, var(--successo) 40%, transparent);
+}
+
+.login-pf-page .pf-c-alert.pf-m-info,
+.login-pf-page .alert-info,
+.login-pf-page .pf-c-alert.pf-m-warning {
+  background: var(--sfondo);
+  border-color: var(--bordo);
+}
+
+.login-pf-page .pf-c-alert__icon,
+.login-pf-page .pf-c-alert .pficon {
+  color: var(--errore);
+}
+
+.login-pf-page .pf-c-form__helper-text,
+.login-pf-page .kc-feedback-text {
+  display: block;
+  margin-top: .35rem;
+  color: var(--testo-tenue);
+  font-size: .8rem;
+}
+
+/* Con credenziali errate Keycloak NON rende l'alert globale: il template
+   base lo sopprime (displayMessage=!messagesPerField.existsError(...)) e
+   mostra il messaggio sotto il campo. E' il suo comportamento nativo e si
+   mantiene: spostare l'errore sopra il form peggiorerebbe l'accessibilita',
+   perche' perderebbe l'associazione con il campo e l'aria-live.
+   Gli si da' l'aspetto dell'alert del prototipo, restando dov'e'. */
+.login-pf-page .pf-c-form__helper-text.pf-m-error,
+.login-pf-page #input-error {
+  display: block;
+  margin-top: .5rem;
+  padding: .55rem .7rem;
+  border-radius: var(--raggio);
+  background: color-mix(in srgb, var(--errore) 8%, var(--superficie));
+  border: 1px solid color-mix(in srgb, var(--errore) 40%, transparent);
+  color: var(--testo);
+  font-size: .82rem;
+}
+
+/* ===================================================================
+ * Selettore di lingua — quello nativo di Keycloak (i18n del realm)
+ * =================================================================== */
+#kc-locale {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+  font-size: .82rem;
+}
+
+#kc-locale-wrapper {
+  display: block;
+}
+
+/* position:relative NON e' cosmetico: il menu di PatternFly e' in posizione
+   assoluta (top/right), e senza un antenato posizionato si ancora al
+   viewport — la tendina comparirebbe in alto a destra dello schermo invece
+   che sotto il pulsante. */
+#kc-locale-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+#kc-locale button#kc-current-locale-link,
+#kc-locale button {
+  color: var(--testo-tenue);
+  background: transparent;
+  border: 0;
+  padding: .25rem .5rem;
+  border-radius: var(--raggio);
+  font: inherit;
+  font-size: .82rem;
+  cursor: pointer;
+}
+
+#kc-locale button:hover {
+  color: var(--testo);
+  background: var(--sfondo);
+}
+
+#kc-locale button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* Il selettore vive in fondo alla card: la tendina si apre verso l'ALTO,
+   altrimenti sborderebbe oltre il bordo inferiore. */
+#kc-locale ul.pf-c-dropdown__menu,
+#kc-locale .pf-c-dropdown__menu {
+  top: auto;
+  /* bottom:100% e non calc(100% + .35rem): la tendina e' gestita da
+     menu-button-links.js, che la chiude quando puntatore o fuoco lasciano il
+     widget. Uno spazio fra pulsante e menu e' una zona morta da attraversare,
+     e il menu si chiude prima di arrivarci. Lo spazio visivo lo fa il
+     padding interno, che resta dentro il widget. */
+  bottom: 100%;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  min-width: 11rem;
+  margin: 0;
+  padding: .3rem;
+  list-style: none;
+  text-align: left;
+  background: var(--superficie);
+  border: 1px solid var(--bordo);
+  border-radius: var(--raggio);
+  box-shadow: none;
+  z-index: 20;
+}
+
+/* text-align:left anche sulle voci: PatternFly aggiunge pf-m-align-right al
+   menu e le allineerebbe a destra. */
+#kc-locale .pf-c-dropdown__menu li,
+#kc-locale .pf-c-dropdown__menu-item,
+#kc-locale ul a {
+  display: block;
+  padding: .4rem .6rem;
+  border-radius: calc(var(--raggio) - 2px);
+  color: var(--testo);
+  font-size: .82rem;
+  text-align: left;
+  text-decoration: none;
+}
+
+#kc-locale .pf-c-dropdown__menu li {
+  padding: 0;
+}
+
+#kc-locale .pf-c-dropdown__menu-item:hover,
+#kc-locale ul a:hover {
+  background: var(--sfondo);
+  color: var(--testo);
+}
+
+/* ===================================================================
+ * Registrazione (disattivata nel realm, ma il contenitore esiste)
+ * =================================================================== */
+#kc-info,
+#kc-info-wrapper {
+  max-width: 400px;
+  margin: 1rem auto 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--testo-tenue);
+  font-size: .82rem;
+  text-align: center;
+}
+
+#kc-registration a {
+  color: var(--azione);
+}
+
+/* ===================================================================
+ * Schermi stretti
+ * =================================================================== */
+@media (max-width: 440px) {
+  .login-pf-page {
+    padding: 16px 0;
+  }
+  .login-pf-page .card-pf {
+    padding: 1.5rem;
+  }
+}

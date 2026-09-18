@@ -1,0 +1,227 @@
+# Assistente aziendale — base condivisa fra sviluppo e produzione.
+#
+# Le differenze di sviluppo (hostname .localhost, GPU, porte) stanno in
+# docker-compose.override.yml, che Docker applica da solo. In produzione
+# quel file non c'e.
+#
+# REGOLA: nessun componente rivolto all'utente possiede una chiave del
+# modello. Niente env_file globali: ogni servizio riceve solo le variabili
+# che gli servono, elencate una per una.
+name: assistente
+
+services:
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    environment:
+      APP_HOST: ${APP_HOST}
+      SSO_HOST: ${SSO_HOST}
+      REALM: ${REALM}
+    depends_on: [librechat, keycloak]
+
+  postgres:
+    # pgvector incluso: archivio documenti + registro sorgenti + taint + tracce
+    # ponytail: una sola istanza, due database. Keycloak non merita un container di DB suo.
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    # Realm importato da file: riproducibile da zero, non cliccato a mano.
+    # --import-realm importa solo se il realm non esiste: rilanciarlo e innocuo.
+    command: start --import-realm
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+      # Tema della pagina di accesso SSO. Montato, non incluso nell'immagine:
+      # per un cliente nuovo si cambia il CSS e il logo in branding/.
+      - ./branding/tema-keycloak:/opt/keycloak/themes/azienda:ro
+      # UN SOLO file logo per chat e login: branding/logo.png viene montato
+      # sopra quello del tema, che resta come segnaposto se il mount manca.
+      - ./branding/logo.png:/opt/keycloak/themes/azienda/login/resources/img/logo.png:ro
+      - ./branding/favicon.ico:/opt/keycloak/themes/azienda/login/resources/img/favicon.ico:ro
+    environment:
+      # Sostituiti dentro realm-azienda.json con la sintassi $(env:VAR),
+      # cosi il file resta committabile senza segreti.
+      OPENID_CLIENT_SECRET: ${OPENID_CLIENT_SECRET}
+      APP_HOST: ${APP_HOST}
+      TEST_USER_PASSWORD: ${TEST_USER_PASSWORD}
+      NOME_AZIENDA: ${NOME_AZIENDA}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HOSTNAME: https://${SSO_HOST}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mongo:
+    # Richiesto da LibreChat per utenti e storico conversazioni.
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+
+  librechat:
+    # Pinnato a un tag rilasciato, non 'latest' (decisione 31: ogni
+    # aggiornamento rilancia T1.5/T1.6 prima della promozione).
+    # v0.8.7 = ultima release stabile al 18/09/2026 (le v0.8.8-rc* sono
+    # pre-release). Dopo il pin: rilanciare T1.4 e ri-verificare A1.
+    image: ghcr.io/danny-avila/librechat:v0.8.7
+    restart: unless-stopped
+    environment:
+      # --- NESSUNA chiave di modello qui. E' il componente rivolto all'utente.
+      MONGO_URI: mongodb://mongo:27017/LibreChat
+      CONFIG_PATH: /app/librechat.yaml
+      DOMAIN_CLIENT: https://${APP_HOST}
+      DOMAIN_SERVER: https://${APP_HOST}
+      SEARCH: "false"              # ponytail: niente Meilisearch in fase 1
+      ALLOW_REGISTRATION: "false"  # gli utenti nascono in Keycloak
+      ALLOW_EMAIL_LOGIN: "false"   # nessuna password locale: solo SSO
+      ALLOW_SOCIAL_LOGIN: "true"
+      # SSO come prima pagina: chi non ha sessione, o l'ha scaduta, va
+      # direttamente a Keycloak senza vedere una pagina di login intermedia.
+      # LibreChat applica un cooldown sui tentativi falliti, cosi un errore
+      # di autenticazione non produce un loop di redirect.
+      OPENID_AUTO_REDIRECT: "true"
+      # Senza questo il logout non funziona: LibreChat chiude la PROPRIA
+      # sessione, ma quella SSO di Keycloak resta aperta, il redirect
+      # automatico torna a Keycloak, che emette un nuovo codice senza chiedere
+      # nulla — e l'utente rientra in chat. Sembra che "disconnetti" non faccia
+      # niente. Con questo, il logout passa dall'end_session_endpoint e chiude
+      # anche la sessione di Keycloak.
+      # Richiede post.logout.redirect.uris sul client (nel realm c'e' gia').
+      OPENID_USE_END_SESSION_ENDPOINT: "true"
+      # --- Personalizzazione cliente
+      APP_TITLE: ${NOME_ASSISTENTE}
+      CUSTOM_FOOTER: ${PIE_DI_PAGINA}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      CREDS_KEY: ${CREDS_KEY}
+      CREDS_IV: ${CREDS_IV}
+      ORCHESTRATOR_KEY: ${ORCHESTRATOR_KEY}
+      # --- SSO verso Keycloak
+      OPENID_ISSUER: ${OPENID_ISSUER}
+      OPENID_CLIENT_ID: ${OPENID_CLIENT_ID}
+      OPENID_CLIENT_SECRET: ${OPENID_CLIENT_SECRET}
+      OPENID_CALLBACK_URL: /oauth/openid/callback
+      OPENID_SESSION_SECRET: ${OPENID_SESSION_SECRET}
+      OPENID_BUTTON_LABEL: Accedi con account aziendale
+      # offline_access e OBBLIGATORIO: senza refresh token i placeholder
+      # {{LIBRECHAT_OPENID_*}} restano VUOTI e l'orchestratore non sa chi chiede.
+      OPENID_SCOPE: openid profile email offline_access
+      OPENID_REUSE_TOKENS: "true"
+      OPENID_REUSE_MAX_SESSION_AGE_MS: "900000"
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml:ro
+      # Logo e favicon del cliente montati sopra gli asset serviti: niente
+      # rebuild dell'immagine. Sostituire i file in branding/ e riavviare.
+      - ./branding/logo.png:/app/client/dist/assets/logo.svg:ro
+      # UN SOLO file per l'icona dell'indirizzo, montato su tutte le taglie
+      # che LibreChat dichiara: i browser la scalano. Sostituire
+      # branding/favicon.ico e riavviare.
+      - ./branding/favicon.ico:/app/client/dist/assets/favicon-16x16.png:ro
+      - ./branding/favicon.ico:/app/client/dist/assets/favicon-32x32.png:ro
+      - ./branding/favicon.ico:/app/client/dist/assets/apple-touch-icon-180x180.png:ro
+      - ./branding/favicon.ico:/app/client/dist/assets/icon-192x192.png:ro
+      - ./branding/favicon.ico:/app/client/dist/assets/maskable-icon.png:ro
+    depends_on:
+      - mongo
+      - keycloak
+
+  # NOTA: i modelli non stanno qui. La macchina con GPU e un host separato:
+  # vedi docker-compose.inference.yml. Da questo stack i modelli interni sono
+  # endpoint HTTP come qualsiasi altro servizio esterno — cambia solo che
+  # l'endpoint e dentro il perimetro aziendale.
+
+  orchestratore:
+    # Endpoint OpenAI-compatible: LibreChat crede di parlare con un modello.
+    # Non possiede chiavi di provider: i modelli li raggiunge solo via proxy.
+    # ponytail: mcp-documenti gira in-process. Container separato al secondo MCP server.
+    build: ./orchestratore
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
+      OIDC_JWKS_URL: http://keycloak:8080/realms/${REALM}/protocol/openid-connect/certs
+      OIDC_ISSUER: https://${SSO_HOST}/realms/${REALM}
+      OIDC_AUDIENCE: orchestratore
+      ORCHESTRATOR_KEY: ${ORCHESTRATOR_KEY}
+      # --- I modelli si raggiungono SOLO attraverso il proxy, per nome logico.
+      # L'orchestratore non sa quale modello gira ne di quale provider sia:
+      # la scelta vive in litellm-config.yaml. Nessuna chiave di provider qui.
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LLM_RAGIONAMENTO: ragionamento
+      LLM_VELOCE: veloce
+      LLM_EMBEDDING: embedding
+      # Fase 1b: LLM_RAGIONAMENTO_INTERNO=ragionamento_interno
+      # --- Allowlist di egress: il gate consente SOLO questi host. Qualsiasi
+      # richiesta verso un host non dichiarato e un errore, non un warning.
+      EGRESS_INTERNAL: ${EGRESS_INTERNAL}
+      EGRESS_EXTERNAL: ${EGRESS_EXTERNAL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+
+  ingestion:
+    # ponytail: on demand, non un servizio. Il file-watcher quando servira.
+    #   docker compose run --rm ingestion
+    build: ./ingestion
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
+      EMBEDDING_URL: ${EMBEDDING_URL}
+      INFERENCE_TOKEN: ${INFERENCE_TOKEN}
+    volumes:
+      - ${DOCS_PATH:-./documenti-test}:/docs:ro
+
+  litellm:
+    # Owner unico del routing dei modelli, e l'UNICO componente che possiede
+    # le chiavi dei provider. Il modello di ragionamento e una scelta di
+    # progetto, non un vincolo dell'architettura: si cambia qui.
+    image: ghcr.io/berriai/litellm:main-stable
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Modello principale — scelto in .env, mappato in litellm-config.yaml
+      MODELLO_RAGIONAMENTO: ${MODELLO_RAGIONAMENTO}
+      MODELLO_API_KEY: ${MODELLO_API_KEY}
+      MODELLO_API_BASE: ${MODELLO_API_BASE}
+      # Modello economico per i compiti banali
+      MODELLO_VELOCE: ${MODELLO_VELOCE}
+      MODELLO_VELOCE_API_KEY: ${MODELLO_VELOCE_API_KEY}
+      MODELLO_VELOCE_API_BASE: ${MODELLO_VELOCE_API_BASE}
+      # Embedding: sempre interno
+      EMBEDDING_URL: ${EMBEDDING_URL}
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+
+volumes:
+  pg-data:
+  mongo-data:
+  caddy-data:

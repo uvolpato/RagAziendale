@@ -1,0 +1,27 @@
+# Segreti: mai in git.
+.env
+.env.local
+Sviluppo/.env
+Sviluppo/.env.local
+
+# Documenti aziendali: non finiscono nel repository.
+Sviluppo/documenti-test/
+Sviluppo/documenti/
+*.pdf
+*.docx
+*.xlsx
+
+# Output di lavoro
+Sviluppo/eval/risultati/
+__pycache__/
+*.pyc
+.venv/
+
+# Realm reso dal template (contiene segreti)
+Sviluppo/keycloak/realm-azienda.json
+
+certs/
+
+librechat.yaml
+
+Sviluppo/CREDENZIALI-SVILUPPO.md

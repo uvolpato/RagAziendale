@@ -1,0 +1,119 @@
+/* ============================================================
+   DECOBRANDS MARKETING - Design tokens · palette colori
+   ------------------------------------------------------------------
+   Fonte canonica : docs/STILE-GUIDA-DECOBRANDS.md  (sez. 2 Palette)
+   Sotto-doc      : docs/palette-colori-decobrands.md
+   Utilizzo       : agganciare a vista/panoramica.html e alla futura
+                    webapp marketing (specifica-sistema-marketing-ai.md).
+   Regola         : nessun hex "nudo" nel codice dei componenti;
+                    i ruoli si leggono da questi token.
+   ============================================================ */
+
+:root {
+  /* ------------------------------------------------------------
+     2.1 · Token di riferimento (già presenti nella guida)
+     ------------------------------------------------------------ */
+  --db-bg:        #f5f6f8;   /* sfondo pagina (body)                        */
+  --db-border:    #dee2e6;   /* bordo card/tabelle/divider                  */
+  --bs-primary:   #0d6efd;   /* blu Bootstrap primary (solo riferimento)    */
+
+  /* ------------------------------------------------------------
+     2.2 · Semantiche Bootstrap -> token semantici
+     ------------------------------------------------------------ */
+  --db-primary:   #0d6efd;   /* azioni principali, bordo-sx KPI, icone, link,
+                                   FAB aiuto, divider attivo, hover tabella */
+  --db-success:   #198754;   /* conferme, badge Integra/Esportato, qta +,
+                                   pallino ok, riga nuova, toast ok          */
+  --db-danger:    #dc3545;   /* eliminazione, errori, qta -, pallino ko,
+                                   mismatch totale, badge Disabilitato/Errore*/
+  --db-warning:   #ffc107;   /* da verificare/attenzione, righe dirty,
+                                   highlight nuovo ordine, badge Non visto   */
+  --db-info:      #0dcaf0;   /* badge confermato, DUPLICATO, KPI info,
+                                   codice Integra nelle liste                */
+  --db-secondary: #6c757d;   /* badge righe/contatori, stati neutri,
+                                   placeholder, colonne attenuate            */
+  --db-dark:      #212529;   /* navbar, header tabella, header modal errore,
+                                   badge ruolo n8n                           */
+  --db-light:     #f8f9fa;   /* header tabella sticky alt, input readonly    */
+
+  /* ------------------------------------------------------------
+     2.3 · Colori "fissi" usati nei template -> promossi a token
+     ------------------------------------------------------------ */
+  --db-bg-page:        #f5f6f8;   /* sfondo pagina = --db-bg               */
+  --db-focus-ring:     #0d6efd;   /* divider hover/drag, focus input,
+                                       drop-zone drag-over border          */
+  --db-dropzone-bg:    #e8f0fe;   /* sfondo drop-zone in drag-over          */
+  --db-pdf-bg:         #525659;   /* pannello PDF (#pdf-panel)              */
+  --db-pdf-empty:      #aaa;      /* testo "PDF non disponibile" (#no-pdf)  */
+  --db-sse-highlight:  #fff3cd;   /* riga ordine appena ricevuta (SSE, 5s)  */
+  --db-th-bg:          #e9ecef;   /* header tabella righe (.tbl-righe),
+                                       thead sticky, bg step stato          */
+  --db-muted-dim:      #adb5bd;   /* pallino "sconosciuto" (pall-unknown),
+                                       bordo drop-zone, frecce stepper      */
+  --db-th-color:       #495057;   /* testo intestazioni tabella (prototipo) */
+  --db-field-label:    #666;      /* etichette campo testata ordine (.lbl)  */
+  --db-section-label:  #888;      /* etichetta "Righe" pagina ordine        */
+  --db-readonly-bg:    #f8f9fa;   /* input readonly / pre.det-code          */
+
+  /* ---- varianti bordo-sx .kpi-card / varianti .alert-scadenza ---- */
+  --db-kpi-primary:    #0d6efd;   /* KPI card · azione principale          */
+  --db-kpi-warning:    #ffc107;
+  --db-kpi-danger:     #dc3545;
+  --db-kpi-success:    #198754;
+  --db-kpi-info:       #0dcaf0;
+
+  /* ---- sfondi alert scadenze ---- */
+  --db-alert-bg-danger:  #fff5f5;   /* scadenza superata / problema        */
+  --db-alert-bg-ok:      #f0fdf4;   /* scadenza in ordine                   */
+  --db-alert-bg-warn:    #fffdf0;   /* scadenza vicina / attenzione         */
+
+  /* ---- stepper stati pratica ---- */
+  --db-step-active-bg: #cfe2ff;   --db-step-active-fg: #084298;  /* active  */
+  --db-step-done-bg:   #d1e7dd;   --db-step-done-fg:   #0f5132;  /* done    */
+
+  /* ---- chip allegato (doc-chip) ---- */
+  --db-chip-bg:     #e9f0fd;   --db-chip-border: #cfe0fb;   --db-chip-fg: #084298;
+  --db-chip-empty-bg:#fbfcfd;   /* .doc-panel vuoto                          */
+
+  /* ---- diff audit (prima/dopo) ---- */
+  --db-diff-changed: rgba(255,193,7,.15);    /* riga "changed"              */
+  --db-diff-before:  rgba(220,53,69,.1);     /* cella "prima"               */
+  --db-diff-after:   rgba(25,135,84,.1);     /* cella "dopo"                */
+  --db-mismatch-ring:rgba(220,53,69,.25);    /* anello focus mismatch totale*/
+
+  /* ---- ombre / drop ---- */
+  --db-shadow-kpi:   rgba(0,0,0,.06);   --db-shadow-card: rgba(0,0,0,.05);
+  --db-shadow-hover: rgba(0,0,0,.08);   --db-shadow-fab:  rgba(0,0,0,.25);
+  --db-strength-track: rgba(255,255,255,.35);  /* pista bar forza password */
+
+  /* ------------------------------------------------------------
+     2.4 · Semaforo quantità (giacenze, picker articoli)
+     ------------------------------------------------------------ */
+  --db-qta-neg:  #dc3545;   /* < 0  -> text-danger fw-bold     */
+  --db-qta-zero: #6c757d;   /* = 0 / null -> text-muted        */
+  --db-qta-pos:  #198754;   /* > 0  -> text-success fw-bold    */
+}
+
+/* ============================================================
+   Utility semantiche (ruolo -> stile), coerenti con la guida
+   ============================================================ */
+
+/* Semaforo quantità - classi già previste dalla guida (sez. 2.4) */
+.qta-neg  { color: var(--db-qta-neg);  font-weight: 600; }
+.qta-zero { color: var(--db-qta-zero); }
+.qta-pos  { color: var(--db-qta-pos);  font-weight: 600; }
+
+/* Card KPI - bordo-sx semantico */
+.kpi-card { box-shadow: 0 2px 4px var(--db-shadow-card); }
+.kpi-card.kpi-primary { border-left: 3px solid var(--db-kpi-primary); }
+.kpi-card.kpi-success { border-left: 3px solid var(--db-kpi-success); }
+.kpi-card.kpi-warning { border-left: 3px solid var(--db-kpi-warning); }
+.kpi-card.kpi-danger  { border-left: 3px solid var(--db-kpi-danger); }
+.kpi-card.kpi-info    { border-left: 3px solid var(--db-kpi-info); }
+
+/* Stato riga speditiva / prodotto */
+.riga-nuova    { background: var(--db-sse-highlight); }
+.step-active   { background: var(--db-step-active-bg); color: var(--db-step-active-fg); }
+.step-done     { background: var(--db-step-done-bg);   color: var(--db-step-done-fg); }
+
+/* Riepilogo: il sistema NON usa colori decorativi -> vedi palette-colori-decobrands.md sez. 6 */

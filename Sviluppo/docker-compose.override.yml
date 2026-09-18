@@ -1,0 +1,72 @@
+# SVILUPPO — Docker Desktop su Windows (WSL2). Applicato automaticamente da
+# `docker compose up`. In produzione questo file NON esiste: la VM Linux usa
+# solo docker-compose.yml.
+#
+# I modelli NON sono qui: stanno su LM Studio, nativo sulla macchina di
+# sviluppo, fuori da Docker. L'unica differenza e' il valore di EMBEDDING_URL.
+#
+# ATTENZIONE: non lasciare che la macchina di sviluppo diventi la produzione
+# per inerzia. Succede quando funziona abbastanza bene.
+
+services:
+
+  caddy:
+    # Alias di rete: dall'INTERNO dei container, assistente.localhost e
+    # sso.localhost devono risolvere a Caddy. Senza, LibreChat cerca
+    # sso.localhost, ottiene 127.0.0.1 (se stesso) e la discovery OIDC
+    # fallisce con "fetch failed".
+    networks:
+      default:
+        aliases:
+          - assistente.localhost
+          - sso.localhost
+
+  keycloak:
+    # Esposto solo in sviluppo, per ottenere token da riga di comando
+    # (vedi keycloak/README.md). In produzione si raggiunge solo via Caddy.
+    ports:
+      - "8081:8080"
+    environment:
+      # Keycloak mette i temi in cache: senza questo, le modifiche al CSS o
+      # al logo NON compaiono e si perde tempo a cercare un errore che non
+      # c'e'. Solo sviluppo: in produzione la cache serve.
+      KC_SPI_THEME_CACHE_THEMES: "false"
+      KC_SPI_THEME_CACHE_TEMPLATES: "false"
+      KC_SPI_THEME_STATIC_MAX_AGE: "-1"
+
+  librechat:
+    # openid-client (Node) accetta SOLO discovery su HTTPS: non c'e' modo di
+    # usare http://keycloak:8080 per la configurazione OIDC. Quindi LibreChat
+    # passa da Caddy via HTTPS, e per farlo deve fidarsi della CA interna di
+    # Caddy. avvia.py la estrae in certs/ prima di avviare questo servizio.
+    # In produzione al suo posto c'e' il certificato aziendale, gia' fidato.
+    volumes:
+      - ./certs:/certs:ro
+    environment:
+      NODE_EXTRA_CA_CERTS: /certs/caddy-root.crt
+      # I test di login ripetuti fanno scattare il rate limiter di LibreChat
+      # ("Too many login attempts, please try again after 5 minutes"), e il
+      # sintomo e' un 429 su /oauth/openid che sembra un guasto.
+      # Rilassato SOLO in sviluppo: in produzione il limite serve.
+      # Default: 7 tentativi ogni 5 minuti. I ban durano DUE ORE, quindi
+      # vanno disattivati o un test di troppo blocca la macchina a lungo.
+      LOGIN_MAX: "100"
+      LOGIN_WINDOW: "1"
+      BAN_VIOLATIONS: "false"
+
+  orchestratore:
+    volumes:
+      - ./orchestratore:/app/orchestratore:ro   # ricarica a caldo
+    environment:
+      LOG_LEVEL: debug
+
+  postgres:
+    # 55432 e non 5432 ne 5433: sulla macchina di sviluppo ci sono DUE cluster
+    # PostgreSQL nativi come servizi Windows, su entrambe quelle porte.
+    # Windows consente a due processi di ascoltare sulla stessa porta in certe
+    # configurazioni e il nativo vince: il sintomo e' un "autenticazione con
+    # password fallita" con la password GIUSTA, perche' risponde un altro
+    # server. Verificare con netstat prima di scegliere una porta.
+    # Dentro la rete del compose i servizi parlano comunque con postgres:5432.
+    ports:
+      - "55432:5432"

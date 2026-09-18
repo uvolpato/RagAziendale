@@ -1,0 +1,64 @@
+version: 1.2.1
+
+# TEMPLATE. Reso da avvia.py in librechat.yaml sostituendo i segnaposto con i
+# valori di .env. Non modificare il file reso: si perde al prossimo avvio.
+#
+# Tutto cio' che cambia da cliente a cliente sta nel blocco PERSONALIZZAZIONE
+# di .env: nome azienda, messaggio di benvenuto, disclaimer, link. Il logo e
+# la favicon si sostituiscono in branding/, montata sopra gli asset.
+
+endpoints:
+  custom:
+    # L'utente vede una voce sola nella tendina: dietro non c'e' un modello,
+    # c'e' l'orchestratore.
+    - name: "${NOME_ASSISTENTE}"
+      baseURL: "http://orchestratore:8000/v1"
+      apiKey: "${ORCHESTRATOR_KEY}"
+      models:
+        default: ["assistente-v1"]
+        fetch: false
+      titleConvo: true
+      titleModel: "assistente-v1"
+      modelDisplayLabel: "${NOME_ASSISTENTE}"
+      headers:
+        # L'identita viaggia: l'orchestratore verifica la firma di questo token
+        # contro il JWKS di Keycloak e ne ricava i gruppi. Richiede
+        # OPENID_REUSE_TOKENS=true e lo scope offline_access.
+        Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
+        X-Conversation-Id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
+
+interface:
+  # Una sola destinazione: niente scelta del modello, niente preset, niente
+  # parametri. L'utente fa domande, non configura un LLM.
+  modelSelect: false
+  parameters: false
+  presets: false
+  prompts: false
+  bookmarks: true
+  multiConvo: false
+  temporaryChat: true
+  runCode: false
+  webSearch: false
+  marketplace:
+    use: false
+
+  # Il pollice su/giu alimenta la colonna feedback di traces: senza, un pilota
+  # fallito da' un fatto binario e nessuna diagnosi (§14.4).
+  feedback: true
+
+  customWelcome: "${MESSAGGIO_BENVENUTO}"
+
+  # Il disclaimer come accettazione obbligatoria al primo accesso, non come
+  # link che nessuno apre. E' un artefatto di compliance: l'utente dichiara di
+  # aver letto che le risposte vanno verificate.
+  termsOfService:
+    modalAcceptance: true
+    modalTitle: "${TITOLO_DISCLAIMER}"
+    modalContent: |
+      ${TESTO_DISCLAIMER}
+    externalUrl: "${URL_DISCLAIMER}"
+    openNewTab: true
+
+  privacyPolicy:
+    externalUrl: "${URL_PRIVACY}"
+    openNewTab: true

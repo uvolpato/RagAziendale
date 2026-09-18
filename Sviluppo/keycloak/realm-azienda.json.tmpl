@@ -1,0 +1,157 @@
+{
+  "realm": "azienda",
+  "enabled": true,
+  "displayName": "${NOME_AZIENDA}",
+  "loginTheme": "azienda",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["it", "en", "de"],
+  "defaultLocale": "it",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "accessTokenLifespan": 900,
+
+  "groups": [
+    { "name": "tutti",           "path": "/tutti" },
+    { "name": "magazzino",       "path": "/magazzino" },
+    { "name": "vendite",         "path": "/vendite" },
+    { "name": "amministrazione", "path": "/amministrazione" },
+    { "name": "direzione",       "path": "/direzione" }
+  ],
+
+  "defaultGroups": ["/tutti"],
+
+  "clients": [
+    {
+      "clientId": "librechat",
+      "name": "LibreChat",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${OPENID_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://${APP_HOST}/oauth/openid/callback",
+        "https://${APP_HOST}/*"
+      ],
+      "webOrigins": ["https://${APP_HOST}"],
+      "attributes": {
+        "post.logout.redirect.uris": "https://${APP_HOST}/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-orchestratore",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "orchestratore",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "orchestratore",
+      "name": "Orchestratore",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true,
+      "publicClient": false,
+      "standardFlowEnabled": false
+    },
+    {
+      "clientId": "test-token",
+      "name": "SOLO SVILUPPO - ottenere token via password grant",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-orchestratore",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "orchestratore",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "prova.magazzino",
+      "email": "prova.magazzino@esempio.local",
+      "firstName": "Prova",
+      "lastName": "Magazzino",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti", "/magazzino"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    },
+    {
+      "username": "prova.vendite",
+      "email": "prova.vendite@esempio.local",
+      "firstName": "Prova",
+      "lastName": "Vendite",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti", "/vendite"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    },
+    {
+      "username": "prova.direzione",
+      "email": "prova.direzione@esempio.local",
+      "firstName": "Prova",
+      "lastName": "Direzione",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti", "/vendite", "/amministrazione", "/direzione"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+# Routing dei modelli. L'orchestratore conosce solo i nomi logici
+# (ragionamento, veloce, embedding): cambiare modello e cambiare QUESTO file.
+# Niente deploy, niente codice.
+
+model_list:
+
+  # =====================================================================
+  # ragionamento — il modello principale. DA SCEGLIERE.
+  #
+  # Non c'e un default: la scelta e una decisione di progetto, e si prende
+  # con i numeri dell'eval sulle domande d'oro, non per simpatia.
+  # Scommentare UNA riga, verificare l'id esatto sulla documentazione del
+  # provider, e mettere la chiave in .env.
+  #
+  # Criteri che contano per QUESTA architettura, in ordine:
+  #   1. affidabilita del tool calling con argomenti corretti  <- il piu importante
+  #   2. tenuta su contesto lungo (RAG: prompt da 20k+ token)
+  #   3. qualita in italiano
+  #   4. disciplina nelle citazioni (non inventare fonti)
+  #   5. costo per risposta completata, non per richiesta
+  #   6. esiste una versione ospitabile in casa? (rilevante per la fase 1b)
+  # =====================================================================
+  - model_name: ragionamento
+    litellm_params:
+      model: ${MODELLO_RAGIONAMENTO}
+      api_key: os.environ/MODELLO_API_KEY
+      api_base: os.environ/MODELLO_API_BASE   # vuoto se il provider e pubblico
+
+  # Candidati da confrontare nell'eval. Ogni provider vuole il suo prefisso
+  # LiteLLM e la sua chiave: verificare gli id correnti sulla loro documentazione.
+  #   openai/<id>          |  anthropic/<id>      |  gemini/<id>
+  #   mistral/<id>         |  deepseek/<id>       |  together_ai/<id>
+  #   openrouter/<id>      |  azure/<deployment>  |  bedrock/<id>
+  #   hosted_vllm/<id>     <- gia ospitato in casa
+  #   lm_studio/<id>       <- sulla macchina di sviluppo
+
+  # ---------------------------------------------------------------------
+  # veloce — titoli, classificazione, riscrittura query. Compiti banali:
+  # qui si sceglie il modello piu economico che li svolga, e puo essere di
+  # un provider diverso da quello di ragionamento.
+  # ---------------------------------------------------------------------
+  - model_name: veloce
+    litellm_params:
+      model: ${MODELLO_VELOCE}
+      api_key: os.environ/MODELLO_VELOCE_API_KEY
+      api_base: os.environ/MODELLO_VELOCE_API_BASE
+
+  # ---------------------------------------------------------------------
+  # embedding — locale per obbligo, non per scelta: in ingestion passa il
+  # testo di ogni chunk di ogni documento. bge-m3, 1024 dimensioni, come
+  # la colonna vector(1024) in initdb. NON sostituibile senza reindicizzare.
+  # ---------------------------------------------------------------------
+  - model_name: embedding
+    litellm_params:
+      model: lm_studio/text-embedding-bge-m3-embeddings
+      api_base: os.environ/EMBEDDING_URL
+
+  # ---------------------------------------------------------------------
+  # FASE 1b — ragionamento sui dati che non lasciano l'azienda.
+  # Stesso schema OpenAI-compatible: per l'orchestratore e una rotta come
+  # le altre. Il gate decide quale usare, non il codice del nodo.
+  # ---------------------------------------------------------------------
+  # - model_name: ragionamento_interno
+  #   litellm_params:
+  #     model: hosted_vllm/<modello-scelto>
+  #     api_base: os.environ/INFERENCE_URL
+
+router_settings:
+  # Se il modello principale non risponde, meglio una risposta dal veloce
+  # che nessuna risposta. NON valido per le rotte interne: un fallback che
+  # esce dal perimetro sarebbe una fuga di dati.
+  fallbacks: [{"ragionamento": ["veloce"]}]
+  num_retries: 2
+
+litellm_settings:
+  # Scarta i parametri che un provider non conosce invece di dare errore:
+  # indispensabile quando il modello e una variabile.
+  drop_params: true
+  # Le tracce restano nostre: nessun callback verso servizi terzi.
+  success_callback: []
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

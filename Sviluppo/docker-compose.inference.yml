@@ -1,0 +1,82 @@
+# HOST DI INFERENZA — forma di PRODUZIONE. NON si usa in sviluppo.
+#
+# In sviluppo i modelli stanno su LM STUDIO, nativo sulla macchina di sviluppo,
+# fuori da Docker: EMBEDDING_URL punta a host.docker.internal:1234/v1.
+# Questo file e la forma che l'host di inferenza prende quando arriva la
+# macchina GPU vera (fase 1b), ed e qui perche il passaggio sia un cambio di
+# EMBEDDING_URL e non una riprogettazione.
+#
+#   docker compose -f docker-compose.inference.yml up -d
+#
+# Differenza che conta: LM Studio non autentica e non fa rerank. Un host di
+# produzione fa entrambi.
+#
+# SICUREZZA: qui passa il testo di ogni chunk di ogni documento, compresi
+# quelli marcati `interno`. Quindi:
+#   1. Firewall: solo il server applicativo puo raggiungere queste porte.
+#   2. TLS + token davanti (Caddy sotto), mai HTTP nudo su LAN.
+#   3. Nessuna rotta verso internet da questo host, a parte il download
+#      iniziale dei modelli. Poi si chiude.
+name: assistente-inference
+
+services:
+
+  proxy:
+    # TLS e autenticazione a token davanti ai servizi di inferenza.
+    # ponytail: Caddy con due righe invece di configurare TLS in ogni servizio.
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "7443:7443"
+    volumes:
+      - ./inference/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    environment:
+      INFERENCE_TOKEN: ${INFERENCE_TOKEN}
+    depends_on: [infinity]
+
+  infinity:
+    # Embedding + reranker. Un servizio per due ruoli: Ollama non fa reranking.
+    # ponytail: pinna il tag e verifica il nome immagine al primo pull.
+    image: michaelf34/infinity:latest
+    restart: unless-stopped
+    command: >
+      v2
+      --model-id BAAI/bge-m3
+      --model-id BAAI/bge-reranker-v2-m3
+      --port 7997
+    environment:
+      INFINITY_QUEUE_SIZE: "512"
+    volumes:
+      - hf-cache:/app/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # FASE 1b — il modello di ragionamento interno, quando la macchina arriva.
+  #   docker compose -f docker-compose.inference.yml --profile fase1b up -d
+  vllm:
+    image: vllm/vllm-openai:latest
+    profiles: ["fase1b"]
+    restart: unless-stopped
+    command: >
+      --model Qwen/Qwen3-32B-AWQ
+      --max-model-len 32768
+      --gpu-memory-utilization 0.90
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  hf-cache:
+  caddy-data:

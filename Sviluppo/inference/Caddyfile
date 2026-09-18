@@ -1,0 +1,30 @@
+# TLS + token davanti ai servizi di inferenza.
+# Qui passa il testo dei documenti interni: HTTP nudo su LAN non basta.
+
+:7443 {
+	tls internal
+	# In azienda: certificato interno al posto di tls internal
+	#   tls /etc/caddy/cert.pem /etc/caddy/key.pem
+
+	@autorizzato header Authorization "Bearer {$INFERENCE_TOKEN}"
+
+	handle /embeddings* {
+		reverse_proxy @autorizzato infinity:7997
+		respond 401
+	}
+	handle /rerank* {
+		reverse_proxy @autorizzato infinity:7997
+		respond 401
+	}
+	handle /v1/* {
+		# Fase 1b: vLLM, endpoint OpenAI-compatible
+		reverse_proxy @autorizzato vllm:8000
+		respond 401
+	}
+	handle /health {
+		reverse_proxy infinity:7997
+	}
+	handle {
+		respond 404
+	}
+}

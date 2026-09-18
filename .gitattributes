@@ -1,0 +1,19 @@
+# Windows + container Linux: un CRLF in un file montato dentro un container
+# produce errori incomprensibili. Lo script di init di Postgres con CRLF
+# fallisce in modi che costano mezza giornata a capire.
+* text=auto eol=lf
+
+*.sql   text eol=lf
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.py    text eol=lf
+Caddyfile text eol=lf
+Dockerfile text eol=lf
+
+# cmd.exe con fine riga LF sbaglia goto ed etichette.
+*.cmd   text eol=crlf
+
+*.pdf   binary
+*.docx  binary
+*.xlsx  binary

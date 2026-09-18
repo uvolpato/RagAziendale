@@ -1,0 +1,75 @@
+# Unico punto esposto. Orchestratore, Postgres e Mongo restano sulla rete interna.
+
+{$APP_HOST} {
+	# tls internal = CA locale di Caddy: va distribuito il root cert ai client.
+	# In azienda, sostituisci con il certificato interno:
+	#   tls /etc/caddy/cert.pem /etc/caddy/key.pem
+	tls internal
+
+	# ------------------------------------------------------------------
+	# /login non deve MAI essere servita.
+	#
+	# Risolve due problemi con una regola:
+	#
+	# 1. LA PAGINA CHE LAMPEGGIA. OPENID_AUTO_REDIRECT agisce lato client:
+	#    il browser scarica la SPA, la disegna, si accorge che non c'e'
+	#    sessione e solo allora salta a Keycloak. Quel mezzo secondo di
+	#    pagina intravista e' la pagina di login di LibreChat. Intercettando
+	#    qui, il browser riceve un 302 e non disegna nulla.
+	#
+	# 2. IL LOGOUT CHE NON DISCONNETTE. Il pulsante chiude la sessione di
+	#    LibreChat e porta a /login; se da qui si andasse direttamente a
+	#    /oauth/openid, Keycloak riconoscerebbe la sua sessione SSO ancora
+	#    aperta ed emetterebbe un nuovo codice senza chiedere niente —
+	#    l'utente rientrerebbe in chat. Passando invece dall'
+	#    end_session_endpoint, la sessione SSO viene chiusa e solo dopo si
+	#    riparte dall'autenticazione, che ora chiede le credenziali.
+	#
+	# COSTO DA CONOSCERE: chi arriva senza sessione LibreChat ma con una
+	# sessione SSO valida aperta da un'ALTRA applicazione aziendale viene
+	# disconnesso anche da quella. Accettabile con una sola applicazione;
+	# da rivedere il giorno che il SSO serve piu' applicazioni — in quel
+	# caso si distinguono i due casi con un parametro sul logout.
+	@login path /login /login/*
+	redir @login https://{$SSO_HOST}/realms/{$REALM}/protocol/openid-connect/logout?client_id=librechat&post_logout_redirect_uri=https%3A%2F%2F{$APP_HOST}%2Foauth%2Fopenid 302
+
+	# ------------------------------------------------------------------
+	# Il login non atterra piu' sulla radice, ma su /c/new.
+	#
+	# Serve a spezzare il ciclo: con l'atterraggio su / e un redirect sulla
+	# radice, la sequenza sarebbe / -> Keycloak -> callback -> / -> Keycloak
+	# senza fine. Spostando l'atterraggio su un percorso diverso, la catena
+	# termina sempre.
+	#
+	# Un primo tentativo condizionava il redirect alla presenza del cookie
+	# `refreshToken`. Non funziona: i cookie di LibreChat sono
+	# SameSite=Strict e per il browser sso.localhost e assistente.localhost
+	# sono siti diversi, quindi su / il cookie puo' non essere inviato e il
+	# ciclo si innesca comunque. Lato server non si vedeva: httpx ignora
+	# SameSite e i test passavano.
+	handle /oauth/openid/callback {
+		reverse_proxy librechat:3080 {
+			# Senza slash finale: LibreChat manda "https://host", non
+			# "https://host/". Nessun gruppo di cattura, cosi non si
+			# dipende dalla sintassi di sostituzione di Caddy.
+			header_down Location "^https?://{$APP_HOST}/?$" "https://{$APP_HOST}/c/new"
+		}
+	}
+
+	# ------------------------------------------------------------------
+	# La radice non serve mai una pagina: 302 incondizionato.
+	#
+	# Chi non ha sessione finisce sul form di Keycloak senza che il browser
+	# disegni nulla — la schermata di benvenuto non compare.
+	# Chi ce l'ha fa un giro SSO silenzioso (~200ms, nessuna pagina
+	# disegnata) e atterra su /c/new. Nessun cookie da controllare, quindi
+	# nessuna dipendenza da SameSite e nessun ciclo possibile.
+	redir / /oauth/openid 302
+
+	reverse_proxy librechat:3080
+}
+
+{$SSO_HOST} {
+	tls internal
+	reverse_proxy keycloak:8080
+}

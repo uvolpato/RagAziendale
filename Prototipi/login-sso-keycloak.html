@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Accesso · SSO aziendale — azienda</title>
+  <link rel="stylesheet" href="tokens.css" />
+  <style>
+    /* ===================================================================
+       Ruoli -> tokens.css (palette canonica Decobrands, --db-*).
+       I colori di marca arrivano dal foglio esterno; i valori che il set
+       non prevede (bianco superficie, hover derivato, radius e stack font
+       Bootstrap) sono dichiarati qui come token locali. Nessun hex nudo
+       fuori da questo blocco. Tema chiaro come da design system.
+       =================================================================== */
+    :root {
+      --sfondo:       var(--db-bg);                       /* sfondo pagina        */
+      --superficie:   #fff;                               /* card/input (Bootstrap) */
+      --testo:        var(--db-dark);                     /* testo primario       */
+      --testo-tenue:  var(--db-secondary);                /* placeholder/attenuato */
+      --bordo:        var(--db-border);                   /* bordi card/divider   */
+      --azione:       var(--db-primary);                  /* CTA, link, focus     */
+      --azione-hover: color-mix(in srgb, var(--db-primary) 88%, var(--db-dark));
+      --azione-testo: #fff;                               /* testo su primary     */
+      --successo:     var(--db-success);                  /* conferme, toast ok   */
+      --errore:       var(--db-danger);                   /* errori/eliminazione  */
+      --errore-bordo: var(--db-danger);
+      --raggio:       .375rem;                            /* radius Bootstrap     */
+      --ring:         color-mix(in srgb, var(--db-focus-ring) 25%, transparent);
+      --font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                      "Helvetica Neue", Arial, sans-serif; /* stack Bootstrap     */
+      --font-mono:    ui-monospace, SFMono-Regular, Menlo, Consolas,
+                      "Liberation Mono", monospace;
+    }
+
+    /* ===================================================================
+       Base
+       =================================================================== */
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: var(--sfondo);
+      color: var(--testo);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--azione); text-decoration: none; }
+    a:hover { color: var(--azione-hover); }
+    p { margin: 0; }
+
+    /* ===================================================================
+       Logo client / intestazione (come #kc-header-wrapper del tema)
+       =================================================================== */
+    .login-logo {
+      display: grid;
+      place-items: center;
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 1.5rem;
+      border-radius: 10px;
+      background: var(--superficie);
+      border: 1px solid var(--bordo);
+      color: var(--azione);
+    }
+    .login-logo svg { width: 26px; height: 26px; }
+
+    /* ===================================================================
+       La scheda del form (login-pf-page .card-pf)
+       =================================================================== */
+    .login-card {
+      width: 100%;
+      max-width: 400px;
+      background: var(--superficie);
+      border: 1px solid var(--bordo);
+      border-radius: var(--raggio);
+      padding: 2rem;
+      box-shadow: none;
+    }
+    .login-card h1 {
+      margin: 0 0 .5rem;
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      text-align: center;
+    }
+    .login-sub {
+      margin: 0 0 1.5rem;
+      color: var(--testo-tenue);
+      font-size: .9rem;
+      text-align: center;
+    }
+
+    /* --- Campi --- */
+    .field { display: block; margin-bottom: 1.1rem; }
+    .field label {
+      display: block;
+      margin-bottom: .4rem;
+      color: var(--testo-tenue);
+      font-size: .86rem;
+    }
+    .input-wrap { position: relative; }
+    .input {
+      width: 100%;
+      padding: .7rem .85rem;
+      background: var(--superficie);
+      border: 1px solid var(--bordo);
+      border-radius: var(--raggio);
+      color: var(--testo);
+      font: inherit;
+    }
+    .input::placeholder { color: color-mix(in srgb, var(--testo) 45%, transparent); }
+    .input:focus-visible {
+      outline: none;
+      border-color: var(--azione);
+      box-shadow: 0 0 0 2px var(--ring);
+    }
+    .input[aria-invalid="true"] {
+      border-color: var(--errore);
+    }
+    .pw-toggle {
+      position: absolute;
+      top: 50%;
+      right: .5rem;
+      transform: translateY(-50%);
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      background: transparent;
+      border: 0;
+      border-radius: var(--raggio);
+      color: var(--testo-tenue);
+    }
+    .pw-toggle:hover { color: var(--testo); }
+    .pw-toggle:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--ring);
+    }
+    .pw-toggle svg { width: 20px; height: 20px; }
+
+    /* --- Messaggio di errore --- */
+    .alert {
+      display: flex;
+      gap: .5rem;
+      align-items: flex-start;
+      padding: .7rem .85rem;
+      margin-bottom: 1.1rem;
+      border-radius: var(--raggio);
+      font-size: .86rem;
+      background: color-mix(in srgb, var(--errore) 8%, var(--superficie));
+      border: 1px solid var(--errore-bordo);
+      color: var(--testo);
+    }
+    .alert[hidden] { display: none; }
+    .alert svg { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--errore); }
+
+    /* --- Riga opzioni: ricordami + password dimenticata --- */
+    .form-options {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin: 0 0 1.4rem;
+      font-size: .86rem;
+      color: var(--testo-tenue);
+    }
+    .check {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      cursor: pointer;
+    }
+    .check input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--azione);
+      cursor: pointer;
+    }
+    .form-options a { font-size: .86rem; }
+
+    /* --- Pulsante di accesso: azione primaria aziendale --- */
+    .btn-primary {
+      width: 100%;
+      padding: .7rem 1rem;
+      background-color: var(--azione);
+      border: 1px solid var(--azione);
+      border-radius: var(--raggio);
+      color: var(--azione-testo);
+      font: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color .15s ease, border-color .15s ease;
+    }
+    .btn-primary:hover { background-color: var(--azione-hover); border-color: var(--azione-hover); }
+    .btn-primary:active { transform: translateY(1px); }
+    .btn-primary:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--ring);
+    }
+    .btn-primary[disabled] { opacity: .75; cursor: progress; }
+
+    /* --- Nota inferiore / helper --- */
+    .form-note {
+      margin-top: 1.2rem;
+      color: var(--testo-tenue);
+      font-size: .82rem;
+      text-align: center;
+    }
+
+    /* --- Stato di successo (login simulato) --- */
+    .success {
+      text-align: center;
+      padding-block: 1rem;
+    }
+    .success-icon {
+      display: grid;
+      place-items: center;
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 1rem;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--successo) 14%, transparent);
+      color: var(--successo);
+    }
+    .success-icon svg { width: 26px; height: 26px; }
+    .success h2 {
+      margin: 0 0 .4rem;
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+    .success p { color: var(--testo-tenue); font-size: .9rem; max-width: 30ch; margin: 0 auto 1.4rem; }
+    .success .mono {
+      display: inline-block;
+      margin-bottom: 1.4rem;
+      padding: .4rem .7rem;
+      font-family: var(--font-mono);
+      font-size: .72rem;
+      color: var(--testo-tenue);
+      background: var(--sfondo);
+      border: 1px dashed var(--bordo);
+      border-radius: var(--raggio);
+    }
+
+    /* --- Selettore lingua (solo con i18n attiva, come in Keycloak) --- */
+    .locales {
+      margin-top: 1.75rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--bordo);
+      display: flex;
+      justify-content: center;
+      gap: .4rem;
+      font-size: .82rem;
+      color: var(--testo-tenue);
+    }
+    .locales a { color: var(--testo-tenue); padding: .2rem .45rem; border-radius: var(--raggio); }
+    .locales a[aria-current="true"] { color: var(--testo); background: var(--sfondo); }
+    .locales a:hover { color: var(--testo); }
+    .locales .sep { color: var(--bordo); }
+
+    /* --- Separatore bootstrap della demo --- */
+    .demo-hint {
+      margin-top: 1.25rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: .45rem;
+      font-size: .75rem;
+      color: var(--testo-tenue);
+      text-align: center;
+    }
+    .demo-hint svg { width: 13px; height: 13px; color: var(--testo-tenue); }
+
+    @media (max-width: 440px) {
+      body { padding: 16px; }
+      .login-card { padding: 1.5rem; }
+    }
+  </style>
+</head>
+<body data-od-id="login-sso-screen">
+
+  <section class="login-card" data-od-id="login-sso-card" aria-label="Accesso aziendale">
+
+    <!-- Logo del cliente al posto di quello di Keycloak (#kc-header-wrapper) -->
+    <div class="login-logo" role="img" aria-label="Logo azienda">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.2 4.5L19 8.3l-3.4 3.3.8 4.7L12 14l-4.4 2.3.8-4.7L5 8.3l4.8-.8z"/></svg>
+    </div>
+
+    <!-- Pannello di login -->
+    <div id="panel-login">
+      <h1 data-i18n="title">Accedi al tuo account aziendale</h1>
+      <p class="login-sub" data-i18n="sub">Area riservata · SSO di <strong>azienda</strong> per raggiungere l'assistente digitale</p>
+
+      <div class="alert" id="login-error" data-od-id="login-error" role="alert" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+        <span data-i18n="err-empty">Inserisci nome utente e password per continuare.</span>
+      </div>
+
+      <form id="login-form" novalidate>
+        <div class="field">
+          <label for="username">Nome utente o email</label>
+          <div class="input-wrap">
+            <input class="input" id="username" data-od-id="login-field-username" name="username" type="text" autocomplete="username" placeholder="nome@azienda.it" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <div class="input-wrap">
+            <input class="input" id="password" data-od-id="login-field-password" name="password" type="password" autocomplete="current-password" placeholder="••••••••••" />
+            <button type="button" class="pw-toggle" id="pw-toggle" data-od-id="login-pw-toggle" aria-label="Mostra o nascondi la password" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-options">
+          <label class="check" for="remember">
+            <input type="checkbox" id="remember" name="remember" />
+            Ricordami su questo dispositivo
+          </label>
+          <a href="#" data-i18n="forgot" data-od-id="login-forgot">Password dimenticata?</a>
+        </div>
+
+        <button class="btn-primary" type="submit" id="login-submit" data-i18n="cta" data-od-id="login-submit">Accedi</button>
+      </form>
+
+      <p class="form-note" data-i18n="note">Accesso protetto tramite Single Sign-On della tua organizzazione.</p>
+    </div>
+
+    <!-- Pannello di successo (solo prototipo) -->
+    <div id="panel-success" hidden>
+      <div class="success">
+        <div class="success-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg></div>
+        <h2 data-i18n="ok-title">Autenticazione riuscita</h2>
+        <p data-i18n="ok-body">Accesso verificato per <strong>azienda</strong>. Stai per raggiungere il tuo assistente digitale.</p>
+        <div class="mono">assistente.localhost/oauth/openid/callback</div>
+        <p class="form-note">
+          <button type="button" class="btn-primary" id="reset-demo" data-od-id="login-reset-demo">Ripeti la demo di accesso</button>
+        </p>
+      </div>
+    </div>
+
+    <!-- Selettore lingua (i18n attiva) -->
+    <nav class="locales" data-od-id="login-locales" aria-label="Lingua">
+      <a href="#" data-lang="it" aria-current="true">Italiano</a>
+      <span class="sep">·</span>
+      <a href="#" data-lang="en">English</a>
+      <span class="sep">·</span>
+      <a href="#" data-lang="de">Deutsch</a>
+    </nav>
+
+    <div class="demo-hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+      Prototipo dimostrativo — nessuna credenziale viene inviata.
+    </div>
+  </section>
+
+  <script>
+    (function () {
+      var form = document.getElementById('login-form');
+      var errorBox = document.getElementById('login-error');
+      var userInput = document.getElementById('username');
+      var passInput = document.getElementById('password');
+      var submitBtn = document.getElementById('login-submit');
+      var panelLogin = document.getElementById('panel-login');
+      var panelSuccess = document.getElementById('panel-success');
+      var resetBtn = document.getElementById('reset-demo');
+      var pwToggle = document.getElementById('pw-toggle');
+
+      function flagInvalid() {
+        errorBox.hidden = false;
+        if (!userInput.value.trim()) userInput.setAttribute('aria-invalid', 'true');
+        if (!passInput.value) passInput.setAttribute('aria-invalid', 'true');
+      }
+      function clearInvalid() {
+        errorBox.hidden = true;
+        userInput.removeAttribute('aria-invalid');
+        passInput.removeAttribute('aria-invalid');
+      }
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        clearInvalid();
+        if (!userInput.value.trim() || !passInput.value) {
+          flagInvalid();
+          return;
+        }
+        submitBtn.disabled = true;
+        var original = submitBtn.textContent;
+        submitBtn.textContent = 'Accesso in corso…';
+        window.setTimeout(function () {
+          submitBtn.disabled = false;
+          submitBtn.textContent = original;
+          panelLogin.hidden = true;
+          panelSuccess.hidden = false;
+        }, 900);
+      });
+
+      userInput.addEventListener('input', clearInvalid);
+      passInput.addEventListener('input', clearInvalid);
+
+      pwToggle.addEventListener('click', function () {
+        var show = passInput.type === 'password';
+        passInput.type = show ? 'text' : 'password';
+        pwToggle.setAttribute('aria-pressed', String(show));
+        pwToggle.setAttribute('aria-label', show ? 'Nascondi la password' : 'Mostra la password');
+      });
+
+      resetBtn.addEventListener('click', function () {
+        successReset();
+      });
+
+      function successReset() {
+        panelSuccess.hidden = true;
+        panelLogin.hidden = false;
+        passInput.value = '';
+        passInput.type = 'password';
+        clearInvalid();
+      }
+
+      document.getElementById('login-forgot').addEventListener('click', function (e) { e.preventDefault(); });
+      document.querySelectorAll('.locales a').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+          e.preventDefault();
+          document.querySelectorAll('.locales a').forEach(function (l) {
+            l.toggleAttribute('aria-current', l === link);
+          });
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
