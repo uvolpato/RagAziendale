@@ -1,0 +1,14 @@
+{
+  "tipo": "prova",
+  "nome": "Prova (sintetico)",
+  "versione": "1.0.0",
+  "descrizione": "Connettore sintetico per i test: dati in memoria, non parla con nessun gestionale. Serve al kit di conformita' e ai test del motore, non alla produzione.",
+  "parametri": [],
+  "multi_azienda": false,
+  "entita": {
+    "soggetti": {"strategia": "completa", "tabelle": ["soggetti", "soggetti_ruoli"]},
+    "articoli": {"strategia": "incrementale", "tabelle": ["articoli"]},
+    "giacenze": {"strategia": "fotografia", "tabelle": ["giacenze_istantanee"]}
+  },
+  "letture_dirette": []
+}

@@ -1,7 +1,7 @@
 # Specifica interfacce — Portale e Amministrazione
 
 **Per:** design (prototipo navigabile)
-**Stato:** da prototipare — 18/09/2026 (rev. 2: soluzione mista, decisione 60)
+**Stato:** implementato — 18/09/2026 (rev. 3: un'interfaccia sola, decisione 68). Utenti, Gruppi e Profili (§7b) vanno aggiunti al prototipo
 **Contesto tecnico:** `PROGETTO-RAG-Aziendale.md` §15 e decisioni 55–60, `MODELLO-DATI-GESTIONALE.md`
 
 Questo documento descrive **cosa** deve mostrare e permettere ogni schermata,
@@ -29,7 +29,8 @@ si usa quello; si costruisce solo ciò che esiste unicamente in questo progetto.
 
 | Area | Con cosa | Nel prototipo |
 |---|---|---|
-| Utenti, gruppi, ruoli e profili di amministrazione, delega per azienda | **Keycloak** — console di amministrazione | **No**: solo collegamento (§5.1) |
+| Utenti, gruppi, profili di amministrazione | **nostro**, con le funzioni di Keycloak (API chiamate col token di chi lavora: le deleghe le applica Keycloak) | **Sì** — §7b (decisione 68) |
+| Configurazione avanzata di Keycloak | console di Keycloak, **solo Superutente** | **No**: solo collegamento |
 | Importazioni dai gestionali (esecuzioni, frequenze, avvio, storico, controlli di qualità) | **Dagster** | **No**: collegamento + riepilogo in Panoramica |
 | Stato dei sistemi e notifiche di servizio | **Uptime Kuma** | **No**: collegamento + riepilogo in Panoramica |
 | **Schermata di scelta** | nostro | **Sì** — §4 |
@@ -38,6 +39,7 @@ si usa quello; si costruisce solo ciò che esiste unicamente in questo progetto.
 | **Vedi come** | nostro | **Sì** — §8 |
 | **Anomalie** da tutti i sistemi | nostro | **Sì** — §9 |
 | **Registro modifiche** | nostro | **Sì** — §10 |
+| **Aziende** (e il loro gestionale) | nostro | **Sì** — §11b (decisione 69) |
 | **Aspetto** (palette, logo, testi) | nostro | **Sì** — §11 |
 
 Tutti gli strumenti usano **lo stesso login** (Keycloak): passando dalla nostra
@@ -164,8 +166,9 @@ L'interfaccia parla **di business**, non di tecnologia:
 - Una persona può avere **più profili e più ruoli**: i permessi si sommano.
 - Chi non ha nessun ruolo è un **operatore**: va dritto in chat.
 
-Ruoli e profili **si gestiscono in Keycloak** (non serve una schermata
-nostra): i ruoli sono ruoli composti, i profili sono gruppi.
+Ruoli e profili si gestiscono **nella nostra amministrazione** (§7b); sotto,
+sono ruoli del client `amministrazione` e gruppi di `/amministratori`. I ruoli
+si assegnano **solo tramite profili**, mai direttamente.
 
 ### 3.2 Ruoli
 
@@ -178,6 +181,7 @@ nostra): i ruoli sono ruoli composti, i profili sono gruppi.
 | `admin-sistemi` | Gestione sistemi | Monitoraggio dei sistemi, aspetto | Uptime Kuma, nostra amministrazione |
 | `admin-ruoli` | Gestione amministratori | Assegna ruoli e profili di amministrazione | Keycloak |
 | `admin-revisore` | Revisore | **Sola lettura su tutto**, compreso il registro modifiche. Per DPO e revisori | ovunque, in lettura |
+| `admin-super` | Superutente | **Tutto**, tutte le aziende: crea gruppi, compone i profili, assegna Superutente, apre la console di Keycloak | nostra amministrazione |
 
 **Regole trasversali:**
 - **Sola lettura di cortesia**: ogni amministratore vede **in sola lettura** le
@@ -217,8 +221,12 @@ Panoramica** (§6), già filtrato per le sue aziende.
 | Vedi come (§8) | M¹ | M¹ | — | — | — | M¹ | M¹ |
 | Anomalie (§9) | L² | L² | L² | M | L | — | L |
 | Registro modifiche (§10) | L³ | L³ | L³ | L³ | L³ | L | L |
+| Aziende (§11b) | — | — | — | — | — | — | L |
 | Aspetto (§11) | — | — | — | — | M | — | L |
-| ↗ Gestione utenti (Keycloak) | ↗ | — | — | — | — | ↗ | ↗ |
+| Utenti (§7b) | M | L | — | — | — | L⁵ | L |
+| Gruppi (§7b) | M⁶ | L | — | — | — | L | L |
+| Profili amministrativi (§7b) | — | — | — | — | — | M⁵ | L |
+| ↗ Configurazione avanzata (Keycloak) | — | — | — | — | — | — | — |
 | ↗ Gestione importazioni (Dagster) | — | — | ↗⁴ | — | — | — | ↗⁴ |
 | ↗ Monitoraggio sistemi (Uptime Kuma) | — | — | — | — | ↗⁴ | — | ↗⁴ |
 
@@ -228,6 +236,10 @@ consultazione viene registrata.
 e permessi).
 ³ Solo le modifiche della propria area.
 ⁴ Solo se abilitato a tutte le aziende (§3.3).
+⁵ Gestione amministratori assegna e toglie i profili dalla scheda della persona, ma non Superutente.
+⁶ I membri dei gruppi; creare, rinominare ed eliminare gruppi e comporre i profili spetta solo al Superutente.
+
+**Superutente** (`admin-super`): tutte le voci in modifica, tutte le aziende, compresa la console di Keycloak e **Aziende**.
 
 **Il prototipo deve permettere di cambiare ruolo** (selettore solo del
 prototipo) per vedere menu, collegamenti e sola lettura cambiare. Includere un
@@ -273,6 +285,10 @@ compare.
 
 ```
 Panoramica
+Accessi
+  Utenti
+  Gruppi
+  Profili amministrativi
 Dati
   Fonti
   Vedi come
@@ -280,9 +296,10 @@ Controllo
   Anomalie             (contatore delle aperte)
   Registro modifiche
 Impostazioni
+  Aziende
   Aspetto
 Strumenti                          ← collegamenti esterni, stesso login
-  Gestione utenti ↗                (Keycloak)
+  Configurazione avanzata ↗        (Keycloak, solo Superutente)
   Gestione importazioni ↗          (Dagster)
   Monitoraggio sistemi ↗           (Uptime Kuma)
 ```
@@ -439,6 +456,28 @@ Se in futuro servirà la **doppia approvazione** (chi propone ≠ chi approva),
 lo stato "In attesa di approvazione" è già previsto: il design lo consideri.
 
 ---
+
+## 7b. Accessi: Utenti, Gruppi, Profili (decisione 68)
+
+Stesso linguaggio visivo delle altre schermate. Ogni azione passa da Keycloak
+con i permessi di chi la fa: se Keycloak rifiuta, l'interfaccia lo dice
+("Keycloak non te lo consente"), non finge.
+
+**Utenti.** Elenco con ricerca e filtri (gruppo, stato, "con profili di
+amministrazione", "senza azienda"); colonne: persona ed email, utente, gruppi,
+aziende, profili, stato. Scheda: gruppi e aziende, profili (solo Gestione
+amministratori), nome ed email (se non dalla directory aziendale), reimposta
+password (**password temporanea mostrata una sola volta**, da cambiare al primo
+accesso), disattiva (motivo obbligatorio) / riattiva, Vedi come. Nuovo utente:
+nome utente, nome, cognome, email facoltativa, gruppi, almeno un'azienda.
+
+**Gruppi.** Elenco dei gruppi operativi con numero di persone e fonti che
+vedono. Dettaglio con i membri. Crea, rinomina (le fonti si aggiornano
+insieme), elimina (solo se vuoto e non usato da fonti): **solo Superutente**.
+
+**Profili amministrativi.** Matrice profili × ruoli (caselle; modificabile solo
+dal Superutente, in lettura per gli altri) e "chi ha quale profilo" per le
+revisioni periodiche degli accessi. Nuovo profilo: solo Superutente.
 
 ## 8. Vedi come
 
@@ -597,9 +636,32 @@ sono configurabili e **come** si derivano gli altri.
 
 ---
 
+## 11b. Aziende (decisione 69)
+
+**Chi:** Superutente (modifica), Revisore (lettura). Aggiungere o disattivare
+un'azienda cambia chi vede cosa in tutto il sistema.
+
+**Principio:** ogni azienda ha **il suo connettore** al gestionale di
+riferimento e importa tutto nel proprio spazio. Il pannello dice *quale*
+gestionale e *quale* codice azienda usare; **le credenziali non compaiono mai**:
+le configura chi installa il sistema.
+
+**Elenco:** azienda, codice, partita IVA, gestionale (o «Non collegata»),
+codice nel gestionale, persone abilitate, ultima importazione riuscita, stato.
+Segnalare in evidenza un'azienda senza il suo gruppo di abilitazione.
+
+**Nuova azienda:** codice (minuscole, cifre, trattini; **non si cambia più** —
+spiegarlo accanto al campo), ragione sociale, partita IVA, gestionale, codice
+nel gestionale (se il gestionale contiene più aziende), note. Crea anche il
+gruppo di abilitazione; dopo, le persone si abilitano dalla loro scheda in
+Utenti.
+
+**Scheda:** dati, modifica (tutto tranne il codice), **disattiva** con motivo
+obbligatorio (le importazioni si fermano, i dati restano) / riattiva. **Nessuna
+eliminazione.**
+
 ## 12. Fuori da questo prototipo
 
-- **Gestione utenti, gruppi, ruoli e profili**: Keycloak;
 - **gestione delle importazioni**: Dagster;
 - **monitoraggio dei sistemi e relative notifiche**: Uptime Kuma;
 - notifiche per le anomalie critiche (email / Teams): da decidere;
@@ -629,7 +691,7 @@ sono configurabili e **come** si derivano gli altri.
 5. **Dati di esempio realistici**, in italiano: aziende Luis S.r.l. e
    Decobrands; gruppi Vendite, Magazzino, Amministrazione, Direzione, Acquisti;
    una trentina di utenti; una ventina di fonti; le anomalie di §9.4.
-   Materiale pronto in `ESEMPI-FILE-DOCUMENTI.md` §1.
+   Materiale pronto in `documenti_test/ESEMPI-FILE-DOCUMENTI.md` §1.
 
 **Da non fare** (lezioni dal prototipo del login):
 - niente attributi di servizio dello strumento di design nell'HTML

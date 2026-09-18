@@ -90,16 +90,19 @@ def main():
         assert "/oauth/openid/callback" in callback, f"redirect inatteso: {callback}"
         print("ok")
 
-        passo(6, "callback: atterraggio su /c/new, non sulla radice")
+        passo(6, "callback: atterraggio sul portale, non sulla radice")
         # Caddy riscrive la Location del callback. Se atterrasse su /,
         # il redirect incondizionato sulla radice rimanderebbe a Keycloak,
         # che ha ormai la sessione, e la catena non terminerebbe mai.
+        # Dalla decisione 55 si atterra sul portale (/amministrazione/dopo-login),
+        # che manda l'operatore in /c/new e l'amministratore alla scelta:
+        # la catena completa e' verificata al passo 13.
         r = c.get(callback)
         assert r.status_code in (302, 303), f"atteso redirect, ottenuto {r.status_code}"
         dove = r.headers.get("location", "")
-        assert dove.rstrip("/").endswith("/c/new"), (
-            f"atterraggio su {dove!r} invece che su /c/new: con il redirect "
-            "incondizionato sulla radice questo produce un CICLO"
+        assert dove.rstrip("/").endswith("/amministrazione/dopo-login"), (
+            f"atterraggio su {dove!r} invece che sul portale: se fosse la radice, "
+            "con il redirect incondizionato su / sarebbe un CICLO"
         )
         print(f"ok (-> {dove})")
 

@@ -1,0 +1,31 @@
+{
+  "tipo": "integra",
+  "nome": "Integra",
+  "versione": "0.1.0",
+  "descrizione": "Gestionale Integra su PostgreSQL, letto dalle viste del portale B2B (b2b_*).",
+  "parametri": [
+    {"chiave": "host", "etichetta": "Server", "tipo": "testo", "obbligatorio": true,
+     "descrizione": "Indirizzo del server dove gira il gestionale (es. 192.168.1.41 o un nome di rete)."},
+    {"chiave": "porta", "etichetta": "Porta", "tipo": "numero", "predefinito": 5432,
+     "descrizione": "Porta di PostgreSQL del gestionale. Di solito 5432."},
+    {"chiave": "database", "etichetta": "Database", "tipo": "testo", "obbligatorio": true,
+     "descrizione": "Nome del database del gestionale sul server."},
+    {"chiave": "utente", "etichetta": "Utente (sola lettura)", "tipo": "testo", "obbligatorio": true,
+     "descrizione": "L'utente di sola lettura creato sul gestionale per l'assistente: puo' leggere, mai scrivere."},
+    {"chiave": "password", "etichetta": "Password", "tipo": "segreto", "obbligatorio": true,
+     "descrizione": "La password dell'utente di sola lettura. Viene cifrata e non e' mai mostrata di nuovo."},
+    {"chiave": "ssl", "etichetta": "Connessione cifrata", "tipo": "scelta",
+     "valori": ["richiesta", "preferita", "disattivata"], "predefinito": "preferita",
+     "descrizione": "Come cifrare la connessione al server. «Preferita» prova a cifrare e ripiega se il server non lo supporta."}
+  ],
+  "multi_azienda": true,
+  "entita": {
+    "soggetti":           {"strategia": "incrementale", "tabelle": ["soggetti", "soggetti_ruoli", "indirizzi"]},
+    "articoli":           {"strategia": "incrementale", "tabelle": ["articoli", "articoli_codici", "articoli_fornitori"]},
+    "listini":            {"strategia": "completa", "tabelle": ["listini", "listini_righe"]},
+    "codici":             {"strategia": "completa", "tabelle": ["codici"]},
+    "documenti_vendita":  {"strategia": "incrementale", "tabelle": ["documenti", "documenti_righe"]},
+    "giacenze":           {"strategia": "fotografia", "tabelle": ["giacenze_istantanee"]}
+  },
+  "letture_dirette": ["giacenza", "fido", "prezzo_netto"]
+}

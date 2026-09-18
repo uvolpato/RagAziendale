@@ -22,6 +22,11 @@
     { "name": "vendite",         "path": "/vendite" },
     { "name": "amministrazione", "path": "/amministrazione" },
     { "name": "direzione",       "path": "/direzione" },
+    { "name": "acquisti",        "path": "/acquisti" },
+    { "name": "azienda-luis",       "path": "/azienda-luis",
+      "attributes": { "descrizione": ["Abilita ai dati di Luis S.r.l. (asse azienda, decisione 53)"] } },
+    { "name": "azienda-decobrands", "path": "/azienda-decobrands",
+      "attributes": { "descrizione": ["Abilita ai dati di Decobrands (asse azienda, decisione 53)"] } },
     {
       "name": "amministratori",
       "path": "/amministratori",
@@ -33,8 +38,12 @@
         { "name": "Amministratore completo", "path": "/amministratori/Amministratore completo",
           "clientRoles": { "amministrazione": ["admin-accessi", "admin-fonti", "admin-importazioni",
                                                "admin-anomalie", "admin-sistemi", "admin-ruoli"] } },
+        { "name": "Gestione accessi",        "path": "/amministratori/Gestione accessi",
+          "clientRoles": { "amministrazione": ["admin-accessi"] } },
         { "name": "Revisore DPO",            "path": "/amministratori/Revisore DPO",
-          "clientRoles": { "amministrazione": ["admin-revisore"] } }
+          "clientRoles": { "amministrazione": ["admin-revisore"] } },
+        { "name": "Superutente",             "path": "/amministratori/Superutente",
+          "clientRoles": { "amministrazione": ["admin-super"] } }
       ]
     }
   ],
@@ -42,15 +51,15 @@
   "roles": {
     "client": {
       "amministrazione": [
-        { "name": "admin-accessi", "description": "Gestione accessi: utenti, gruppi operativi, aziende abilitate. Non assegna ruoli di amministrazione. Permessi dati dalle deleghe (keycloak/deleghe.py), NON da ruoli di realm-management, che le scavalcherebbero" },
-        { "name": "admin-fonti", "description": "Gestione fonti: chi vede cosa, aziende, uso di servizi esterni" },
-        { "name": "admin-importazioni", "description": "Gestione importazioni dai gestionali e dei documenti" },
-        { "name": "admin-anomalie", "description": "Gestione anomalie: presa in carico, assegnazione, risoluzione" },
-        { "name": "admin-sistemi", "description": "Gestione sistemi: monitoraggio, aspetto" },
-        { "name": "admin-ruoli", "description": "Gestione amministratori: assegna ruoli e profili di amministrazione",
-          "composite": true, "composites": { "client": { "realm-management": ["view-users", "manage-users", "query-users", "query-groups", "view-clients", "query-clients"] } } },
-        { "name": "admin-revisore", "description": "Revisore: sola lettura su tutto, compresi eventi e configurazione",
-          "composite": true, "composites": { "client": { "realm-management": ["view-users", "query-users", "query-groups", "view-events", "view-realm", "view-clients"] } } }
+        { "name": "admin-accessi", "description": "Gestione accessi: crea operatori, gruppi operativi, aziende abilitate, password degli operatori. Non tocca gli amministratori. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
+        { "name": "admin-fonti", "description": "Gestione fonti: chi vede cosa, aziende, uso di servizi esterni. Legge utenti e gruppi. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
+        { "name": "admin-importazioni", "description": "Gestione importazioni dai gestionali e dei documenti. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
+        { "name": "admin-anomalie", "description": "Gestione anomalie: presa in carico, assegnazione, risoluzione. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
+        { "name": "admin-sistemi", "description": "Gestione sistemi: monitoraggio, aspetto. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
+        { "name": "admin-ruoli", "description": "Gestione amministratori: assegna i profili di amministrazione, tranne Superutente. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
+        { "name": "admin-revisore", "description": "Revisore: sola lettura su tutto. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
+        { "name": "admin-super", "description": "Superutente: vede e modifica tutto, tutte le aziende, compresa la composizione dei profili. Unico ruolo con i ruoli classici di Keycloak (realm-admin). Si assegna solo da un altro Superutente o dall'amministratore tecnico.",
+          "composite": true, "composites": { "client": { "realm-management": ["realm-admin"] } } }
       ]
     }
   },
@@ -115,12 +124,125 @@
     {
       "clientId": "amministrazione",
       "name": "Amministrazione",
-      "description": "Possiede i ruoli admin-*. Diventera il client del portale di amministrazione",
+      "description": "Portale dopo il login e amministrazione. Possiede i ruoli admin-*. Pubblico con PKCE: il servizio non custodisce segreti (decisione 58)",
       "enabled": true,
       "protocol": "openid-connect",
-      "bearerOnly": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://${APP_HOST}/amministrazione/oidc/callback"],
+      "webOrigins": ["https://${APP_HOST}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://${APP_HOST}/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": { "claim.name": "groups", "full.path": "false",
+                      "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true" }
+        }
+      ]
+    },
+    {
+      "clientId": "dagster",
+      "name": "Dagster (UI importazioni)",
+      "description": "Accesso alla UI di Dagster via oauth2-proxy. Solo amministratori (gruppo /amministratori).",
+      "enabled": true,
+      "protocol": "openid-connect",
       "publicClient": false,
-      "standardFlowEnabled": false
+      "secret": "${OAUTH2_PROXY_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["https://dagster.localhost/oauth2/callback"],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "uptime",
+      "name": "Uptime Kuma (monitoraggio)",
+      "description": "Accesso al monitoraggio dei sistemi via oauth2-proxy. Solo amministratori.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${OAUTH2_PROXY_UPTIME_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["https://uptime.localhost/oauth2/callback"],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "litellm",
+      "name": "LiteLLM (modelli AI)",
+      "description": "Accesso alla UI di LiteLLM via oauth2-proxy. Solo amministratori.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${OAUTH2_PROXY_LITELLM_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["https://modelli.localhost/oauth2/callback"],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "litellm-sso",
+      "name": "LiteLLM SSO (UI)",
+      "description": "SSO della UI di LiteLLM: generic OIDC verso Keycloak.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${GENERIC_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["https://modelli.localhost/sso/callback"]
     },
     {
       "clientId": "test-token",
@@ -161,66 +283,91 @@
   "users": [
     {
       "username": "prova.magazzino",
-      "email": "prova.magazzino@esempio.local",
+      "email": "prova.magazzino@example.com",
       "firstName": "Prova",
       "lastName": "Magazzino",
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["default-roles-azienda"],
-      "groups": ["/tutti", "/magazzino"],
+      "groups": ["/tutti", "/magazzino", "/azienda-luis"],
       "credentials": [
         { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
       ]
     },
     {
       "username": "prova.vendite",
-      "email": "prova.vendite@esempio.local",
+      "email": "prova.vendite@example.com",
       "firstName": "Prova",
       "lastName": "Vendite",
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["default-roles-azienda"],
-      "groups": ["/tutti", "/vendite"],
+      "groups": ["/tutti", "/vendite", "/azienda-luis"],
       "credentials": [
         { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
       ]
     },
     {
       "username": "prova.direzione",
-      "email": "prova.direzione@esempio.local",
+      "email": "prova.direzione@example.com",
       "firstName": "Prova",
       "lastName": "Direzione",
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["default-roles-azienda"],
-      "groups": ["/tutti", "/vendite", "/amministrazione", "/direzione"],
+      "groups": ["/tutti", "/vendite", "/amministrazione", "/direzione", "/azienda-luis"],
       "credentials": [
         { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
       ]
     },
     {
       "username": "prova.admin",
-      "email": "prova.admin@esempio.local",
+      "email": "prova.admin@example.com",
       "firstName": "Prova",
       "lastName": "Amministratore",
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["default-roles-azienda"],
-      "groups": ["/tutti", "/amministratori/Amministratore completo"],
+      "groups": ["/tutti", "/amministratori/Amministratore completo", "/azienda-luis", "/azienda-decobrands"],
       "credentials": [
         { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
       ]
     },
     {
       "username": "prova.accessi",
-      "email": "prova.accessi@esempio.local",
+      "email": "prova.accessi@example.com",
       "firstName": "Prova",
       "lastName": "Accessi",
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["default-roles-azienda"],
-      "groups": ["/tutti"],
-      "clientRoles": { "amministrazione": ["admin-accessi"] },
+      "groups": ["/tutti", "/azienda-luis", "/amministratori/Gestione accessi"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    },
+    {
+      "username": "prova.revisore",
+      "email": "prova.revisore@example.com",
+      "firstName": "Prova",
+      "lastName": "Revisore",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti", "/amministratori/Revisore DPO", "/azienda-luis", "/azienda-decobrands"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    },
+    {
+      "username": "prova.super",
+      "email": "prova.super@example.com",
+      "firstName": "Prova",
+      "lastName": "Superutente",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti", "/amministratori/Superutente", "/azienda-luis", "/azienda-decobrands"],
       "credentials": [
         { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
       ]

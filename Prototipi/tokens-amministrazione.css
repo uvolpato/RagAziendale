@@ -96,9 +96,27 @@ html[data-palette="rossa"] {
 body { font-size: 14px; }
 
 /* ---------------------------------------------------------------------------
+   5b · Anteprima dal vivo (solo prototipo) — mostra chiaro e scuro insieme,
+        quindi non può usare i token del tema attivo. Nessun hex nei componenti.
+   --------------------------------------------------------------------------- */
+:root {
+  --prev-testo-chiaro:  #17181c;
+  --prev-testo-scuro:   #e9ecf1;
+  --prev-sfondo-chiaro: #f4f6f8;
+  --prev-sfondo-scuro:  #14161a;
+  --prev-sup-chiaro:    #ffffff;
+  --prev-sup-scuro:     #1c1f26;
+  --prev-campo-chiaro:  #eef0f3;
+  --prev-campo-scuro:   #2c313a;
+  --prev-bordo:         #e2e6eb;
+}
+
+/* ---------------------------------------------------------------------------
    6 · TEMA SCURO — stesso marchio, superfici e testi scuri (derivati)
    --------------------------------------------------------------------------- */
 html[data-tema="scuro"] {
+  --sfondo-pagina:     #14161a;
+  --superficie:        #1c1f26;
   --superficie-alt:    #252a33;
   --azione-tenue:      color-mix(in srgb, var(--marchio) 20%, transparent);
   --azione-soft:       color-mix(in srgb, var(--marchio) 12%, var(--superficie));
@@ -126,6 +144,8 @@ html[data-tema="scuro"] {
 /* Auto: il sistema decide, salvo override esplicito dal pannello prototipo */
 @media (prefers-color-scheme: dark) {
   html:not([data-tema]) {
+    --sfondo-pagina:     #14161a;
+    --superficie:        #1c1f26;
     --superficie-alt:    #252a33;
     --azione-tenue:      color-mix(in srgb, var(--marchio) 20%, transparent);
     --azione-soft:       color-mix(in srgb, var(--marchio) 12%, var(--superficie));

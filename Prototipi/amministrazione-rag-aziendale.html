@@ -1,0 +1,1206 @@
+<!doctype html>
+<html lang="it" data-palette="decobrands">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Amministrazione · Assistente aziendale</title>
+  <link rel="stylesheet" href="tokens-amministrazione.css" />
+  <style>
+    /* ============ base ============ */
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display:none !important; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { margin:0; background:var(--sfondo-pagina); color:var(--testo); font-family:var(--font-sans); line-height:1.45; }
+    a { color:inherit; text-decoration:none; }
+    button { font:inherit; cursor:pointer; color:inherit; }
+    select, input, textarea { font:inherit; color:inherit; }
+    .i { width:16px; height:16px; flex:none; vertical-align:-3px; }
+    .mono { font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+    :focus-visible { outline:2px solid var(--ring); outline-offset:1px; border-radius:4px; }
+
+    /* ============ shell ============ */
+    .app { display:grid; grid-template-rows:56px calc(100dvh - 56px); grid-template-columns:240px 1fr; }
+    .top { grid-column:1/-1; position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:16px; padding:0 20px; background:var(--superficie); border-bottom:1px solid var(--bordo); }
+    .top .brand { display:flex; align-items:center; gap:10px; font-weight:600; font-size:14.5px; min-width:0; }
+    .top .brand .i { width:20px; height:20px; color:var(--azione); }
+    .top .brand small { display:block; font-weight:400; color:var(--testo-debole); font-size:11px; line-height:1.1; }
+    .top .menu-btn { display:none; }
+    .azienda-box { display:flex; align-items:center; gap:8px; }
+    .azienda-box label { font-size:11.5px; color:var(--testo-debole); text-transform:uppercase; letter-spacing:.05em; }
+    .grow { flex:1; }
+    .person { position:relative; display:flex; align-items:center; gap:10px; padding:6px 8px; border-radius:var(--raggio); cursor:pointer; }
+    .person:hover { background:var(--superficie-alt); }
+    .person .avatar { width:30px; height:30px; border-radius:50%; background:var(--azione-soft); color:var(--azione); display:grid; place-items:center; font-weight:600; font-size:12.5px; }
+    .person .p-name { font-size:12.5px; font-weight:600; line-height:1.15; }
+    .person .p-role { font-size:11px; color:var(--testo-debole); line-height:1.15; }
+    .pmenu { position:absolute; right:0; top:calc(100% + 6px); width:230px; background:var(--superficie); border:1px solid var(--bordo); border-radius:var(--raggio-l); box-shadow:var(--ombra-alzata); padding:6px; z-index:60; }
+    .pmenu[hidden] { display:none; }
+    .pmenu button { display:flex; width:100%; align-items:center; gap:10px; padding:9px 10px; border:0; background:none; border-radius:var(--raggio); font-size:13px; text-align:left; }
+    .pmenu button:hover { background:var(--superficie-alt); }
+    .pmenu .sep { border-top:1px solid var(--bordo); margin:6px 4px; }
+
+    .side { display:flex; flex-direction:column; gap:2px; background:var(--superficie); border-right:1px solid var(--bordo); padding:10px 10px 24px; overflow:auto; }
+    .side .gl { font-family:var(--font-mono); text-transform:uppercase; font-size:10.5px; letter-spacing:.08em; color:var(--testo-debole); padding:16px 10px 6px; }
+    .side a { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:var(--raggio); color:var(--testo-tenue); font-size:13.5px; }
+    .side a:hover { background:var(--superficie-alt); color:var(--testo); }
+    .side a.active { background:var(--azione-soft); color:var(--azione); font-weight:500; }
+    .side a[data-ext] .prod { display:block; font-size:10.5px; color:var(--testo-debole); font-weight:400; }
+    .side a .cnt { margin-left:auto; font-size:11px; font-weight:600; padding:1px 8px; border-radius:var(--p); background:var(--stato-critico-sfondo); color:var(--stato-critico); }
+    .side a .cnt.zero { background:var(--stato-neutro-sfondo); color:var(--stato-neutro); }
+    .content { min-width:0; padding:24px 28px 72px; overflow:auto; }
+    .page-head { display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:20px; }
+    .page-title { font-size:20px; font-weight:600; letter-spacing:-.01em; margin:0; }
+    .page-sub { font-size:13px; color:var(--testo-tenue); margin:3px 0 0; max-width:72ch; }
+
+    /* ============ superfici ============ */
+    .card { background:var(--superficie); border:1px solid var(--bordo); border-radius:var(--raggio-l); box-shadow:var(--ombra); }
+    .pad-4 { padding:16px; } .pad-5 { padding:24px; }
+    .card + .card { margin-top:16px; }
+    .c-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-bottom:1px solid var(--bordo); }
+    .c-head h2 { font-size:14.5px; font-weight:600; margin:0; }
+    .c-head .h-intro { margin:0; font-size:12px; color:var(--testo-tenue); }
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; }
+    .kpi { padding:14px 16px; }
+    .kpi .k-t { display:flex; align-items:center; justify-content:space-between; color:var(--testo-tenue); font-size:12.5px; }
+    .kpi .k-n { font-family:var(--font-mono); font-size:24px; font-weight:600; margin-top:6px; }
+    .kpi .k-n small { font-size:13px; color:var(--testo-debole); font-weight:400; }
+    .kpi .k-l { font-size:12px; color:var(--testo-debole); margin-top:2px; }
+    .dot { width:9px; height:9px; border-radius:50%; flex:none; }
+
+    /* ============ tabella ============ */
+    .table-box { overflow:auto; border-top:1px solid var(--bordo); }
+    .tbl { width:100%; border-collapse:collapse; }
+    .tbl th { position:sticky; top:0; z-index:1; background:var(--superficie-alt); color:var(--testo-tenue); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; text-align:left; padding:10px 14px; white-space:nowrap; }
+    .tbl th.sortable { cursor:pointer; user-select:none; }
+    .tbl th.sortable:hover { color:var(--testo); }
+    .tbl td { padding:10px 14px; border-top:1px solid var(--bordo); vertical-align:middle; font-size:13px; }
+    .tbl tbody tr { cursor:pointer; }
+    .tbl tbody tr:hover { background:var(--superficie-alt); }
+    .tbl .prim { font-weight:600; }
+    .tbl .sub { display:block; font-size:11.5px; color:var(--testo-debole); }
+    .tbl .num-col { font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right; }
+    .empty-note { text-align:center; padding:12px 0; color:var(--testo-debole); font-size:12.5px; }
+
+    /* ============ badge / chip / residenza ============ */
+    .badge { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:var(--p); font-size:11.5px; font-weight:500; white-space:nowrap; }
+    .badge .i { width:12px; height:12px; }
+    .b-stato-critico { background:var(--stato-critico-sfondo); color:var(--stato-critico); }
+    .b-stato-errore { background:var(--stato-errore-sfondo); color:var(--stato-errore); }
+    .b-stato-attenzione { background:var(--stato-attenzione-sfondo); color:var(--stato-attenzione); }
+    .b-stato-ok { background:var(--stato-ok-sfondo); color:var(--stato-ok); }
+    .b-stato-info { background:var(--stato-info-sfondo); color:var(--stato-info); }
+    .b-stato-neutro { background:var(--stato-neutro-sfondo); color:var(--stato-neutro); }
+    .res { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:var(--p); font-size:11.5px; font-weight:500; white-space:nowrap; }
+    .res .i { width:12px; height:12px; }
+    .res-interno { background:var(--residenza-interno-sfondo); color:var(--residenza-interno); }
+    .res-cloud { background:var(--residenza-cloud-sfondo); color:var(--residenza-cloud); }
+    .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:var(--p); border:1px solid var(--bordo-insieme); background:var(--superficie); color:var(--testo-tenue); font-size:12px; }
+    .chip button { border:0; background:none; padding:0; display:grid; place-items:center; color:var(--testo-debole); width:14px; height:14px; }
+    .chip button:hover { color:var(--testo); }
+    .chipacloud { display:inline-flex; align-items:center; padding:1px 8px; border-radius:var(--p); border:1px solid var(--bordo-insieme); color:var(--testo-tenue); font-size:11px; background:var(--superficie); }
+
+    /* ============ bottoni / campi ============ */
+    .btn { display:inline-flex; align-items:center; gap:8px; padding:9px 14px; border-radius:var(--raggio); border:1px solid transparent; font-size:13.5px; font-weight:500; background:none; }
+    .btn .i { width:15px; height:15px; }
+    .btn-primary { background:var(--azione); color:var(--azione-testo); border-color:var(--azione); }
+    .btn-primary:hover:not(:disabled) { background:var(--azione-hover); border-color:var(--azione-hover); }
+    .btn-primary:active:not(:disabled) { background:var(--azione-pressa); }
+    .btn-secondary { background:var(--superficie); color:var(--testo); border-color:var(--bordo-insieme); }
+    .btn-secondary:hover:not(:disabled) { border-color:var(--testo-debole); }
+    .btn-ghost { color:var(--testo-tenue); }
+    .btn-ghost:hover:not(:disabled) { color:var(--testo); background:var(--superficie-alt); }
+    .btn-sm { padding:6px 10px; font-size:12.5px; }
+    .btn[disabled], input[disabled], select[disabled], textarea[disabled] { opacity:.55; cursor:not-allowed; }
+    .ico-btn { display:grid; place-items:center; width:32px; height:32px; border-radius:var(--raggio); border:1px solid transparent; background:none; color:var(--testo-tenue); }
+    .ico-btn:hover { background:var(--superficie-alt); color:var(--testo); }
+    .field { display:flex; flex-direction:column; gap:6px; }
+    .field label { font-size:12px; font-weight:600; color:var(--testo-tenue); }
+    .field .hint { font-size:11.5px; color:var(--testo-debole); }
+    .input, .select, .textarea { width:100%; padding:9px 12px; border:1px solid var(--bordo-insieme); border-radius:var(--raggio); background:var(--superficie); color:var(--testo); }
+    .input:focus, .select:focus, .textarea:focus { outline:none; border-color:var(--azione); box-shadow:0 0 0 3px var(--ring); }
+    .textarea { min-height:92px; resize:vertical; }
+    .search-box { position:relative; }
+    .search-box .i { position:absolute; left:11px; top:50%; translate:0 -50%; color:var(--testo-debole); }
+    .search-box .input { padding-left:34px; }
+    .ro-note { font-size:11.5px; color:var(--testo-debole); display:inline-flex; align-items:center; gap:5px; }
+    .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:end; padding:14px 18px; }
+    .filters .field { min-width:150px; }
+    .filters .search-box { flex:1; min-width:220px; }
+    .filters .field.grow { flex:1; }
+    .res-meta { font-size:12px; color:var(--testo-debole); padding:10px 18px 0; }
+    .active-filters { display:flex; gap:6px; flex-wrap:wrap; padding:10px 18px 0; }
+    .pager { display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:12px 18px; border-top:1px solid var(--bordo); font-size:12.5px; color:var(--testo-tenue); }
+
+    /* ============ semaforo / griglia import ============ */
+    .sem { display:flex; gap:18px; flex-wrap:wrap; }
+    .sem .s { display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--testo-tenue); }
+    .sem .s b { color:var(--testo); font-weight:600; }
+    .imp { display:grid; grid-template-columns:150px repeat(7,minmax(96px,1fr)); }
+    .imp .ih { position:sticky; top:0; background:var(--superficie-alt); font-weight:600; color:var(--testo-tenue); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; padding:9px 10px; white-space:nowrap; }
+    .imp .icell { padding:9px 10px; border-top:1px solid var(--bordo); font-size:12px; display:flex; flex-direction:column; gap:2px; min-height:48px; }
+    .imp .icell .t { font-weight:600; display:flex; align-items:center; gap:5px; }
+    .imp .icell .t .i { width:13px; height:13px; }
+    .imp .icell .s { color:var(--testo-debole); font-size:11px; }
+    .imp .t-ok { color:var(--stato-ok); } .imp .t-warn { color:var(--stato-attenzione); } .imp .t-err { color:var(--stato-errore); } .imp .t-na { color:var(--testo-debole); }
+
+    /* ============ notice / stati schermata ============ */
+    .notice { display:flex; align-items:flex-start; gap:9px; padding:11px 14px; border-radius:var(--raggio); font-size:12.5px; line-height:1.45; }
+    .notice .i { width:15px; height:15px; margin-top:1px; }
+    .notice-info { background:var(--stato-info-sfondo); color:var(--stato-info); }
+    .notice-warn { background:var(--stato-attenzione-sfondo); color:var(--stato-attenzione); }
+    .notice-crit { background:var(--stato-critico-sfondo); color:var(--stato-critico); }
+    .notice-ok { background:var(--stato-ok-sfondo); color:var(--stato-ok); }
+    .state-box { text-align:center; padding:56px 24px; color:var(--testo-tenue); }
+    .state-box .s-ico { width:42px; height:42px; margin:0 auto 14px; display:grid; place-items:center; border-radius:50%; background:var(--superficie-alt); }
+    .state-box .s-ico .i { width:22px; height:22px; }
+    .state-box h3 { margin:0 0 6px; font-size:15px; color:var(--testo); }
+    .state-box p { margin:0 0 16px; font-size:13px; max-width:52ch; margin-inline:auto; }
+    .sk { background:linear-gradient(100deg, transparent 20%, var(--bordo) 40%, transparent 60%); background-size:220% 100%; animation:sk 1.15s linear infinite; border-radius:6px; }
+    @keyframes sk { to { background-position:-220% 0; } }
+    .sk-row { display:flex; gap:14px; padding:14px 18px; border-top:1px solid var(--bordo); }
+    .sk-row .sk { height:12px; }
+
+    /* ============ drawer ============ */
+    .scrim { position:fixed; inset:0; background:var(--velato); z-index:75; opacity:0; pointer-events:none; transition:opacity .18s ease; }
+    body[data-drawer] .scrim { opacity:1; pointer-events:auto; }
+    .drawer { position:fixed; top:0; right:0; bottom:0; width:min(580px,100vw); background:var(--superficie); border-left:1px solid var(--bordo); box-shadow:var(--ombra-alzata); z-index:80; transform:translateX(100%); transition:transform .22s ease; display:flex; flex-direction:column; }
+    body[data-drawer] .drawer { transform:translateX(0); }
+    .drawer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 20px; border-bottom:1px solid var(--bordo); }
+    .drawer-head h2 { margin:0; font-size:16px; font-weight:600; }
+    .drawer-head .sub { font-size:12px; color:var(--testo-tenue); margin-top:2px; }
+    .drawer-body { flex:1; overflow:auto; padding:20px; }
+    .dl dt { font-size:11.5px; font-weight:600; color:var(--testo-debole); text-transform:uppercase; letter-spacing:.05em; margin:14px 0 5px; }
+    .dl dd { margin:0; font-size:13.5px; }
+    .dl dd + dt { margin-top:18px; }
+    .tabs { display:flex; gap:2px; border-bottom:1px solid var(--bordo); margin-bottom:16px; }
+    .tab { padding:9px 13px; font-size:13px; color:var(--testo-tenue); border:0; background:none; border-bottom:2px solid transparent; margin-bottom:-1px; }
+    .tab.active { color:var(--azione); font-weight:600; border-bottom-color:var(--azione); }
+    .storia { border-left:2px solid var(--bordo); margin:10px 0 0 6px; padding-left:16px; }
+    .storia li { list-style:none; position:relative; padding:0 0 14px; font-size:12.5px; color:var(--testo-tenue); }
+    .storia li::before { content:""; position:absolute; left:-21px; top:4px; width:8px; height:8px; border-radius:50%; background:var(--bordo-insieme); }
+    .storia li b { color:var(--testo); font-weight:600; }
+
+    /* ============ modal ============ */
+    .modal-wrap { position:fixed; inset:0; z-index:90; display:grid; place-items:center; background:var(--velato); padding:24px; }
+    .modal-wrap[hidden] { display:none; }
+    .modal { width:min(520px,100%); background:var(--superficie); border-radius:var(--raggio-l); box-shadow:var(--ombra-alzata); display:flex; flex-direction:column; max-height:92dvh; }
+    .modal-head { padding:16px 20px; border-bottom:1px solid var(--bordo); }
+    .modal-head h3 { margin:0; font-size:15.5px; font-weight:600; }
+    .modal-body { padding:20px; overflow:auto; }
+    .modal-foot { display:flex; justify-content:flex-end; gap:10px; padding:14px 20px; border-top:1px solid var(--bordo); }
+
+    /* ============ toast ============ */
+    .toast-wrap { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:95; display:flex; flex-direction:column; gap:8px; }
+    .toast { display:flex; align-items:center; gap:9px; background:var(--testo); color:var(--sfondo-pagina); padding:10px 16px; border-radius:var(--p); box-shadow:var(--ombra-alzata); font-size:13px; animation:tp .18s ease; }
+    .toast .i { width:15px; height:15px; }
+
+    /* ============ pannello prototipo ============ */
+    .proto { position:fixed; right:16px; bottom:16px; z-index:70; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+    .proto-tag { display:inline-flex; align-items:center; gap:7px; padding:8px 14px; border-radius:var(--p); border:1px solid var(--bordo-insieme); background:var(--superficie); box-shadow:var(--ombra-alzata); font-size:12px; font-weight:600; }
+    .proto-tag .i { width:13px; height:13px; color:var(--azione); }
+    .proto-box { width:276px; max-height:calc(100dvh - 140px); overflow:auto; padding:14px; background:var(--superficie); border:1px solid var(--bordo); border-radius:var(--raggio-l); box-shadow:var(--ombra-alzata); }
+    .proto-box[hidden] { display:none; }
+    .proto-box .p-h { display:flex; align-items:center; justify-content:space-between; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--testo-debole); margin-bottom:10px; }
+    .proto-box .p-opt { display:flex; align-items:center; gap:8px; font-size:12.5px; padding:4px 2px; }
+    .proto-box .p-opt input[type=radio] { accent-color:var(--azione); }
+    .proto-box .p-sec { font-size:11px; font-weight:600; color:var(--testo-debole); text-transform:uppercase; letter-spacing:.05em; margin:12px 0 4px; border-top:1px solid var(--bordo); padding-top:10px; }
+    .proto-box select { width:100%; padding:6px 8px; border:1px solid var(--bordo-insieme); border-radius:6px; background:var(--superficie); font-size:12.5px; }
+    .proto-note { font-size:11px; color:var(--testo-debole); margin-top:10px; border-top:1px solid var(--bordo); padding-top:8px; }
+
+    /* ============ scelta ============ */
+    .scelta { min-height:100dvh; display:grid; place-items:center; padding:24px; }
+    .scelta .inner { width:min(640px,100%); text-align:center; }
+    .scelta .logo { width:64px; height:64px; margin:0 auto 16px; border-radius:16px; background:var(--superficie); border:1px solid var(--bordo); color:var(--azione); display:grid; place-items:center; box-shadow:var(--ombra); }
+    .scelta .logo .i { width:30px; height:30px; }
+    .scelta h1 { font-size:22px; font-weight:600; margin:0 0 4px; }
+    .scelta .sub { color:var(--testo-tenue); font-size:13.5px; margin:0 0 24px; }
+    .cards { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .s-card { display:block; text-align:left; padding:20px; background:var(--superficie); border:1px solid var(--bordo); border-radius:var(--raggio-l); box-shadow:var(--ombra); }
+    .s-card:hover { border-color:var(--bordo-insieme); box-shadow:var(--ombra-alzata); }
+    .s-card .s-ic { width:40px; height:40px; border-radius:10px; background:var(--azione-soft); color:var(--azione); display:grid; place-items:center; margin-bottom:12px; }
+    .s-card .s-ic .i { width:20px; height:20px; }
+    .s-card h2 { margin:0 0 4px; font-size:16px; font-weight:600; }
+    .s-card p { margin:0; color:var(--testo-tenue); font-size:12.5px; }
+    .s-card .alert-flag { margin-top:12px; display:inline-flex; align-items:center; gap:7px; }
+    .scelta-foot { margin-top:20px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; font-size:12.5px; color:var(--testo-tenue); }
+    .check-row { display:inline-flex; align-items:center; gap:8px; font-size:12.5px; }
+    .check-row input { accent-color:var(--azione); }
+
+    /* ============ aspetto ============ */
+    .asp-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .asp-swatch { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border:1px solid var(--bordo); border-radius:var(--raggio); }
+    .asp-swatch label { font-size:12.5px; color:var(--testo-tenue); }
+    .asp-swatch input[type=color] { width:34px; height:30px; border:0; padding:0; background:none; }
+    .asp-swatch .hex { font-family:var(--font-mono); font-size:12px; color:var(--testo-tenue); min-width:74px; text-align:right; }
+    .preview-mini { border:1px solid var(--bordo); border-radius:var(--raggio-l); overflow:hidden; }
+    .preview-mini .pv-head { display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--superficie); border-bottom:1px solid var(--bordo); font-size:11.5px; color:var(--testo-tenue); }
+    .preview-mini .pv-body { padding:14px 12px; background:var(--sfondo-pagina); }
+    @media (max-width:900px){ .asp-grid { grid-template-columns:1fr; } }
+
+    /* ============ responsive ============ */
+    @media (max-width:900px){
+      .app { grid-template-columns:1fr; grid-template-rows:56px 1fr; }
+      .side { position:fixed; top:56px; bottom:0; left:0; z-index:60; width:min(280px,82vw); transform:translateX(-102%); transition:transform .2s ease; box-shadow:var(--ombra-alzata); }
+      body.side-open .side { transform:translateX(0); }
+      body.side-open .scrim { opacity:1; pointer-events:auto; }
+      .cards { grid-template-columns:1fr; }
+      .top .menu-btn { display:grid; }
+      .content { padding:16px; }
+      .imp { grid-template-columns:150px repeat(7,200px); }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l2.2 4.5L19 8.3l-3.4 3.3.8 4.7L12 14l-4.4 2.3.8-4.7L5 8.3l4.8-.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+      <symbol id="i-log" viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 14v5H5V5h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M20 20l-4.2-4.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-crit" viewBox="0 0 24 24"><path d="M12 3l9 5.5v7L12 21l-9-5.5v-7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 8v4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16" r=".3" fill="currentColor"/></symbol>
+      <symbol id="i-err" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 8v4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16" r=".3" fill="currentColor"/></symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9.5 16.5h-19z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 10v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.4" r=".3" fill="currentColor"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 11v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="7.8" r=".3" fill="currentColor"/></symbol>
+      <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 12.5l2.8 2.8L16.5 9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-neut" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8.5 12h7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 12l2.5 2.5 4.5-4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M6.5 18a4 4 0 0 1-.4-8A5.5 5.5 0 0 1 17 9.5a3.5 3.5 0 0 1 .5 7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+      <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 4h14v12l-4 4H5zM9 9h6M9 13h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="i-csv" viewBox="0 0 24 24"><path d="M12 15V5M7 9l5-4 5 4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="i-funnel" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v5l-4 2v-7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h12l3 3v13H5zM9 4v5h6V4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    </defs>
+  </svg>
+  <div class="scrim" id="scrim"></div>
+
+  <!-- ===================== SCELTA (§4) ===================== -->
+  <div class="scelta" id="view-scelta">
+    <div class="inner">
+      <div class="logo"><svg class="i"><use href="#i-spark"/></svg></div>
+      <h1>Buongiorno, Lucia</h1>
+      <p class="sub">Sei autenticato come amministratore. Dove vuoi andare?</p>
+      <div class="cards">
+        <a class="s-card" href="#/chat">
+          <div class="s-ic"><svg class="i"><use href="#i-chat"/></svg></div>
+          <h2>Chat</h2>
+          <p>Fai domande sui dati e sui documenti aziendali.</p>
+        </a>
+        <a class="s-card" href="#/panoramica" id="card-admin">
+          <div class="s-ic"><svg class="i"><use href="#i-sliders"/></svg></div>
+          <h2>Amministrazione</h2>
+          <p>Fonti, anomalie, accessi, importazioni.</p>
+          <span class="badge b-stato-critico alert-flag"><svg class="i"><use href="#i-crit"/></svg>2 critiche</span>
+        </a>
+      </div>
+      <div class="scelta-foot">
+        <label class="check-row"><input type="checkbox" checked /> Ricorda la mia scelta</label>
+        <a href="#/chat" class="btn btn-ghost btn-sm">Esci</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== CHAT (segnaposto) ===================== -->
+  <div class="scelta" id="view-chat" hidden>
+    <div class="inner">
+      <div class="logo"><svg class="i"><use href="#i-chat"/></svg></div>
+      <h1>La chat è attiva</h1>
+      <p class="sub">In questa demo si apre una pagina segnaposto: qui si raggiunge l'assistente su <span class="mono">assistente.localhost</span>.</p>
+      <div class="cards">
+        <a class="s-card" href="#/">
+          <div class="s-ic"><svg class="i"><use href="#i-spark"/></svg></div>
+          <h2>Torna alla scelta</h2>
+          <p>Schermata di scelta tra Chat e Amministrazione.</p>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== AMMINISTRAZIONE ===================== -->
+  <div class="app" id="view-app" hidden>
+    <header class="top">
+      <button class="ico-btn menu-btn" id="menu-btn" aria-label="Apri il menu di navigazione" aria-expanded="false"><svg class="i"><use href="#i-sliders"/></svg></button>
+      <a class="brand" href="#/panoramica">
+        <svg class="i"><use href="#i-spark"/></svg>
+        <span>Assistente aziendale<small>Amministrazione</small></span>
+      </a>
+      <div class="azienda-box">
+        <label for="azienda-sel">Azienda</label>
+        <select class="input azienda-sel" id="azienda-sel" style="width:auto"></select>
+      </div>
+      <div class="grow"></div>
+      <button class="btn btn-secondary btn-sm" id="vai-chat"><svg class="i"><use href="#i-chat"/></svg>Vai alla chat</button>
+      <div class="person" id="person" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false">
+        <div class="avatar">LB</div>
+        <div><div class="p-name">Lucia Bianchi</div><div class="p-role">Responsabile IT</div></div>
+        <svg class="i" style="width:12px;height:12px;color:var(--testo-debole)"><use href="#i-down"/></svg>
+      </div>
+      <div class="pmenu" id="pmenu" hidden>
+        <div style="padding:8px 10px 4px;font-size:11px;color:var(--testo-debole)">Ruoli: Responsabile IT · Gestione fonti · Gestione anomalie · Gestione sistemi</div>
+        <button id="cambia-iniziale"><svg class="i"><use href="#i-sliders"/></svg>Cambia schermata iniziale</button>
+        <button><svg class="i"><use href="#i-chev"/></svg>Consultare i ruoli</button>
+        <div class="sep"></div>
+        <button class="btn-ghost" id="esci"><svg class="i"><use href="#i-lock"/></svg>Esci</button>
+      </div>
+    </header>
+
+    <aside class="side" id="side">
+      <div class="gl">Generale</div>
+      <a href="#/panoramica" data-area="panoramica" data-role="pan:any"><svg class="i"><use href="#i-home"/></svg>Panoramica</a>
+
+      <div class="gl">Dati</div>
+      <a href="#/fonti" data-area="fonti" data-role="pan:fonti"><svg class="i"><use href="#i-folder"/></svg>Fonti</a>
+      <a href="#/vedi-come" data-area="vedi-come" data-role="pan:vedicome"><svg class="i"><use href="#i-eye"/></svg>Vedi come</a>
+
+      <div class="gl">Controllo</div>
+      <a href="#/anomalie" data-area="anomalie" data-role="pan:any"><svg class="i"><use href="#i-crit"/></svg>Anomalie<span class="cnt" id="cnt-anomalie"></span></a>
+      <a href="#/registro" data-area="registro" data-role="pan:any"><svg class="i"><use href="#i-log"/></svg>Registro modifiche</a>
+
+      <div class="gl">Impostazioni</div>
+      <a href="#/aspetto" data-area="aspetto" data-role="pan:aspetto"><svg class="i"><use href="#i-sliders"/></svg>Aspetto</a>
+
+      <div class="gl">Strumenti</div>
+      <a href="#/esterno/keycloak" data-area="esterno" data-tool="keycloak" data-ext="1" data-role="pan:strumenti"><svg class="i"><use href="#i-ext"/></svg>Gestione utenti<span class="prod">Keycloak</span></a>
+      <a href="#/esterno/dagster" data-area="esterno" data-tool="dagster" data-ext="1" data-role="pan:strumenti"><svg class="i"><use href="#i-ext"/></svg>Gestione importazioni<span class="prod">Dagster</span></a>
+      <a href="#/esterno/uptime" data-area="esterno" data-tool="uptime" data-ext="1" data-role="pan:strumenti"><svg class="i"><use href="#i-ext"/></svg>Monitoraggio sistemi<span class="prod">Uptime Kuma</span></a>
+    </aside>
+
+    <main class="content" id="content"></main>
+  </div>
+
+  <!-- ===================== DRAWER / MODAL / TOAST ===================== -->
+  <div class="drawer" id="drawer" aria-label="Pannello di dettaglio">
+    <div class="drawer-head"><div id="drawer-head"></div><button class="ico-btn" id="drawer-close" aria-label="Chiudi il pannello"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </div>
+  <div class="modal-wrap" id="modal-wrap" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head"><h3 id="modal-title"></h3></div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" id="modal-cancel">Annulla</button>
+        <button class="btn btn-primary" id="modal-ok">Conferma</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
+
+  <!-- ===================== PANNELLO SOLO PROTOTIPO ===================== -->
+  <div class="proto">
+    <div class="proto-box" id="proto-box" hidden>
+      <div class="p-h">Solo prototipo</div>
+      <div class="p-sec">Palette di marca (§2.1)</div>
+      <label class="p-opt"><input type="radio" name="pal" value="decobrands" checked /> Decobrands (blu)</label>
+      <label class="p-opt"><input type="radio" name="pal" value="verde" /> Verde</label>
+      <label class="p-opt"><input type="radio" name="pal" value="rossa" /> Rossa</label>
+      <div class="p-sec">Tema</div>
+      <label class="p-opt"><input type="radio" name="tema" value="" checked /> Auto</label>
+      <label class="p-opt"><input type="radio" name="tema" value="chiaro" /> Chiaro</label>
+      <label class="p-opt"><input type="radio" name="tema" value="scuro" /> Scuro</label>
+      <div class="p-sec">Ruolo (§3.4)</div>
+      <select id="proto-ruolo">
+        <option value="respit">Responsabile IT (tutti)</option>
+        <option value="anomalie">Gestione anomalie</option>
+        <option value="revisore">Revisore (sola lettura)</option>
+        <option value="luis">Responsabile IT — solo Luis</option>
+      </select>
+      <div class="p-sec">Stato schermata (§5.4)</div>
+      <select id="proto-stato">
+        <option value="normale">Normale</option>
+        <option value="vuoto">Vuoto</option>
+        <option value="errore">Errore</option>
+        <option value="caricamento">Caricamento</option>
+      </select>
+      <div class="proto-note">I comandi qui sopra sono solo per la demo: nell'interfaccia vera compaiono solo per l'amministrazione di sistema.</div>
+    </div>
+    <button class="proto-tag" id="proto-tag"><svg class="i"><use href="#i-sliders"/></svg>Prototipo</button>
+  </div>
+
+  <script>
+  /* ===================== stato della demo ===================== */
+  var S = {
+    pal: 'decobrands', tema: '', ruolo: 'respit', stato: 'normale',
+    azienda: '',           // '' tutte · 'Luis' · 'Decobrands'
+    screen: 'panoramica',   // pan/panoramica · fonti · vedi-come · anomalie · registro · aspetto
+    fontiSort: ['nome', false], anomSort: ['gravita', false]
+  };
+  var ROLE = {
+    respit:   { nome:'Lucia Bianchi', ini:'LB', label:'Responsabile IT', scope:'tutte',
+                menu:{ panoramica:'L', fonti:'M', vedicome:'M', anomalie:'M', registro:'M', aspetto:'M', strumenti:'M' } },
+    anomalie: { nome:'Paolo Verdi', ini:'PV', label:'Gestione anomalie', scope:'tutte',
+                menu:{ panoramica:'L', fonti:'L', vedicome:null, anomalie:'M', registro:'L', aspetto:null, strumenti:null } },
+    revisore: { nome:'Anna Greco', ini:'AG', label:'Revisore', scope:'tutte',
+                menu:{ panoramica:'L', fonti:'L', vedicome:'L', anomalie:'L', registro:'L', aspetto:'L', strumenti:'L' } },
+    luis:     { nome:'Lucia Bianchi', ini:'LB', label:'Responsabile IT · Luis', scope:'Luis',
+                menu:{ panoramica:'L', fonti:'M', vedicome:'M', anomalie:'M', registro:'M', aspetto:'M', strumenti:null } }
+  };
+  function can(area){ var m = ROLE[S.ruolo].menu[area]; return m === 'M'; }
+  function may(area){ return !!ROLE[S.ruolo].menu[area]; }
+  function menuKey(area){ return area==='vedi-come' ? 'vedicome' : area; }
+
+  /* ===================== dati di esempio (realistici) ===================== */
+  var AZIENDE = ['Luis', 'Decobrands'];
+  var GRUPPI = ['Vendite', 'Magazzino', 'Amministrazione', 'Direzione', 'Acquisti'];
+
+  var UTENTI = [
+    { n:'Mario Rossi', e:'m.rossi@luis.it', g:['Vendite'], a:'Luis', att:1 },
+    { n:'Lucia Bianchi', e:'l.bianchi@azienda.it', g:['Direzione'], a:'', att:1 },
+    { n:'Paolo Verdi', e:'p.verdi@luis.it', g:['Qualità dati'], a:'Luis', att:1 },
+    { n:'Giulia Neri', e:'g.neri@luis.it', g:['Vendite'], a:'Luis', att:1 },
+    { n:'Stefano Galli', e:'s.galli@decobrands.it', g:['Acquisti'], a:'Decobrands', att:1 },
+    { n:'Elena Costa', e:'e.costa@luis.it', g:['Amministrazione'], a:'Luis', att:1 },
+    { n:'Marco Fontana', e:'m.fontana@decobrands.it', g:['Vendite'], a:'Decobrands', att:1 },
+    { n:'Anna Greco', e:'a.greco@decobrands.it', g:['Direzione'], a:'Decobrands', att:1 },
+    { n:'Davide Ricci', e:'d.ricci@decobrands.it', g:['Magazzino'], a:'Decobrands', att:1 },
+    { n:'Sara Marino', e:'s.marino@decobrands.it', g:['Amministrazione'], a:'Decobrands', att:1 },
+    { n:'Luca Rinaldi', e:'l.rinaldi@luis.it', g:['Vendite'], a:'Luis', att:1 },
+    { n:'Chiara Moretti', e:'c.moretti@luis.it', g:['Direzione'], a:'', att:1 },
+    { n:'Andrea Conti', e:'a.conti@decobrands.it', g:['Acquisti'], a:'Decobrands', att:1 },
+    { n:'Francesca Leone', e:'f.leone@luis.it', g:['Amministrazione'], a:'Luis', att:1 },
+    { n:'Tommaso Sala', e:'t.sala@luis.it', g:['Vendite'], a:null, att:1 },
+    { n:'Ilaria Fontana', e:'i.fontana@luis.it', g:[], a:'Luis', att:1 },
+    { n:'Roberto Fabbri', e:'r.fabbri@decobrands.it', g:['Magazzino'], a:null, att:1 },
+    { n:'Cecilia Riva', e:'c.riva@luis.it', g:['Acquisti'], a:'Luis', att:1 },
+    { n:'Massimo Villa', e:'m.villa@decobrands.it', g:[], a:null, att:0 },
+    { n:'Federica Sala', e:'f.sala@luis.it', g:['Vendite'], a:'Luis', att:1 },
+    { n:'Giorgio Barone', e:'g.barone@luis.it', g:['Magazzino'], a:null, att:1 },
+    { n:'Silvia Longo', e:'s.longo@decobrands.it', g:['Vendite'], a:'Decobrands', att:1 },
+    { n:'Pietro Serra', e:'p.serra@luis.it', g:['Direzione'], a:'Luis', att:1 },
+    { n:'Marta Caruso', e:'m.caruso@decobrands.it', g:['Amministrazione'], a:'Decobrands', att:1 },
+    { n:'Enrico Russo', e:'e.russo@luis.it', g:['Vendite'], a:'Luis', att:1 },
+    { n:'Valentina Fiore', e:'v.fiore@luis.it', g:['Acquisti'], a:'Luis', att:1 },
+    { n:'Carlo Gentile', e:'c.gentile@decobrands.it', g:['Direzione'], a:'Decobrands', att:1 },
+    { n:'Paola Mancini', e:'p.mancini@luis.it', g:[], a:'Luis', att:1 },
+    { n:'Alberto Ferrari', e:'a.ferrari@decobrands.it', g:['Acquisti'], a:null, att:0 },
+    { n:'Lucia Pini', e:'l.pini@luis.it', g:['Vendite'], a:'Luis', att:1 }
+  ];
+
+  var FONTI = [
+    { id:'f1', nome:'Manuali tecnici', tipo:'Documenti', prov:'Cartella di rete  \\\\server\\tecnico\\manuali', gr:['Vendite','Direzione'], a:'Luis', res:'interno', resp:'Ufficio tecnico', cont:'1.240 documenti · 18.300 pagine', agg:'3 ore fa', st:'attiva' },
+    { id:'f2', nome:'Cataloghi fornitori', tipo:'Documenti', prov:'SharePoint «Ufficio tecnico»', gr:['Acquisti','Direzione'], a:'', res:'cloud', resp:'Ufficio tecnico', cont:'860 documenti · 9.420 pagine', agg:'5 ore fa', st:'attiva' },
+    { id:'f3', nome:'Listini di vendita', tipo:'Dati gestionali', prov:'Integra — Luis', gr:['Vendite'], a:'Luis', res:'interno', resp:'Vendite', cont:'21.770 righe', agg:'2 ore fa (in ritardo)', st:'attiva' },
+    { id:'f4', nome:'Listini di vendita — Decobrands', tipo:'Dati gestionali', prov:'Integra — Decobrands', gr:['Vendite'], a:'Decobrands', res:'interno', resp:'Vendite', cont:'12.340 righe', agg:'ieri', st:'attiva' },
+    { id:'f5', nome:'Procedure qualità', tipo:'Documenti', prov:'Cartella di rete  \\\\server\\qualita\\procedure', gr:['Direzione','Amministrazione'], a:'', res:'interno', resp:'Direzione', cont:'214 documenti · 3.060 pagine', agg:'1 giorno fa', st:'attiva' },
+    { id:'f6', nome:'Schede prodotto', tipo:'Documenti', prov:'Cartella collegata  \\\\server\\commerciale\\schede', gr:['Vendite','Acquisti'], a:'', res:'cloud', resp:'Vendite', cont:'3.410 documenti · 5.820 pagine', agg:'12 ore fa', st:'attiva' },
+    { id:'f7', nome:'Dati clienti', tipo:'Dati gestionali', prov:'Integra — Luis', gr:['Vendite','Direzione'], a:'Luis', res:'interno', resp:'Vendite', cont:'8.912 righe', agg:'12 min fa', st:'attiva' },
+    { id:'f8', nome:'Dati clienti — Decobrands', tipo:'Dati gestionali', prov:'Integra — Decobrands', gr:['Vendite','Direzione'], a:'Decobrands', res:'interno', resp:'Vendite', cont:'5.406 righe', agg:'12 min fa', st:'attiva' },
+    { id:'f9', nome:'Ordini — Luis', tipo:'Dati gestionali', prov:'Integra — Luis', gr:['Vendite'], a:'Luis', res:'interno', resp:'Vendite', cont:'46.120 righe', agg:'12 min fa', st:'attiva' },
+    { id:'f10', nome:'Documenti vendita — Luis', tipo:'Dati gestionali', prov:'Integra — Luis', gr:['Vendite','Amministrazione'], a:'Luis', res:'interno', resp:'Amministrazione', cont:'23.880 righe', agg:'2 ore fa', st:'attiva' },
+    { id:'f11', nome:'Documenti acquisto — Luis', tipo:'Dati gestionali', prov:'Integra — Luis', gr:['Acquisti'], a:'Luis', res:'interno', resp:'Acquisti', cont:'31.450 righe', agg:'2 ore fa', st:'attiva' },
+    { id:'f12', nome:'Scadenze — Luis', tipo:'Dati gestionali', prov:'Integra — Luis', gr:['Amministrazione'], a:'Luis', res:'interno', resp:'Amministrazione', cont:'6.210 righe', agg:'ieri', st:'attiva' },
+    { id:'f13', nome:'Giacenze — Luis', tipo:'Dati gestionali', prov:'Integra — Luis', gr:['Magazzino'], a:'Luis', res:'interno', resp:'Magazzino', cont:'9.875 righe', agg:'06:00', st:'attiva' },
+    { id:'f14', nome:'Verbali riunioni', tipo:'Documenti', prov:'Caricamento manuale', gr:['Direzione'], a:'', res:'interno', resp:'Direzione', cont:'96 documenti · 1.480 pagine', agg:'2 settimane fa', st:'attesa' },
+    { id:'f15', nome:'Contratti fornitori', tipo:'Documenti', prov:'SharePoint «Amministrazione»', gr:['Amministrazione','Direzione'], a:'', res:'cloud', resp:'Amministrazione', cont:'312 documenti · 4.120 pagine', agg:'1 settimana fa', st:'attiva' },
+    { id:'f16', nome:'Manuali prodotto storico', tipo:'Documenti', prov:'Cartella di rete  \\\\server\\archivio\\_storico', gr:[], a:'Luis', res:'interno', resp:'—', cont:'4.120 documenti', agg:'3 mesi fa', st:'sospesa' },
+    { id:'f17', nome:'Modulistica interna', tipo:'Documenti', prov:'Caricamento manuale', gr:['Amministrazione'], a:'', res:'interno', resp:'Amministrazione', cont:'148 documenti · 890 pagine', agg:'2 giorni fa', st:'attiva' },
+    { id:'f18', nome:'Comunicazioni commerciali', tipo:'Documenti', prov:'Cartella collegata  \\\\server\\commerciale\\comunicazioni', gr:['Vendite'], a:'', res:'cloud', resp:'Vendite', cont:'2.230 documenti · 3.750 pagine', agg:'4 ore fa', st:'attesa' }
+  ];
+
+  var ANOMALIE = [
+    { id:'a1', grav:'critico', tit:'Il servizio dei modelli di intelligenza artificiale non risponde', sist:'Sistemi', a:'', occ:1, prim:'2 min fa', ult:'5 min fa', st:'presa', as:ROLE.respit.nome, auto:0, storia:[{q:'oggi 09:12', chi:ROLE.respit.nome, t:'presa in carico'},{q:'oggi 09:00', chi:'sistema', t:'nuova occorrenza (×1)'}], che:'Le risposte della chat stanno per arrivare dagli altri modelli. Verifica la procedura del servizio prima di riavviarlo.' },
+    { id:'a2', grav:'critico', tit:'Righe clienti calate del 62% nell\'ultima importazione', sist:'Qualità dati', a:'Luis', occ:1, prim:'2 giorni fa', ult:'2 ore fa', st:'aperta', as:'—', auto:0, storia:[{q:'2 ore fa', chi:'sistema', t:'nuova occorrenza (×1)'}], che:'Le righe dei clienti sono calate del 62% rispetto all\'importazione precedente. Di solito indica un problema del collegamento, non clienti davvero cancellati.' },
+    { id:'a3', grav:'errore', tit:'Importazione listini fallita: gestionale non raggiungibile', sist:'Importazioni', a:'Luis', occ:12, prim:'3 giorni fa', ult:'5 min fa', st:'aperta', as:'—', auto:0, storia:[{q:'5 min fa', chi:'sistema', t:'nuova occorrenza (×12)'}], che:'Il gestionale non risponde alle ultime 12 letture. Con il collegamento a posto la prossima importazione riparte da sola.' },
+    { id:'a4', grav:'errore', tit:'3 PDF non leggibili nella fonte «Cataloghi fornitori»', sist:'Documenti', a:'Decobrands', occ:3, prim:'1 giorno fa', ult:'1 ora fa', st:'aperta', as:'—', auto:0, storia:[{q:'1 ora fa', chi:'sistema', t:'nuova occorrenza (×3)'}], che:'Tre documenti non possono essere letti (probabilmente scansioni senza testo). Controlla i file dalla fonte collegata.' },
+    { id:'a5', grav:'attenzione', tit:'14 clienti con partita IVA duplicata', sist:'Qualità dati', a:'Luis', occ:14, prim:'2 giorni fa', ult:'1 giorno fa', st:'presa', as:'Paolo Verdi', auto:0, storia:[{q:'1 giorno fa', chi:'Paolo Verdi', t:'presa in carico'},{q:'2 giorni fa', chi:'sistema', t:'nuova occorrenza (×14)'}], che:'Quattordici clienti risultano con la stessa partita IVA. Controlla prima di inviare comunicazioni per errore.' },
+    { id:'a6', grav:'attenzione', tit:'57 articoli con prezzo di listino a zero', sist:'Qualità dati', a:'Decobrands', occ:57, prim:'2 giorni fa', ult:'ieri', st:'aperta', as:'—', auto:0, storia:[{q:'ieri', chi:'sistema', t:'nuova occorrenza (×57)'}], che:'Gli articoli hanno un prezzo a zero: spesso manca l\'aggiornamento dal collegamento, non sono davvero gratis.' },
+    { id:'a7', grav:'attenzione', tit:'Nuova colonna nel gestionale non prevista: pro_liberon3', sist:'Importazioni', a:'Luis', occ:1, prim:'3 giorni fa', ult:'3 giorni fa', st:'risolta', as:'—', auto:1, storia:[{q:'3 giorni fa', chi:'sistema', t:'nuova occorrenza (×1)'},{q:'ieri', chi:'sistema', t:'risolta automaticamente'}], che:'Il gestionale ha aggiunto una colonna: la lettura è andata a buon fine dal prossimo passaggio.' },
+    { id:'a8', grav:'attenzione', tit:'23 accessi falliti in 10 minuti per l\'utente m.rossi', sist:'Accessi', a:'', occ:23, prim:'2 ore fa', ult:'2 ore fa', st:'aperta', as:'—', auto:0, storia:[{q:'2 ore fa', chi:'sistema', t:'nuova occorrenza (×23)'}], che:'Possibile tentativo di accesso o password dimenticata. Verifica l\'utente in Gestione utenti.' },
+    { id:'a9', grav:'attenzione', tit:'4 utenti senza azienda abilitata: non vedono nessun dato', sist:'Accessi', a:'Luis', occ:4, prim:'ieri', ult:'ieri', st:'aperta', as:'—', auto:0, storia:[{q:'ieri', chi:'sistema', t:'nuova occorrenza (×4)'}], che:'Queste persone sono attive ma non hanno aziende abilitate: probabilmente un errore di configurazione.' },
+    { id:'a10', grav:'attenzione', tit:'5 domande rifiutate: servizio interno non disponibile per dati riservati', sist:'Modelli AI', a:'', occ:5, prim:'3 ore fa', ult:'3 ore fa', st:'aperta', as:'—', auto:0, storia:[{q:'3 ore fa', chi:'sistema', t:'nuova occorrenza (×5)'}], che:'Le richieste su fonti «Resta in azienda» sono state rifiutate perché il servizio interno non risponde.' },
+    { id:'a11', grav:'info', tit:'Il modello per la ricerca è cambiato: indice da ricostruire', sist:'Modelli AI', a:'', occ:1, prim:'5 ore fa', ult:'5 ore fa', st:'risolta', as:ROLE.respit.nome, auto:0, storia:[{q:'5 ore fa', chi:ROLE.respit.nome, t:'risolta'},{q:'5 ore fa', chi:'sistema', t:'nuova occorrenza (×1)'}], che:'Aggiornato il modello di ricerca: l\'indice è stato ricostruito senza interventi.' }
+  ];
+
+  var SISTEMI = [
+    { n:'Gestionale Luis', st:'ok' }, { n:'Gestionale Decobrands', st:'ok' },
+    { n:'Servizio modelli AI', st:'critico', d:'Non risponde da 5 min' },
+    { n:'Connessione ai servizi esterni', st:'attenzione', d:'Degradata: latenza 1,8 s' },
+    { n:'Database', st:'ok' }, { n:'Cartelle collegate', st:'ok' }
+  ];
+
+  var IMPGRID = {
+    righe: ['Luis', 'Decobrands'],
+    tipi: ['Clienti','Articoli','Listini','Documenti vendita','Documenti acquisto','Scadenze','Giacenze'],
+    luis: { Clienti:['ok','12 min fa'], Articoli:['ok','12 min fa'], Listini:['warn','2 h fa (in ritardo)'], 'Documenti vendita':['err','fallita'], 'Documenti acquisto':['ok','12 min fa'], Scadenze:['na','—'], Giacenze:['ok','06:00'] },
+    decobrands: { Clienti:['ok','12 min fa'], Articoli:['ok','12 min fa'], Listini:['ok','ieri'], 'Documenti vendita':['ok','ieri'], 'Documenti acquisto':['ok','ieri'], Scadenze:['na','—'], Giacenze:['na','—'] }
+  };
+
+  var REGISTRO = [
+    { q:'18/09/2026 10:42', chi:'Lucia Bianchi', area:'Fonti', az:'Ha reso la fonte Listini di vendita utilizzabile da servizi esterni', og:'Listini di vendita', a:'Luis', motivo:'Nuovo accordo con il fornitore ANSEA: i listini possono essere inviati al servizio esterno.' },
+    { q:'18/09/2026 09:15', chi:'Lucia Bianchi', area:'Anomalie', az:'Ha preso in carico: Il servizio dei modelli AI non risponde', og:'—', a:'—', motivo:'—' },
+    { q:'18/09/2026 08:03', chi:'Elena Costa', area:'Vedi come', az:'Ha consultato le fonti visibili da Marco Fontana', og:'Marco Fontana', a:'—', motivo:'—' },
+    { q:'17/09/2026 17:40', chi:'Paolo Verdi', area:'Anomalie', az:'Ha risolto: 14 clienti con partita IVA duplicata', og:'—', a:'Luis', motivo:'Corretti i duplicati nel gestionale.' },
+    { q:'17/09/2026 16:22', chi:'Anna Greco', area:'Fonti', az:'Ha attivato la fonte Contratti fornitori', og:'Contratti fornitori', a:'', motivo:'—' },
+    { q:'17/09/2026 11:05', chi:'Lucia Bianchi', area:'Aspetto', az:'Ha aggiornato la palette di marca', og:'—', a:'—', motivo:'Allineamento al nuovo logo.' },
+    { q:'17/09/2026 09:30', chi:'Sara Marino', area:'Fonti', az:'Ha sospeso la fonte Manuali prodotto storico', og:'Manuali prodotto storico', a:'Luis', motivo:'Cartella in archiviazione: contenuti fuori produzione.' },
+    { q:'16/09/2026 18:12', chi:'Elena Costa', area:'Vedi come', az:'Ha consultato le fonti visibili da Lucia Bianchi', og:'Lucia Bianchi', a:'—', motivo:'—' }
+  ];
+
+  /* ===================== helper ===================== */
+  var $ = function(s){ return document.querySelector(s); };
+  var $$ = function(s){ return document.querySelectorAll(s); };
+  function ic(n){ return '<svg class="i"><use href="#i-'+n+'"/></svg>'; }
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function toast(msg){ var t=document.createElement('div'); t.className='toast'; t.innerHTML=ic('check')+'<span>'+esc(msg)+'</span>'; document.getElementById('toast-wrap').appendChild(t); setTimeout(function(){ t.style.opacity='0'; t.style.transition='opacity .3s'; setTimeout(function(){ t.remove(); },320); }, 2600); }
+  function badge(st){ var map={critico:['crit','Critica'], ererre:['err','Errore'], errore:['err','Errore'], attenzione:['warn','Avviso'], info:['info','Info'], ok:['ok','OK']}; var m=map[st]; if(!m) return ''; var cl=(st==='critico'?'b-stato-critico':st==='errore'?'b-stato-errore':st==='attenzione'?'b-stato-attenzione':st==='ok'?'b-stato-ok':'b-stato-info'); return '<span class="badge '+cl+'">'+ic(m[0])+esc(m[1])+'</span>'; }
+  function badgeStato(st){ // st: aperta/presa/risolta/ignorata
+    var map={aperta:['err','Aperta','b-stato-errore'],presa:['info','Presa in carico','b-stato-info'],risolta:['ok','Risolta','b-stato-ok'],ignorata:['neut','Ignorata','b-stato-neutro']};
+    var m=map[st]; return '<span class="badge '+m[2]+'">'+ic(m[0])+esc(m[1])+'</span>';
+  }
+  function fStato(s){ return {attiva:['ok','Attiva','b-stato-ok'],attesa:['warn','In attesa di approvazione','b-stato-attenzione'],sospesa:['neut','Sospesa','b-stato-neutro']}[s]||['neut',s,'b-stato-neutro']; }
+  function fBadge(f){ var x=fStato(f.st); return '<span class="badge '+x[2]+'">'+ic(x[0])+esc(x[1])+'</span>'; }
+  function resBadge(r){ return r==='cloud' ? '<span class="res res-cloud">'+ic('cloud')+'Può usare servizi esterni</span>' : '<span class="res res-interno">'+ic('shield')+'Resta in azienda</span>'; }
+  function chipA(l){ if(!l) return ''; return '<span class="chipacloud">'+esc(l)+'</span>'; }
+  function aziendeLabel(l){ return l===''?'Tutto il gruppo':esc(l); }
+  function inAzienda(a){ if(S.azienda==='') return true; if(a==='—') return false; if(a==='') return false; return a===S.azienda; }
+  function rigaAzienda(a){ return a===''?'Tutto il gruppo':esc(a); }
+
+  /* ===================== scelta ===================== */
+  function mostraScelta(){ show('#view-scelta', 1); show('#view-chat', 0); show('#view-app', 0); updateCard(); }
+  function updateCard(){
+    var aperte = ANOMALIE.filter(function(x){ return x.st==='aperta'||x.st==='presa'; });
+    var crit = aperte.filter(function(x){ return x.grav==='critico'; }).length;
+    var totale = aperte.length;
+    var el = document.getElementById('card-admin');
+    var f = el.querySelector('.alert-flag');
+    if(crit>0){ f.className='badge b-stato-critico alert-flag'; f.innerHTML=ic('crit')+'<span>'+crit+' critica'+(crit>1?'s':'')+'</span>'; }
+    else if(totale>0){ f.className='badge b-stato-attenzione alert-flag'; f.innerHTML=ic('warn')+'<span>'+totale+' aperte</span>'; }
+    else { f.className='badge b-stato-ok alert-flag'; f.innerHTML=ic('ok')+'<span>Tutto sotto controllo</span>'; }
+  }
+
+  /* ===================== shell ===================== */
+  function show(sel, on){ var el=$(sel); if(el) el.hidden = !on; }
+  function apriPannello(){ document.body.setAttribute('data-drawer','1'); var d=document.getElementById('drawer'); if(d) d.inert=false; var b=document.getElementById('drawer-close'); if(b) b.focus(); }
+  function nav(){
+    var a = document.getElementById('azienda-sel');
+    a.innerHTML = '';
+    if(ROLE[S.ruolo].scope!=='Luis'){
+      var o0=document.createElement('option'); o0.value=''; o0.textContent='Tutte le aziende'; a.appendChild(o0);
+      AZIENDE.forEach(function(x){ var o=document.createElement('option'); o.value=x; o.textContent=x+' S.r.l.'; a.appendChild(o); });
+      a.disabled=false; a.value=S.azienda;
+    } else {
+      var ol=document.createElement('option'); ol.value='Luis'; ol.textContent='Luis S.r.l.'; a.appendChild(ol);
+      a.disabled=true; a.value='Luis'; S.azienda='Luis';
+    }
+  }
+  function applyRole(){
+    var r=ROLE[S.ruolo];
+    nav();
+    $$('.side a[data-area]').forEach(function(a){ a.style.display = r.menu[menuKey(a.dataset.area)]? '' : 'none'; });
+    document.querySelector('.person .p-name').textContent = r.nome;
+    document.querySelector('.person .p-role').textContent = r.label;
+    document.querySelector('.person .avatar').textContent = r.ini;
+    document.getElementById('pmenu').querySelector('div').textContent = r.label;
+    cntAnomalie();
+    route(true);
+  }
+  function cntAnomalie(){
+    var aperte = ANOMALIE.filter(function(x){ return x.st==='aperta'||x.st==='presa'; });
+    var el = document.getElementById('cnt-anomalie');
+    el.textContent = aperte.length;
+    el.className = 'cnt' + (aperte.length? '' : ' zero');
+  }
+
+  /* ===================== stato schermata ===================== */
+  var STATE_TEXTS = {
+    panoramica:{v:'Nessun dato per l\'azienda selezionata.', e:'Il servizio non risponde.'},
+    fonti:{v:'Nessuna fonte registrata. Le fonti le aggiunge chi installa il sistema.', e:'Il servizio non risponde.'},
+    'vedi-come':{v:'Nessun utente trovato.', e:'Il servizio non risponde.'},
+    anomalie:{v:'Nessuna anomalia aperta.', e:'Il servizio non risponde.'},
+    registro:{v:'Nessuna modifica nel periodo selezionato.', e:'Il servizio non risponde.'},
+    aspetto:{v:'Nessuna impostazione da mostrare.', e:'Il servizio non risponde.'}
+  };
+  function applyState(){
+    var live=$('#content .live'); var host=$('#content .state-host');
+    if(!host){ host=document.createElement('div'); host.className='state-host'; $('#content').appendChild(host); }
+    var t=STATE_TEXTS[S.screen]||{};
+    if(S.stato==='normale'){ if(live) live.hidden=false; host.hidden=true; return; }
+    if(live) live.hidden=true; host.hidden=false;
+    if(S.stato==='caricamento'){
+      host.innerHTML='<div class="sk-row"><span class="sk" style="width:22%"></span><span class="sk" style="width:60%"></span></div>'+
+        '<div class="sk-row"><span class="sk" style="width:14%"></span><span class="sk" style="width:72%"></span></div>'+
+        '<div class="sk-row"><span class="sk" style="width:30%"></span><span class="sk" style="width:48%"></span></div>';
+    } else if(S.stato==='vuoto'){
+      host.innerHTML='<div class="state-box"><div class="s-ico">'+ic('info')+'</div><h3>Nessun dato</h3><p>'+esc(t.v||'')+'</p></div>';
+    } else {
+      host.innerHTML='<div class="state-box"><div class="s-ico" style="background:var(--stato-critico-sfondo);color:var(--stato-critico)">'+ic('crit')+'</div><h3>Qualcosa è andato storto</h3><p>'+esc(t.e||'')+' I dati mostrati si riferiscono alle 10:42 di oggi.</p><button class="btn btn-secondary btn-sm" onclick="toast(\'Riprova: il servizio risponde di nuovo.\');">Riprova</button></div>';
+      host.querySelector('button').addEventListener('click', function(){ S.stato='normale'; $('#proto-stato').value='normale'; applyState(); });
+    }
+  }
+
+  /* ===================== router ===================== */
+  function route(force){
+    var h = location.hash || '#/scelta';
+    var seg = h.replace('#/','').replace(/\/.*$/,'');
+    if(seg===''||seg==='scelta'){ S.screen='scelta'; show('#view-scelta',1); show('#view-chat',0); show('#view-app',0); document.title='Scelta · Assistente aziendale'; return; }
+    if(seg==='chat'){ S.screen='chat'; show('#view-scelta',0); show('#view-chat',1); show('#view-app',0); document.title='Chat · Assistente aziendale'; return; }
+    if(seg==='esterno'){
+      var tool = (h.split('#/esterno/')[1]||'').split('?')[0];
+      show('#view-scelta',0); show('#view-chat',0); show('#view-app',1);
+      var map={keycloak:'Gestione utenti',dagster:'Gestione importazioni',uptime:'Monitoraggio sistemi'};
+      renderEsterno(tool, map[tool]||'Strumento esterno');
+      return;
+    }
+    // schermate amministrazione
+    var map={panoramica:'panoramica',fonti:'fonti','vedi-come':'vedi-come',anomalie:'anomalie',registro:'registro',aspetto:'aspetto'};
+    if(!map[seg]){ seg='panoramica'; }
+    S.screen=seg;
+    show('#view-scelta',0); show('#view-chat',0); show('#view-app',1);
+    var el = document.querySelector('.side a[data-area="'+seg+'"]');
+    $$('.side a').forEach(function(a){ a.classList.toggle('active', a===el); });
+    var r=ROLE[S.ruolo];
+    if(el && !r.menu[menuKey(seg)]) seg='panoramica';
+    S.screen=map[seg]||'panoramica';
+    var t={panoramica:'Panoramica · Amministrazione',fonti:'Fonti','vedi-come':'Vedi come',anomalie:'Anomalie',registro:'Registro modifiche',aspetto:'Aspetto'}[S.screen];
+    document.title=t+' · Assistente aziendale';
+    renderScreen();
+  }
+  function renderEsterno(tool, nome){
+    var c=document.getElementById('content');
+    c.innerHTML='<div class="card pad-5" style="max-width:640px;margin:40px auto">'+
+      '<div class="row" style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><div class="s-ic" style="width:40px;height:40px;border-radius:10px;background:var(--azione-soft);color:var(--azione);display:grid;place-items:center">'+ic('ext')+'</div><h1 class="page-title" style="font-size:18px;margin:0">'+esc(nome)+' <span style="font-weight:400;color:var(--testo-debole)">— luogo esterno</span></h1></div>'+
+      '<p class="page-sub">Questa è una pagina segnaposto del prototipo: nell\'installazione vera questo collegamento apre <b>'+esc(nome)+'</b> in una nuova scheda, con lo stesso accesso (Keycloak) e senza reinserire le credenziali.</p>'+
+      '<p style="font-size:13px;color:var(--testo-tenue);margin-top:12px">'+ic('ext')+' Il collegamento si riconosce dall\'icona di uscita: lo strumento esterno ha il suo aspetto, la nostra amministrazione resta aperta qui.</p>'+
+      '<div style="margin-top:20px"><a class="btn btn-primary" href="#/panoramica">'+ic('chev')+'Torna all\'amministrazione</a></div></div>';
+    applyState(); setActiveNav('esterno');
+  }
+  function setActiveNav(nome){
+    $$('.side a').forEach(function(a){ a.classList.toggle('active', a.dataset.area===nome); });
+  }
+
+  /* ===================== PANORAMICA ===================== */
+  function kpiOpen(){
+    var aperte=ANOMALIE.filter(function(x){return x.st==='aperta'||x.st==='presa';});
+    return {crit:aperte.filter(function(x){return x.grav==='critico';}).length,
+            err:aperte.filter(function(x){return x.grav==='errore';}).length,
+            aw:aperte.filter(function(x){return x.grav==='attenzione';}).length,
+            info:aperte.filter(function(x){return x.grav==='info';}).length};
+  }
+  function renderPanoramica(){
+    var k=kpiOpen();
+    var blocchi='';
+    function block(showIt, title, intro, body){ return showIt ? '<div class="card"><div class="c-head"><div><h2>'+title+'</h2>'+(intro?'<p class="h-intro">'+intro+'</p>':'')+'</div></div>'+body+'</div>' : ''; }
+    var approv=FONTI.filter(function(f){return f.st==='attesa';}).length;
+    var senzaResp=FONTI.filter(function(f){return f.resp==='—';}).length;
+    var noAzi=UTENTI.filter(function(u){return u.a===null && u.att;}).length;
+
+    var anomalie = block(true,'Anomalie aperte','Aperte e prese in carico, le più gravi prima.',
+      '<div class="table-box"><table class="tbl"><thead><tr><th>Gravità</th><th>Titolo</th><th>Azienda</th><th class="num-col">Occ.</th><th class="num-col">Ultima</th></tr></thead><tbody id="pan-anom"></tbody></table></div>'+
+      '<div style="padding:12px 18px;border-top:1px solid var(--bordo)"><a class="btn btn-ghost btn-sm" href="#/anomalie">Vedi tutte le anomalie</a></div>');
+
+    var importa = block(true, 'Importazioni','Esito dell\'ultima esecuzione per azienda e tipo di dato.',
+      '<div style="overflow:auto" class="imp-box"></div><div style="padding:12px 18px;border-top:1px solid var(--bordo);font-size:12.5px;color:var(--testo-debole)">'+
+      (may('strumenti')? 'Collegamento all\'esecuzione: <a class="btn btn-ghost btn-sm" href="#/esterno/dagster">'+ic('ext')+'Gestione importazioni</a>' : 'Stato importazioni disponibile qui: riguarda un\'azienda del gruppo.')+'</div>');
+
+    var sistemi = block(ROLE[S.ruolo].menu.aspetto || ROLE[S.ruolo].menu.anomalie, 'Stato dei sistemi','Sistemi non verdi e semaforo complessivo.',
+      '<div style="padding:14px 18px" class="sem" id="pan-semi"></div><div style="padding:0 18px 14px" id="pan-sist"></div>'+
+      (may('strumenti')?'<div style="padding:0 18px 12px;border-top:1px solid var(--bordo)"><a class="btn btn-ghost btn-sm" href="#/esterno/uptime">'+ic('ext')+'Monitoraggio sistemi</a></div>':''));
+
+    var fonti = block(may('fonti'), 'Fonti','Da tenere d\'occhio.',
+      '<div class="table-box"><table class="tbl"><tbody id="pan-fonti"></tbody></table></div>');
+    var accessi = block(ROLE[S.ruolo].menu.fonti!==null && (may('aspetto')||may('anomalie')), 'Accessi','Persone da verificare.',
+      '<div class="table-box"><table class="tbl"><tbody id="pan-acc"></tbody></table></div><div style="padding:12px 18px;border-top:1px solid var(--bordo)">'+(may('strumenti')?'<a class="btn btn-ghost btn-sm" href="#/esterno/keycloak">'+ic('ext')+'Gestione utenti</a>':'<span class="ro-note">'+ic('lock')+'Richiede il ruolo Gestione accessi</span>')+'</div>');
+    var mod = block(true,'Ultime modifiche','Le cinque più recenti dal registro.',
+      '<div class="table-box"><table class="tbl"><thead><tr><th>Quando</th><th>Chi</th><th>Area</th><th>Azione</th></tr></thead><tbody id="pan-mod"></tbody></table></div>');
+    blocchi = anomalie+importa+sistemi+fonti+accessi+mod;
+
+    document.getElementById('content').innerHTML =
+      '<div class="live">'+
+      '<div class="page-head"><div><h1 class="page-title">Panoramica</h1><p class="page-sub">In dieci secondi: va tutto bene? Se no, dove guardo? Visti per azienda '+esc(S.azienda===''?'tutte le aziende':'solo '+S.azienda)+'.</p></div></div>'+
+      '<div class="kpi-grid card"><div class="kpi pad-4"><div class="k-t">Anomalie aperte <span class="dot" style="background:var(--stato-critico)"></span></div><div class="k-n">'+k.crit+'<small> critiche</small></div><div class="k-l">'+k.err+' errori · '+k.aw+' avvisi · '+k.info+' informative</div></div>'+
+      '<div class="kpi pad-4"><div class="k-t">Nuove nelle ultime 24 h <span class="dot" style="background:var(--stato-attenzione)"></span></div><div class="k-n">'+ANOMALIE.filter(function(x){return x.prim.indexOf('2 min')>-1||x.ult.indexOf('5 min')>-1||x.ult.indexOf('2 ore')>-1;}).length+'</div><div class="k-l">Occorrenze conteggiate per problema, non per evento</div></div>'+
+      '<div class="kpi pad-4"><div class="k-t">Sistemi <span class="dot" style="background:var(--stato-info)"></span></div><div class="k-n">'+SISTEMI.filter(function(s){return s.st!=='ok';}).length+'<small> non verdi</small></div><div class="k-l">6 sistemi monitorati</div></div></div>'+
+      '<div style="height:16px"></div>'+blocchi+'</div>';
+    // popolare blocchi
+    var aperte=ANOMALIE.filter(function(x){return x.st==='aperta'||x.st==='presa';}).sort(function(a,b){return rank(a.grav)-rank(b.grav);}).slice(0,3);
+    document.getElementById('pan-anom').innerHTML = aperte.map(function(x){ return '<tr onclick="openAnomalia(\''+x.id+'\')"><td>'+badge(x.grav)+'</td><td class="prim">'+esc(x.tit)+'</td><td>'+chipA(rigaAzienda(x.a))+'</td><td class="num-col">'+x.occ+'</td><td class="num-col" style="color:var(--testo-tenue)">'+x.ult+'</td></tr>'; }).join('')||'<tr><td colspan="5" class="empty-note">Nessuna anomalia aperta.</td></tr>';
+    // griglia importazioni
+    var imp=document.querySelector('.imp-box');
+    imp.innerHTML = '<div class="imp"><div class="ih">Azienda</div>'+IMPGRID.tipi.map(function(t){return '<div class="ih">'+t+'</div>';}).join('')+
+      IMPGRID.righe.map(function(r){
+        var riga=IMPGRID[r.toLowerCase()];
+        return '<div class="ih" style="font-weight:400;text-transform:none">'+r+' S.r.l.</div>'+IMPGRID.tipi.map(function(t){
+          var v=riga[t], cl=v[0], icn='ok', col='t-ok'; var txt='✔'; if(cl==='warn'){icn='warn';col='t-warn';txt='⚠';} if(cl==='err'){icn='err';col='t-err';txt='✖';} if(cl==='na'){icn='neut';col='t-na';txt='—';}
+          return '<div class="icell"><div class="t '+col+'">'+ic(icn)+esc(v[1])+'</div><div class="s">'+(((cl==='na')?'Non disponibile':col==='t-err'&&r==='Luis'?'Fallita':'Ultima: '+v[1]))+'</div></div>';
+        }).join('');
+      }).join('')+'</div>';
+    // semaforo sistemi
+    document.getElementById('pan-semi').innerHTML = SISTEMI.map(function(s){
+      var c={ok:['var(--stato-ok)','var(--stato-ok-sfondo)'],attenzione:['var(--stato-attenzione)','var(--stato-attenzione-sfondo)'],critico:['var(--stato-critico)','var(--stato-critico-sfondo)'],info:['var(--stato-info)','var(--stato-info-sfondo)']}[s.st];
+      return '<span class="s"><span class="dot" style="background:'+c[0]+';border:2px solid '+c[1]+'"></span><b>'+esc(s.n)+'</b></span>';
+    }).join('');
+    var nonVer=SISTEMI.filter(function(s){return s.st!=='ok';});
+    document.getElementById('pan-sist').innerHTML = '<div class="notice notice-'+ (nonVer.some(function(s){return s.st==='critico';})?'crit':'warn') +'" style="margin-top:10px">'+(nonVer.some(function(s){return s.st==='critico';})?ic('crit'):ic('warn'))+'<span><b>'+nonVer.length+' sistemi non verdi.</b>&nbsp; '+nonVer.map(function(s){return s.n+(s.d?' — '+s.d:'');}).join(' · ')+'</span></div>';
+    var acc=FONTI.filter(function(f){return f.st==='attesa'||f.resp==='—';});
+    document.getElementById('pan-fonti').innerHTML = acc.map(function(f){ return '<tr onclick="openFonti(\''+f.id+'\')"><td class="prim" style="font-size:13px">'+esc(f.nome)+'</td><td>'+fBadge(f)+'</td><td>'+chipA(rigaAzienda(f.a))+'</td><td style="color:var(--testo-debole)">'+(f.resp==='—'?'Senza responsabile':f.st==='attesa'?'In attesa di approvazione':'')+'</td></tr>'; }).join('');
+    document.getElementById('pan-acc').innerHTML = UTENTI.filter(function(u){return u.a===null && u.att;}).map(function(u){ return '<tr><td class="prim">'+esc(u.n)+'</td><td style="color:var(--testo-debole)">Non vede nessun dato</td></tr>'; }).join('');
+    document.getElementById('pan-mod').innerHTML = REGISTRO.slice(0,5).map(function(r){ return '<tr onclick="openRegistro()"><td class="mono" style="color:var(--testo-tenue)">'+r.q.substring(0,10)+'</td><td>'+esc(r.chi)+'</td><td>'+esc(r.area)+'</td><td>'+esc(r.az)+'</td></tr>'; }).join('');
+    applyState();
+  }
+
+  /* ===================== FONTI ===================== */
+  var FILT = { q:'', tipo:'', azienda:'', res:'', st:'', senzaResp:false, page:1, PER:12 };
+  function filtriAttivi(){ var out=[]; if(FILT.tipo) out.push(['tipo',FILT.tipo]); if(FILT.azienda) out.push(['azienda',FILT.azienda]); if(FILT.res) out.push(['res',FILT.res==='interno'?'Resta in azienda':'Può usare servizi esterni']); if(FILT.st) out.push(['st',FILT.st]); if(FILT.senzaResp) out.push(['resp','senza responsabile']); return out; }
+  function fontiFiltrate(){
+    var arr=FONTI.filter(function(f){
+      if(FILT.q){ var q=FILT.q.toLowerCase(); if((f.nome+' '+f.prov).toLowerCase().indexOf(q)<0) return false; }
+      if(FILT.tipo && f.tipo!==FILT.tipo) return false;
+      if(FILT.azienda){ if(f.a==='' ? FILT.azienda!=='Gruppo' : f.a!==FILT.azienda) return false; }
+      if(FILT.res && f.res!==FILT.res) return false;
+      if(FILT.st && f.st!==FILT.st) return false;
+      if(FILT.senzaResp && f.resp!=='—') return false;
+      if(!inAzienda(f.a)) return false;
+      return true;
+    });
+    if(S.fontiSort){ var k=S.fontiSort[0], asc=S.fontiSort[1]; arr=arr.slice().sort(function(a,b){ var av=(a[k]==null?'':a[k]), bv=(b[k]==null?'':b[k]); return aziendeL(a[k]),(asc? (av<bv?-1:av>bv?1:0) : (av>bv?-1:av<bv?1:0)); }); }
+    return arr;
+  }
+  function aziendeL(){ return ''; }
+  function renderFonti(){
+    var arr=fontiFiltrate();
+    var tot=arr.length; var pages=Math.max(1,Math.ceil(tot/FILT.PER)); if(FILT.page>pages) FILT.page=pages;
+    var slice=arr.slice((FILT.page-1)*FILT.PER, FILT.page*FILT.PER);
+    var c=document.getElementById('content');
+    var readOnly = !can('fonti');
+    c.innerHTML='<div class="live"><div class="page-head"><div><h1 class="page-title">Fonti</h1><p class="page-sub">Le raccolte di documenti e dati gestionali che l\'assistente può usare, con chi le vede e la residenza dei dati.</p></div>'+
+      (readOnly?'<span class="ro-note">'+ic('lock')+'Sola lettura — richiede il ruolo Gestione fonti</span>':'')+'</div>'+
+      '<div class="card"><div class="filters">'+
+      '<div class="field search-box grow"><svg class="i" style="position:absolute;left:11px;top:50%;translate:0 -50%;color:var(--testo-debole)"><use href="#i-search"/></svg><input class="input" id="f-q" placeholder="Cerca nome, percorso, cartella…" style="padding-left:34px" value="'+esc(FILT.q)+'"></div>'+
+      '<div class="field"><select class="select" id="f-tipo"><option value="">Tipo: tutti</option><option>Documenti</option><option>Dati gestionali</option></select></div>'+
+      '<div class="field"><select class="select" id="f-e"><option value="">Azienda: tutte</option><option value="Luis">Luis</option><option value="Decobrands">Decobrands</option><option value="Gruppo">Gruppo</option></select></div>'+
+      '<div class="field"><select class="select" id="f-res"><option value="">Uso servizi esterni: tutti</option><option value="interno">Resta in azienda</option><option value="cloud">Può usare servizi esterni</option></select></div>'+
+      '<div class="field"><select class="select" id="f-stato"><option value="">Stato: tutti</option><option value="attiva">Attiva</option><option value="attesa">In attesa di approvazione</option><option value="sospesa">Sospesa</option></select></div>'+
+      '<div class="field"><label class="check-row" style="font-weight:400"><input type="checkbox" id="f-sr" '+(FILT.senzaResp?'checked':'')+'/> Solo senza responsabile</label></div>'+
+      '</div><div class="active-filters" id="f-chips"></div><div class="res-meta">'+tot+' fonti</div>'+
+      '<div class="table-box"><table class="tbl"><thead><tr>'+
+      '<th class="sortable" data-k="nome" tabindex="0" role="button" aria-sort="'+(S.fontiSort[0]==='nome'?(S.fontiSort[1]?'descending':'ascending'):'none')+'">Nome '+(S.fontiSort[0]==='nome'?(S.fontiSort[1]?'▲':'▼'):'')+'</th><th>Tipo</th><th>Provenienza</th><th>Chi può vederla</th><th>Aziende</th><th>Uso di servizi esterni</th><th>Aggiornata</th><th>Stato</th></tr></thead><tbody id="f-body"></tbody></table>'+
+      (tot? '' : '<div class="empty-note">Nessuna fonte corrisponde ai filtri.</div>')+'</div>'+
+      '<div class="pager"><span>'+((tot?((FILT.page-1)*FILT.PER+1):0)+'–'+Math.min(FILT.page*FILT.PER,tot)+' di '+tot)+'</span><button class="btn btn-secondary btn-sm" id="f-prev" '+(FILT.page<=1?'disabled':'')+'>Precedente</button><button class="btn btn-secondary btn-sm" id="f-next" '+(FILT.page>=pages?'disabled':'')+'>Successiva</button></div>'+
+      '</div></div>';
+    document.getElementById('f-body').innerHTML = slice.map(function(f){
+      return '<tr onclick="openFonti(\''+f.id+'\')"><td class="prim">'+esc(f.nome)+'</td><td>'+esc(f.tipo)+'</td><td style="color:var(--testo-tenue)">'+esc(f.prov)+'</td><td>'+f.gr.map(esc).join(', ')+'</td><td>'+chipA(rigaAzienda(f.a))+'</td><td>'+resBadge(f.res)+'</td><td>'+esc(f.agg)+'</td><td>'+fBadge(f)+'</td></tr>';
+    }).join('');
+    chipsFiltri();
+    var q=$('#f-q'), tipo=$('#f-tipo'), e=$('#f-e'), res=$('#f-res'), st=$('#f-stato'), sr=$('#f-sr');
+    q.oninput=debounce(function(){ FILT.q=q.value; FILT.page=1; renderFonti(); },200);
+    tipo.onchange=function(){FILT.tipo=tipo.value;FILT.page=1;renderFonti();};
+    e.onchange=function(){FILT.azienda=e.value;FILT.page=1;renderFonti();};
+    res.onchange=function(){FILT.res=res.value;FILT.page=1;renderFonti();};
+    st.onchange=function(){FILT.st=st.value;FILT.page=1;renderFonti();};
+    sr.onchange=function(){FILT.senzaResp=sr.checked;FILT.page=1;renderFonti();};
+    $('#f-prev').onclick=function(){FILT.page--;renderFonti();}; $('#f-next').onclick=function(){FILT.page++;renderFonti();};
+    $$('.tbl th.sortable').forEach(function(th,i){ th.onclick=function(){ var k=th.dataset.k; if(S.fontiSort[0]===k) S.fontiSort[1]=!S.fontiSort[1]; else S.fontiSort=[k,true]; FILT.page=1; renderFonti(); }; th.onkeydown=function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); th.onclick(); } }; });
+    applyState();
+  }
+  function chipsFiltri(){
+    var host=document.getElementById('f-chips');
+    host.innerHTML = filtriAttivi().map(function(f){ return '<span class="chip">'+esc(f[1])+'<button data-k="'+f[0]+'">'+ic('x')+'</button></span>'; }).join('');
+    $$('#f-chips .chip button').forEach(function(b){ b.onclick=function(){ var k=b.dataset.k; if(k==='tipo')FILT.tipo=''; if(k==='azienda')FILT.azienda=''; if(k==='res')FILT.res=''; if(k==='st')FILT.st=''; if(k==='resp')FILT.senzaResp=false; FILT.page=1; if(k==='tipo')$('#f-tipo').value=''; if(k==='azienda')$('#f-e').value=''; if(k==='res')$('#f-res').value=''; if(k==='st')$('#f-stato').value=''; if(k==='resp')$('#f-sr').checked=false; renderFonti(); }; });
+  }
+  function debounce(fn, ms){ var t; return function(){ var a=arguments, self=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(self,a); }, ms); }; }
+
+  /* dettaglio fonte */
+  var DRAFT={};
+  function openFonti(id){
+    var f = FONTI.filter(function(x){return x.id===id;})[0]; if(!f) return;
+    DRAFT={id:f.id, res:f.res};
+    var readonly=!can('fonti');
+    document.getElementById('drawer-head').innerHTML = '<div><h2>'+esc(f.nome)+'</h2><div class="sub">'+esc(f.tipo)+' · '+esc(f.prov)+'</div></div>';
+    var tabs='<div class="tabs"><button class="tab active" data-t="info">Informazioni</button><button class="tab" data-t="doc">Documenti</button><button class="tab" data-t="carica">Carica documenti</button><button class="tab" data-t="storico">Modifiche</button></div>';
+    var b='<div id="ftabs">'+tabs+'</div><div id="f-panel"></div>';
+    document.getElementById('drawer-body').innerHTML=b;
+    apriPannello();
+    window.__fontiCurrent=f;
+    panelFonti('info');
+    $$('#ftabs .tab').forEach(function(t){ t.onclick=function(){ $$('#ftabs .tab').forEach(function(x){x.classList.toggle('active',x===t);}); panelFonti(t.dataset.t); }; });
+  }
+  function stampa_indietro(){ document.body.removeAttribute('data-drawer'); }
+  function panelFonti(t){
+    var f=window.__fontiCurrent; var readonly=!can('fonti');
+    var p=document.getElementById('f-panel');
+    if(t==='info'){
+      p.innerHTML='<dl class="dl">'+
+        '<dt>Descrizione</dt><dd>Documenti operativi del reparto '+esc(f.gr.join(', ')||'— in attesa di gruppi')+'.'+(readonly?' <span class="ro-note">'+ic('lock')+'Sola lettura</span>':'')+'</dd>'+
+        '<dt>Chi può vederla</dt><dd>'+(readonly? f.gr.join(', ')+' <span class="ro-note">'+ic('lock')+'Sola lettura</span>' : f.gr.map(function(g){return g;}).join(', ') )+'</dd>'+
+        '<dt>Aziende</dt><dd>'+aziendeLabel(f.a)+'</dd>'+
+        '<dt>Responsabile</dt><dd>'+esc(f.resp==='—'?'Nessuno — la fonte non è attivabile':'')+(f.resp==='—'?esc(f.resp):esc(f.resp))+'</dd>'+
+        '<dt>Uso di servizi esterni</dt><dd id="f-res-line">'+resBadge(f.res)+
+          '<div style="margin-top:8px">'+(readonly?'<span class="ro-note">'+ic('lock')+'Modifica solo con il ruolo Gestione fonti</span>':'<button class="btn btn-secondary btn-sm" id="btn-res">'+(f.res==='interno'?'Rendi utilizzabile da servizi esterni':'Riporta a &quot;Resta in azienda&quot;')+'</button>')+'</div></dd>'+
+        '<dt>Percorso</dt><dd class="mono" style="font-size:12.5px">'+esc(f.prov)+'</dd>'+
+        '<dt>Contenuto</dt><dd>'+esc(f.cont)+'</dd>'+
+        '<dt>Ultimo aggiornamento</dt><dd>'+esc(f.agg)+'</dd>'+
+        '<dt>Chi la vede davvero</dt><dd>282 persone la vedono oggi ('+esc(f.gr.join(', '))+')</dd>'+
+        '</dl>';
+      var btn=$('#btn-res');
+      if(btn) btn.onclick=function(){ if(f.res==='interno') flowEsterni(f,function(){ openFonti(f.id); }); else { f.res='interno'; pushRegistro('Fonti','Ha riportato a "Resta in azienda" la fonte '+f.nome, f.nome, f.a===''?'':f.a, 'Direzione sicura: modifica registrata.'); toast('Fonte riportata a "Resta in azienda"'); openFonti(f.id); } };
+    } else if(t==='doc'){
+      var docs=[{n:'manuale_aria_compressa.pdf', s:'indicizzato'},{n:'scheda_impianto_12.pdf', s:'illeggibile'},{n:'listino_2024.xlsx', s:'escluso', m:'tipo di file non ammesso'},{n:'istruzioni_pompa.pdf', s:'indicizzato'},{n:'catalogo_2023.pdf', s:'indicizzato'}];
+      p.innerHTML='<table class="tbl"><thead><tr><th>Documento</th><th>Stato</th><th></th></tr></thead><tbody>'+
+        docs.map(function(d){ var s=d.s==='indicizzato'?['ok','Indicizzato','b-stato-ok']:d.s==='illeggibile'?['err','Illeggibile','b-stato-errore']:['neut','Escluso','b-stato-neutro']; return '<tr><td class="mono" style="font-size:12.5px">'+esc(d.n)+'</td><td><span class="badge '+s[2]+'">'+ic(s[0])+esc(s[1])+'</span>'+(d.m?' <span style="font-size:11px;color:var(--testo-debole)">· '+esc(d.m)+'</span>':'')+'</td><td>'+(d.s==='illeggibile'?'<button class="btn btn-ghost btn-sm" onclick="toast(\'Anomalia collegata già aperta.\')">Vedi anomalia</button>':'')+'</td></tr>'; }).join('')+'</tbody></table>'+
+        '<div class="notice notice-warn" style="margin-top:14px">'+ic('warn')+'<span>Un documento non è leggibile: l\'anomalia «3 PDF non leggibili» gli è collegata.</span></div>';
+    } else if(t==='carica'){
+      p.innerHTML='<div class="notice notice-info">'+ic('info')+'<span><b>Seconda fase.</b> Il caricamento manuale dei documenti arriverà dopo la messa in produzione. Oggi i contenuti arrivano solo dalle cartelle collegate.</span></div>'+
+        '<div style="margin-top:14px;padding:26px;border:1px dashed var(--bordo-insieme);border-radius:var(--raggio-l);text-align:center;color:var(--testo-debole);font-size:13px">'+ic('plus')+' Trascina qui i file (illustrazione della seconda fase)</div>';
+    } else {
+      p.innerHTML='<table class="tbl"><thead><tr><th>Quando</th><th>Chi</th><th>Azione</th></tr></thead><tbody>'+
+        '<tr><td class="mono" style="color:var(--testo-tenue)">18/09 10:42</td><td>Lucia Bianchi</td><td>'+resBadge('cloud')+' Resa utilizzabile da servizi esterni</td></tr>'+
+        '<tr><td class="mono" style="color:var(--testo-tenue)">12/09 14:20</td><td>Anna Greco</td><td>Aggiornato responsabile</td></tr>'+
+        '<tr><td class="mono" style="color:var(--testo-tenue)">02/09 09:05</td><td>Sara Marino</td><td>Aggiunti gruppi operativi</td></tr>'+
+        '</tbody></table>';
+    }
+  }
+  function flowEsterni(f, cb){
+    // approvazione formale §7.3
+    var m=document.getElementById('modal-wrap');
+    document.getElementById('modal-title').textContent='Rendere la fonte utilizzabile da servizi esterni';
+    document.getElementById('modal-body').innerHTML=
+      '<div class="notice notice-warn">'+ic('warn')+'<span><b>Conseguenza in chiaro.</b> I contenuti di <b>&laquo;'+esc(f.nome)+'&raquo;</b> potranno essere inviati al servizio esterno di elaborazione per preparare le risposte. Nessun altro uso è previsto.</span></div>'+
+      '<div class="field" style="margin-top:14px"><label for="m-motivo">Motivo (obbligatorio)</label><textarea class="textarea" id="m-motivo" placeholder="Es. Nuovo accordo con il fornitore, i listini possono uscire."></textarea><span class="hint">Il motivo resta nel registro modifiche.</span></div>'+
+      '<div class="field" style="margin-top:10px"><label>Approvato da</label><div class="mono" style="font-size:13px">Lucia Bianchi · 18/09/2026</div></div>';
+    m.removeAttribute('hidden');
+    var ok=document.getElementById('modal-ok'); ok.style.display='';
+    document.getElementById('modal-cancel').style.display='';
+    ok.onclick=function(){
+      var mot=document.getElementById('m-motivo').value.trim();
+      if(!mot){ toast('Il motivo è obbligatorio.'); return; }
+      f.res='cloud'; m.setAttribute('hidden','');
+      pushRegistro('Fonti','Ha reso la fonte '+f.nome+' utilizzabile da servizi esterni', f.nome, f.a===''?'':f.a, mot);
+      toast('Fonte approvata per i servizi esterni');
+      cb();
+    };
+    document.getElementById('modal-cancel').onclick=function(){ m.setAttribute('hidden',''); };
+  }
+
+  /* ===================== VEDI COME (§8) ===================== */
+  function renderVediCome(){
+    var readonly=!can('vedicome');
+    var c=document.getElementById('content');
+    c.innerHTML='<div class="live"><div class="page-head"><div><h1 class="page-title">Vedi come</h1><p class="page-sub">Che cosa vede un certo utente — senza entrare con le sue credenziali.</p>'+
+      '<div class="notice notice-info" style="margin-top:10px;max-width:720px">'+ic('info')+'<span>Questa consultazione viene registrata nel registro modifiche.</span></div>'+
+      '</div>'+(readonly?'<span class="ro-note">'+ic('lock')+'Sola lettura</span>':'')+'</div>'+
+      '<div class="card pad-4"><div class="field search-box" style="max-width:520px"><svg class="i" style="position:absolute;left:11px;top:50%;translate:0 -50%;color:var(--testo-debole)"><use href="#i-search"/></svg><input class="input" id="vc-q" placeholder="Cerca per nome o email…" style="padding-left:34px"></div><div class="res-meta" style="padding:8px 0 0">'+UTENTI.length+' persone in totale</div></div>'+
+      '<div id="vc-list"></div>'+
+      '<div class="card pad-5" id="vc-detail" hidden style="margin-top:16px"><p class="page-sub" style="margin:0">Scegli un utente dall\'elenco per vedere le sue fonti.</p></div></div>';
+    var q=$('#vc-q');
+    function lista(qs){
+      var arr=UTENTI.filter(function(u){ return !qs || (u.n+u.e).toLowerCase().indexOf(qs)>-1; }).slice(0,12);
+      document.getElementById('vc-list').innerHTML='<div class="card"><div class="table-box"><table class="tbl"><thead><tr><th>Persona</th><th>Email</th><th>Gruppi</th><th>Azienda</th><th>Stato</th></tr></thead><tbody>'+
+        arr.map(function(u){
+          var att=u.att?['ok','Attivo','b-stato-ok']:['neut','Disattivato','b-stato-neutro'];
+          return '<tr onclick="vcApri(\''+esc(u.e)+'\')"><td class="prim">'+esc(u.n)+'</td><td class="mono" style="color:var(--testo-tenue)">'+esc(u.e)+'</td><td>'+(u.g.length?u.g.map(esc).join(', '):'<span style="color:var(--testo-debole)">nessuno</span>')+'</td><td>'+chipA(u.a===null?'Nessuna':(u.a===''?'Tutto il gruppo':u.a))+'</td><td><span class="badge '+att[2]+'">'+ic(att[0])+esc(att[1])+'</span></td></tr>';
+        }).join('')+'</tbody></table></div></div>';
+    }
+    lista('');
+    q.oninput=debounce(function(){ lista(q.value.toLowerCase()); },150);
+    window.vcApri=function(email){
+      var u=UTENTI.filter(function(x){return x.e===email;})[0];
+      var d=document.getElementById('vc-detail'); d.hidden=false;
+      // fonti visibili e non
+      function visibili(f){ if(!u.att) return false; var aok=(f.a===''||f.a===u.a||u.a===''); var gok=f.gr.length===0||f.gr.some(function(g){return u.g.indexOf(g)>-1;}); return aok&&gok; }
+      var vis=FONTI.filter(visibili); var non=FONTI.filter(function(f){return !visibili(f);});
+      var motivi={};
+      non.forEach(function(f){ motivi[f.id] = f.st==='sospesa'? 'La fonte è sospesa.' : !u.att? 'L\'utente è disattivato.' : (f.a!==''&&f.a!==u.a)? 'non è abilitato all\'azienda '+esc(f.a===''?'tutto il gruppo':f.a) : 'non è nel gruppo '+f.gr.join(' o '); });
+      var intro = !u.att ? '<div class="notice notice-crit">'+ic('crit')+'<span><b>Non vede nessun dato:</b> l\'utente è disattivato.</span></div>' : (u.a===null?'<div class="notice notice-crit">'+ic('crit')+'<span><b>Non vede nessun dato:</b> l\'utente non ha aziende abilitate.</span></div>':u.g.length===0?'<div class="notice notice-warn">'+ic('warn')+'<span><b>Vede solo le fonti aperte a tutti:</b> nessun gruppo operativo.</span></div>':'');
+      d.innerHTML='<div class="page-head" style="margin-bottom:14px"><div><h2 style="font-size:15px;font-weight:600;margin:0">'+esc(u.n)+' <span class="chipacloud">'+esc(u.e)+'</span></h2><p class="page-sub" style="margin:2px 0 0">Gruppi: '+esc(u.g.join(', ')||'nessuno')+' · Aziende: '+esc(u.a===null?'nessuna':(u.a===''?'tutto il gruppo':u.a))+'</p></div>'+(may('strumenti')?'<a class="btn btn-secondary btn-sm" href="#/esterno/keycloak">'+ic('ext')+'Gestione utenti</a>':'')+'</div>'+
+        intro+
+        '<h3 style="font-size:12.5px;color:var(--testo-debole);text-transform:uppercase;letter-spacing:.05em;margin:18px 0 8px">Fonti visibili ('+vis.length+')</h3>'+
+        '<table class="tbl"><thead><tr><th>Fonte</th><th>Tipo</th><th>Uso di servizi esterni</th></tr></thead><tbody>'+
+        (vis.map(function(f){return '<tr><td class="prim">'+esc(f.nome)+'</td><td>'+esc(f.tipo)+'</td><td>'+resBadge(f.res)+'</td></tr>';}).join('')||'<tr><td colspan="3" class="empty-note">Nessuna fonte visibile.</td></tr>')+
+        '</tbody></table>'+
+        '<h3 style="font-size:12.5px;color:var(--testo-debole);text-transform:uppercase;letter-spacing:.05em;margin:18px 0 8px">Fonti NON visibili ('+non.length+')</h3>'+
+        '<table class="tbl"><thead><tr><th>Fonte</th><th>Perché non la vede</th></tr></thead><tbody>'+
+        (non.map(function(f){return '<tr><td class="prim">'+esc(f.nome)+'</td><td style="color:var(--testo-tenue)">'+motivi[f.id]+'</td></tr>';}).join('')||'<tr><td colspan="2" class="empty-note">—</td></tr>')+
+        '</tbody></table>'+
+        '<div class="notice notice-info" style="margin-top:14px">'+ic('info')+'<span>Consulta registrata: questa apertura compare nel registro modifiche.</span></div>';
+      pushRegistro('Vedi come','Ha consultato le fonti visibili da '+u.n, u.n, '', 'Consultazione registrata.');
+    };
+    applyState();
+  }
+
+  /* ===================== ANOMALIE (§9) ===================== */
+  var AF={ q:'', grav:'', sist:'', st:'', me:false, page:1, PER:12 };
+  function rank(g){ return {critico:0,errore:1,attenzione:2,info:3}[g]||4; }
+  function anomFiltrate(){
+    var arr=ANOMALIE.filter(function(x){
+      if(!inAzienda(x.a) && x.a!=='') return false;
+      if(AF.q && (x.tit).toLowerCase().indexOf(AF.q.toLowerCase())<0) return false;
+      if(AF.grav && x.grav!==AF.grav) return false;
+      if(AF.sist && x.sist!==AF.sist) return false;
+      if(AF.st && x.st!==AF.st) return false;
+      if(AF.me && x.as!==ROLE[AF_ME_AS||S.ruolo].nome) return false;
+      return true;
+    });
+    var k=S.anomSort[0], asc=S.anomSort[1];
+    return arr.slice().sort(function(a,b){
+      if(k==='gravita'){ var da=rank(a.grav), db=rank(b.grav); return asc? da-db : db-da; }
+      if(k==='ult'){ return asc? (a.ult<b.ult?-1:1) : (a.ult>b.ult?-1:1); }
+      if(k==='occ'){ return asc? a.occ-b.occ : b.occ-a.occ; }
+      var av=a[k]+'', bv=b[k]+''; return asc? (av<bv?-1:av>bv?1:0):(av>bv?-1:av<bv?1:0);
+    });
+  }
+  var AF_ME_AS=null;
+  function renderAnomalie(){
+    var arr=anomFiltrate(); var tot=arr.length; var pages=Math.max(1,Math.ceil(tot/AF.PER)); if(AF.page>pages)AF.page=pages;
+    var slice=arr.slice((AF.page-1)*AF.PER, AF.page*AF.PER);
+    var c=document.getElementById('content');
+    var readonly=!can('anomalie');
+    c.innerHTML='<div class="live"><div class="page-head"><div><h1 class="page-title">Anomalie</h1><p class="page-sub">Ogni riga è un problema, non un evento: se si ripete 200 volte resta una riga con contatore 200. Vista predefinita: aperte e prese in carico.</p></div>'+
+      (readonly?'<span class="ro-note">'+ic('lock')+'Sola lettura — richiede il ruolo Gestione anomalie</span>':'')+'</div>'+
+      '<div class="card"><div class="filters">'+
+      '<div class="field search-box grow"><svg class="i" style="position:absolute;left:11px;top:50%;translate:0 -50%;color:var(--testo-debole)"><use href="#i-search"/></svg><input class="input" id="a-q" style="padding-left:34px" placeholder="Cerca nel titolo…" value="'+esc(AF.q)+'"></div>'+
+      '<div class="field"><select class="select" id="a-grav"><option value="">Gravità: tutte</option><option value="critico">Critiche</option><option value="errore">Errori</option><option value="attenzione">Avvisi</option><option value="info">Informative</option></select></div>'+
+      '<div class="field"><select class="select" id="a-sist"><option value="">Sistema: tutti</option><option>Importazioni</option><option>Documenti</option><option>Modelli AI</option><option>Accessi</option><option>Sistemi</option><option>Qualità dati</option></select></div>'+
+      '<div class="field"><select class="select" id="a-st"><option value="">Stato: tutti</option><option value="aperta">Aperta</option><option value="presa">Presa in carico</option><option value="risolta">Risolta</option><option value="ignorata">Ignorata</option></select></div>'+
+      '<div class="field"><label class="check-row" style="font-weight:400"><input type="checkbox" id="a-me" '+(AF.me?'checked':'')+'/> Assegnate a me</label></div>'+
+      '</div><div class="res-meta">'+tot+' anomalie</div>'+
+      '<div class="table-box"><table class="tbl"><thead><tr>'+
+      '<th class="sortable" data-k="gravita" tabindex="0" role="button" aria-sort="'+(S.anomSort[1]?'descending':'ascending')+'">Gravità '+(S.anomSort[0]==='gravita'?(S.anomSort[1]?'▼':'▲'):'')+'</th><th>Titolo</th><th>Sistema</th><th>Azienda</th><th class="num-col sortable" data-k="occ" tabindex="0" role="button">Occ.</th><th class="sortable" data-k="ult" tabindex="0" role="button">Ultima</th><th>Stato</th><th>Assegnata</th></tr></thead><tbody id="a-body"></tbody>'+(tot?'':'<tr><td colspan="8" class="empty-note">Nessun problema corrisponde ai filtri.</td></tr>')+'</table></div>'+
+      '<div class="pager"><span>'+(tot?((AF.page-1)*AF.PER+1)+'–'+Math.min(AF.page*AF.PER,tot)+' di '+tot:0)+'</span><button class="btn btn-secondary btn-sm" id="a-prev" '+(AF.page<=1?'disabled':'')+'>Precedente</button><button class="btn btn-secondary btn-sm" id="a-next" '+(AF.page>=pages?'disabled':'')+'>Successiva</button></div>'+
+      '</div></div>';
+    document.getElementById('a-body').innerHTML=slice.map(function(x){
+      var auto = x.auto? '<span class="badge b-stato-ok" title="Chiusa da sola al ritorno del controllo">'+ic('refresh')+'Risolta automaticamente</span>' : badgeStato(x.st);
+      return '<tr data-id="'+x.id+'" onclick="openAnomalia(\''+x.id+'\')"><td>'+badge(x.grav)+'</td><td class="prim">'+esc(x.tit)+'</td><td>'+esc(x.sist)+'</td><td>'+chipA(rigaAzienda(x.a))+'</td><td class="num-col">'+x.occ+'</td><td class="num-col" style="color:var(--testo-tenue)">'+x.ult+'</td><td>'+auto+'</td><td>'+esc(x.as)+'</td></tr>';
+    }).join('');
+    var q=$('#a-q'),g=$('#a-grav'),s=$('#a-sist'),st=$('#a-st'),me=$('#a-me');
+    q.oninput=debounce(function(){AF.q=q.value;AF.page=1;renderAnomalie();},200);
+    g.onchange=function(){AF.grav=g.value;AF.page=1;renderAnomalie();};
+    s.onchange=function(){AF.sist=s.value;AF.page=1;renderAnomalie();};
+    st.onchange=function(){AF.st=st.value;AF.page=1;renderAnomalie();};
+    me.onchange=function(){AF.me=me.checked;AF_ME_AS=S.ruolo;AF.page=1;renderAnomalie();};
+    $('#a-prev').onclick=function(){AF.page--;renderAnomalie();}; $('#a-next').onclick=function(){AF.page++;renderAnomalie();};
+    $$('#a-body tr').forEach(function(tr){ tr.onclick=function(){ openAnomalia(tr.dataset.id); }; });
+    $$('.tbl th.sortable').forEach(function(th){ th.onclick=function(){ var k=th.dataset.k||'gravita'; if(S.anomSort[0]===k)S.anomSort[1]=!S.anomSort[1]; else S.anomSort=[k,true]; AF.page=1; renderAnomalie(); }; th.onkeydown=function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); th.onclick(); } }; });
+    applyState();
+  }
+  function openAnomalia(id){
+    var x=ANOMALIE.filter(function(a){return a.id===id;})[0];
+    var readonly=!can('anomalie');
+    document.getElementById('drawer-head').innerHTML='<div><h2 id="da-titolo">'+esc(x.tit)+'</h2><div class="sub">'+esc(x.sist)+' · '+rigaAzienda(x.a)+' · '+x.occ+' occorrenza'+(x.occ>1?'e':'')+'</div></div>';
+    document.getElementById('drawer-body').innerHTML='<dl class="dl">'+
+      '<dt>Gravità</dt><dd>'+badge(x.grav)+' '+badgeStato(x.st)+(x.auto?' <span class="badge b-stato-ok" title="Chiusa da sola">'+ic('refresh')+'chiusa automaticamente</span>':'')+'</dd>'+
+      '<dt>Cosa significa e cosa fare</dt><dd>'+esc(x.che)+'</dd>'+
+      '<dt>Collegamenti</dt><dd>'+ (x.sist==='Documenti'?'<a class="btn btn-ghost btn-sm" href="#" onclick="event.preventDefault();toast(\'Anomalia collegata alla fonte.\');">Vedi la fonte</a>': x.sist==='Importazioni'||x.sist==='Sistemi'? '<a class="btn btn-ghost btn-sm" href="#/esterno/'+(x.sist==='Importazioni'?'dagster':'uptime')+'" id="da-lnk">'+ic('ext')+(x.sist==='Importazioni'?'Gestione importazioni':'Monitoraggio sistemi')+'</a>':'<span class="ro-note">Nessun collegamento diretto</span>')+'</dd>'+
+      '<dt>Dettaglio tecnico</dt><dd><details><summary style="cursor:pointer;font-size:12.5px;color:var(--testo-tenue)">Mostra i dati tecnici</summary><pre class="mono" style="font-size:11.5px;background:var(--superficie-alt);padding:10px;border-radius:var(--raggio);overflow:auto">errore=timeout connettore:connect_timeout\nconnettore=integra_luis\nesecuzione=2026-09-18T07:4'+'2:10Z\ncodice=ECONNREFUSED</pre></details></dd>'+
+      '<dt>Cronologia</dt><dd><ul class="storia">'+x.storia.map(function(s){return '<li><b>'+esc(s.q)+'</b> · '+esc(s.chi)+' — '+esc(s.t)+'</li>';}).join('')+'</ul></dd>'+
+      (readonly?'':'<dt>Azioni</dt><dd id="da-azioni"></dd>')+
+      '</dl>';
+    if(!readonly){
+      var az=document.getElementById('da-azioni');
+      az.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">'+
+        (x.st==='aperta'||x.st==='presa'?'<button class="btn btn-primary btn-sm" id="da-prendi">'+(x.st==='aperta'?'Prendi in carico':'Preso: assegna di nuovo a me')+'</button>':'')+
+        '<button class="btn btn-secondary btn-sm" id="da-assegna">Assegna…</button>'+
+        '<button class="btn btn-secondary btn-sm" id="da-commenta">Commenta</button>'+
+        '<button class="btn btn-secondary btn-sm" id="da-risolvi">Risolvi</button>'+
+        (x.st!=='ignorata'?'<button class="btn btn-ghost btn-sm" id="da-ignora">Ignora</button>':'')+
+        '</div><div id="da-com-area" style="margin-top:12px" hidden><textarea class="textarea" id="da-com" placeholder="Scrivi il commento…"></textarea><div style="margin-top:8px;text-align:right"><button class="btn btn-primary btn-sm" id="da-com-send">'+ic('note')+'Pubblica</button></div></div>';
+      var b1=$('#da-prendi'); if(b1) b1.onclick=function(){ x.st='presa'; x.as=ROLE[S.ruolo].nome; x.storia.push({q:'ora',chi:ROLE[S.ruolo].nome,t:'presa in carico'}); pushRegistro('Anomalie','Ha preso in carico: '+x.tit, x.sist, x.a!==''?x.a:'', 'Presa in carico per verifica.'); toast('Anomalia presa in carico'); cntAnomalie(); openAnomalia(x.id); renderAnomalie(); };
+      var b2=$('#da-assegna'); if(b2) b2.onclick=function(){ openModal('Assegna l\'anomalia', '<div class="field"><label for="m-assegna">A chi</label><select class="select" id="m-assegna">'+UTENTI.filter(function(u){return u.att;}).map(function(u){return '<option>'+esc(u.n)+'</option>';}).join('')+'</select></div>', function(){ x.st='presa'; x.as=$('#m-assegna').value; x.storia.push({q:'ora',chi:ROLE[S.ruolo].nome,t:'assegnata a '+x.as}); pushRegistro('Anomalie','Ha assegnato: '+x.tit, x.sist, x.a!==''?x.a:'', 'Assegnazione.'); toast('Anomalia assegnata a '+x.as); openAnomalia(x.id); }); };
+      var b3=$('#da-commenta'); if(b3) b3.onclick=function(){ $('#da-com-area').hidden=false; $('#da-com').focus(); };
+      $('#da-com-send').onclick=function(){ var t=$('#da-com').value.trim(); if(!t) return; x.storia.push({q:'ora',chi:ROLE[S.ruolo].nome,t:t}); $('#da-com-area').hidden=true; toast('Commento registrato'); openAnomalia(x.id); };
+      var b5=$('#da-risolvi'); if(b5) b5.onclick=function(){ openModal('Risolvi l\'anomalia', '<div class="field"><label for="m-note">Nota (facoltativa)</label><textarea class="textarea" id="m-note" placeholder="Es. Connettore riavviato, prossima importazione attesa."></textarea></div>', function(){ x.st='risolta'; x.auto=0; x.storia.push({q:'ora',chi:ROLE[S.ruolo].nome,t:'risolta'}); pushRegistro('Anomalie','Ha risolto: '+x.tit, x.sist, x.a!==''?x.a:'', $('#m-note').value||'—'); toast('Anomalia risolta'); openAnomalia(x.id); renderAnomalie(); cntAnomalie(); }); };
+      var b6=$('#da-ignora'); if(b6) b6.onclick=function(){ openModal('Ignorare l\'anomalia', '<div class="notice notice-warn">'+ic('warn')+'<span>L\'anomalia smette di comparire: se si ripresenta dopo la scadenza, torna aperta.</span></div><div class="field" style="margin-top:12px"><label for="m-ig">Fino a quando (obbligatorio)</label><select class="select" id="m-ig"><option>per 1 giorno</option><option>per 7 giorni</option><option>per 30 giorni</option><option>per sempre</option></select></div><div class="field" style="margin-top:10px"><label for="m-igm">Motivo (obbligatorio)</label><textarea class="textarea" id="m-igm" placeholder="Es. Allineamento noto con il fornitore, non bloccante."></textarea></div>', function(){ var mot=$('#m-igm').value.trim(); if(!mot){ toast('Il motivo è obbligatorio.'); return false; } x.st='ignorata'; x.storia.push({q:'ora',chi:ROLE[S.ruolo].nome,t:'ignorata '+$('#m-ig').value}); pushRegistro('Anomalie','Ha ignorato: '+x.tit, x.sist, x.a!==''?x.a:'', mot); toast('Anomalia ignorata '+$('#m-ig').value); modal_busy=true; openAnomalia(x.id); renderAnomalie(); cntAnomalie(); }); };
+    }
+    apriPannello();
+  }
+  var modal_busy=false;
+  var mwrap=document.getElementById('modal-wrap');
+  function openModal(titolo, body, onOk){
+    modal_busy=false;
+    document.getElementById('modal-title').textContent=titolo;
+    document.getElementById('modal-body').innerHTML=body;
+    mwrap.removeAttribute('hidden');
+    var ok=document.getElementById('modal-ok'); ok.style.display=''; document.getElementById('modal-cancel').style.display='';
+    var primo=document.querySelector('#modal-body input, #modal-body select, #modal-body textarea, #modal-body button');
+    (primo||ok).focus();
+    ok.onclick=function(){ if(modal_busy) return; var r=onOk(); if(r!==false) mwrap.setAttribute('hidden',''); };
+    document.getElementById('modal-cancel').onclick=function(){ mwrap.setAttribute('hidden',''); };
+  }
+
+  /* ===================== REGISTRO (§10) ===================== */
+  var RF={ q:'', area:'', page:1, PER:10 };
+  function regFiltrate(){
+    var arr=REGISTRO.slice().filter(function(r){
+      if(!inAzienda(r.a) && r.a!=='') return false;
+      if(RF.q){ var q=RF.q.toLowerCase(); if((r.az+' '+r.chi+' '+r.og+' '+r.area).toLowerCase().indexOf(q)<0) return false; }
+      if(RF.area && r.area!==RF.area) return false;
+      return true;
+    }).reverse();
+    return arr;
+  }
+  function renderRegistro(){
+    var arr=regFiltrate(); var tot=arr.length; var pages=Math.max(1,Math.ceil(tot/RF.PER)); if(RF.page>pages)RF.page=pages;
+    var slice=arr.slice((RF.page-1)*RF.PER, RF.page*RF.PER);
+    var c=document.getElementById('content');
+    c.innerHTML='<div class="live"><div class="page-head"><div><h1 class="page-title">Registro modifiche</h1><p class="page-sub">Chi ha cambiato cosa, quando e perché — per le verifiche e per capire «da quando Mario non vede più il listino?».</p></div>'+
+      '<button class="btn btn-secondary" id="r-csv">'+ic('csv')+'Esporta CSV</button></div>'+
+      '<div class="card"><div class="filters">'+
+      '<div class="field search-box grow"><svg class="i" style="position:absolute;left:11px;top:50%;translate:0 -50%;color:var(--testo-debole)"><use href="#i-search"/></svg><input class="input" id="r-q" style="padding-left:34px" placeholder="Cerca persona, oggetto, azione…" value="'+esc(RF.q)+'"></div>'+
+      '<div class="field"><select class="select" id="r-area"><option value="">Area: tutte</option><option>Fonti</option><option>Anomalie</option><option>Aspetto</option><option>Vedi come</option></select></div>'+
+      '</div><div class="res-meta">'+tot+' modifiche — all\'estero resta il registro di Gestione utenti: <a class="btn btn-ghost btn-sm" href="#/esterno/keycloak">'+ic('ext')+'Modifiche agli accessi</a></div>'+
+      '<div class="table-box"><table class="tbl"><thead><tr><th>Quando</th><th>Chi</th><th>Area</th><th>Azione</th><th>Oggetto</th><th>Azienda</th><th>Motivo</th></tr></thead><tbody id="r-body"></tbody>'+(tot?'':'<tr><td colspan="7" class="empty-note">Nessuna modifica nel periodo.</td></tr>')+'</table></div>'+
+      '<div class="pager"><span>'+(tot?((RF.page-1)*RF.PER+1)+'–'+Math.min(RF.page*RF.PER,tot)+' di '+tot:0)+'</span><button class="btn btn-secondary btn-sm" id="r-prev" '+(RF.page<=1?'disabled':'')+'>Precedente</button><button class="btn btn-secondary btn-sm" id="r-next" '+(RF.page>=pages?'disabled':'')+'>Successiva</button></div></div></div>';
+    document.getElementById('r-body').innerHTML=slice.map(function(r){return '<tr onclick="openRegistro()"><td class="mono" style="color:var(--testo-tenue)">'+r.q.substring(0,16)+'</td><td>'+esc(r.chi)+'</td><td>'+esc(r.area)+'</td><td>'+esc(r.az)+'</td><td>'+esc(r.og==='—'?'—':r.og)+'</td><td>'+chipA(rigaAzienda(r.a))+'</td><td style="color:var(--testo-debole)">'+esc(r.motivo==='—'?'—':r.motivo.substring(0,44)+(r.motivo.length>44?'…':''))+'</td></tr>';}).join('');
+    $('#r-q').oninput=debounce(function(){RF.q=$('#r-q').value;RF.page=1;renderRegistro();},200);
+    $('#r-area').onchange=function(){RF.area=$('#r-area').value;RF.page=1;renderRegistro();};
+    $('#r-prev').onclick=function(){RF.page--;renderRegistro();}; $('#r-next').onclick=function(){RF.page++;renderRegistro();};
+    $('#r-csv').onclick=function(){ toast('File CSV generato (simulazione — nessun download reale)'); };
+    applyState();
+  }
+  function openRegistro(){
+    document.getElementById('drawer-head').innerHTML='<div><h2>Dettaglio modifica</h2><div class="sub">Prima / dopo per confronto</div></div>';
+    document.getElementById('drawer-body').innerHTML=
+      '<dl class="dl"><dt>Chi e quando</dt><dd>Lucia Bianchi · 18/09/2026 10:42</dd>'+
+      '<dt>Dall\'inizio</dt><dd><span class="mono">Resta in azienda</span></dd>'+
+      '<dt>A questo</dt><dd>'+resBadge('cloud')+' Può usare servizi esterni</dd>'+
+      '<dt>Motivo</dt><dd>Nuovo accordo con il fornitore ANSEA: i listini possono essere inviati al servizio esterno.</dd></dl>'+
+      '<div class="notice notice-info">'+ic('info')+'<span>Differenze evidenziate in verde: <b>Resta in azienda</b> → <b>Può usare servizi esterni</b>.</span></div>';
+    apriPannello();
+  }
+  function pushRegistro(area, az, og, a, motivo){
+    REGISTRO.push({ q:'18/09/2026 — adesso', chi:ROLE[S.ruolo].nome, area:area, az:az, og:og, a:a||'', motivo:motivo||'—' });
+  }
+
+  /* ===================== ASPETTO (§11) ===================== */
+  function renderAspetto(){
+    var readonly=!can('aspetto');
+    var c=document.getElementById('content');
+    c.innerHTML='<div class="live"><div class="page-head"><div><h1 class="page-title">Aspetto</h1><p class="page-sub">Nome, logo e palette configurabili per azienda. Solo i colori marcati sono configurabili: tutto il resto è derivato.</p></div>'+
+      (readonly?'<span class="ro-note">'+ic('lock')+'Sola lettura — richiede il ruolo Gestione sistemi</span>':'')+'</div>'+
+      '<div class="card"><div class="c-head"><div><h2>Identità</h2><p class="h-intro">Logo e testi dell\'azienda (configurati da file, oggi)</p></div></div><div style="padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:14px" class="id-grid">'+
+      '<div class="field"><label>Nome dell\'azienda</label><input class="input" value="azienda" '+(readonly?'disabled':'')+'></div>'+
+      '<div class="field"><label>Nome dell\'assistente</label><input class="input" value="Assistente aziendale" '+(readonly?'disabled':'')+'></div>'+
+      '<div class="field"><label>Messaggio di benvenuto</label><input class="input" value="Buongiorno, come posso aiutarti?" '+(readonly?'disabled':'')+'></div>'+
+      '<div class="field"><label>Testo condizioni d\'uso e piè di pagina</label><input class="input" value="Accesso riservato · Assistente aziendale" '+(readonly?'disabled':'')+'></div>'+
+      '</div></div>'+
+      '<div class="card"><div class="c-head"><div><h2>Palette — colori configurabili</h2><p class="h-intro">Solo questi quattro colori sono modificabili (§2.1). Tutto il resto è derivato.</p></div></div><div style="padding:16px 18px" class="asp-grid">'+
+      aspSw('marchio','Colore di marca','Il colore primario: pulsante principale, voce attiva, focus')+
+      aspSw('marchio-secondario','Secondario','Accento neutro dei dettagli di servizio')+
+      aspSw('sfondo-pagina','Sfondo pagina','Lo sfondo di tutto il portale')+
+      aspSw('superficie','Superficie','Card, tavole e pannelli')+
+      '</div><div id="asp-contrast"></div><div style="padding:12px 18px;border-top:1px solid var(--bordo);display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">'+
+      '<button class="btn btn-secondary btn-sm" id="asp-reset" '+(readonly?'disabled':'')+'>Ripristina predefiniti</button>'+
+      '<button class="btn btn-primary btn-sm" id="asp-save" '+(readonly?'disabled':'')+'>Salva</button></div></div>'+
+      '<div class="card"><div class="c-head"><div><h2>Anteprima dal vivo</h2><p class="h-intro">Chiaro e scuro, con i colori correnti</p></div></div><div style="padding:16px 18px" class="asp-grid">'+pvMini('chiaro')+pvMini('scuro')+'</div></div></div>';
+    $$('#content .asp-swatch input[type=color]').forEach(function(inp){
+      inp.oninput=function(){ document.documentElement.style.setProperty('--'+inp.dataset.var, inp.value); applyAsp(); };
+    });
+    $('#asp-reset').onclick=function(){ resetPalette(); };
+    $('#asp-save').onclick=function(){ toast('Aspetto salvato'); pushRegistro('Aspetto','Ha aggiornato la palette di marca','—','','Allineamento al nuovo logo.'); };
+    applyAsp();
+    applyState();
+  }
+  function aspSw(varName, label, hint){
+    var v=getComputedStyle(document.documentElement).getPropertyValue('--'+varName).trim();
+    return '<div class="asp-swatch"><div><label>'+label+'</label><div style="font-size:11px;color:var(--testo-debole)">'+hint+'</div></div><div style="display:flex;align-items:center;gap:8px"><span class="hex">'+v+'</span><input type="color" data-var="'+varName+'" value="'+v+'" '+(can('aspetto')?'':'disabled')+'></div></div>';
+  }
+  function pvMini(tema){
+    var root=document.documentElement;
+    function tok(n){ return getComputedStyle(root).getPropertyValue('--'+n).trim(); }
+    var dark=(tema==='scuro');
+    var marchio=tok('marchio');
+    var bg= dark?tok('prev-sfondo-scuro'):tok('prev-sfondo-chiaro');
+    var surf= dark?tok('prev-sup-scuro'):tok('prev-sup-chiaro');
+    var txt= dark?tok('prev-testo-scuro'):tok('prev-testo-chiaro');
+    var campo= dark?tok('prev-campo-scuro'):tok('prev-campo-chiaro');
+    var bord=tok('prev-bordo');
+    return '<div class="preview-mini"><div class="pv-head">'+ic('spark')+'<span>'+esc(dark?'Login · scuro':'Login · chiaro')+'</span></div><div class="pv-body" style="background:'+bg+'">'+
+      '<div style="background:'+surf+';border:1px solid '+bord+';border-radius:10px;padding:12px;max-width:240px;margin:0 auto"><div style="text-align:center;margin-bottom:8px"><b style="font-size:12px;color:'+txt+'">Accedi all\'assistente</b></div>'+
+      '<div style="height:20px;background:'+campo+';border-radius:5px;margin-bottom:6px"></div><div style="height:20px;background:'+campo+';border-radius:5px;margin-bottom:8px"></div>'+
+      '<div style="height:28px;background:'+marchio+';border-radius:6px;display:grid;place-items:center"><span style="font-size:11px;color:'+tok('marchio-testo')+';font-weight:600">Accedi</span></div></div></div></div>';
+  }
+  function applyAsp(){
+    $$('#content .asp-swatch input[type=color]').forEach(function(inp){
+      inp.closest('.asp-swatch').querySelector('.hex').textContent=inp.value;
+    });
+    // contrasto
+    var marchio=getComputedStyle(document.documentElement).getPropertyValue('--marchio').trim();
+    var txt=getComputedStyle(document.documentElement).getPropertyValue('--marchio-testo').trim();
+    var ratio=contrast(marchio, txt);
+    var host=document.getElementById('asp-contrast');
+    var okm=ratio>=4.5;
+    host.innerHTML='<div class="notice '+(okm?'notice-ok':'notice-warn')+'" style="margin:0 18px 14px">'+(okm?ic('ok'):ic('warn'))+'<span><b>Contrasto del pulsante principale: '+ratio.toFixed(1)+':1</b>'+(okm?' — rientra nello standard WCAG AA.':' — il testo sul pulsante sarà poco leggibile. Applica la correzione proposta.')+'</span></div>';
+    // anteprima
+    $$('#content .preview-mini').forEach(function(p,i){ var t=(i===0?'chiaro':'scuro'); var rp=pvMini(t); p.outerHTML=rp; });
+  }
+  function luminance(hex){
+    var m=hex.replace('#',''); if(m.length===3) m=m.split('').map(function(c){return c+c;}).join('');
+    var v=[0,2,4].map(function(i){ var c=parseInt(m.substr(i,2),16)/255; return c<=0.03928? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); });
+    return 0.2126*v[0]+0.7152*v[1]+0.0722*v[2];
+  }
+  function contrast(a,b){ var l1=luminance(a), l2=luminance(b); return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05); }
+  function resetPalette(){
+    ['marchio','marchio-secondario','sfondo-pagina','superficie'].forEach(function(k){ document.documentElement.style.removeProperty('--'+k); });
+    renderAspetto(); toast('Palette predefinita ripristinata');
+  }
+
+  /* ===================== render per schermata ===================== */
+  function renderScreen(){
+    $('#content').querySelector('.state-host') && $('#content').querySelector('.state-host').remove();
+    if(S.screen==='panoramica') renderPanoramica();
+    else if(S.screen==='fonti') renderFonti();
+    else if(S.screen==='vedi-come') renderVediCome();
+    else if(S.screen==='anomalie') renderAnomalie();
+    else if(S.screen==='registro') renderRegistro();
+    else renderAspetto();
+  }
+
+  /* ===================== pannello prototipo ===================== */
+  $('#proto-tag').onclick=function(){ var b=$('#proto-box'); b.hidden=!b.hidden; };
+  $$('.proto-box input[name=pal]').forEach(function(r){ r.onchange=function(){ S.pal=r.value; document.documentElement.setAttribute('data-palette',S.pal); if(S.screen==='aspetto') renderAspetto(); toast('Palette: '+(S.pal==='decobrands'?'Decobrands':S.pal==='verde'?'Verde':'Rossa')); }; });
+  $$('.proto-box input[name=tema]').forEach(function(r){ r.onchange=function(){ S.tema=r.value; document.documentElement.setAttribute('data-tema',S.tema); }; });
+  $('#proto-ruolo').onchange=function(){ S.ruolo=this.value; applyRole(); toast('Ruolo: '+ROLE[S.ruolo].label); };
+  $('#proto-stato').onchange=function(){ S.stato=this.value; applyState(); };
+
+  /* ===================== header / menu persona / esterna ===================== */
+  $('#vai-chat').onclick=function(){ location.hash='#/chat'; };
+  $('#person').onclick=function(e){ e.stopPropagation(); var p=$('#pmenu'); p.hidden=!p.hidden; this.setAttribute('aria-expanded', p.hidden?'false':'true'); };
+  $('#person').onkeydown=function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); $('#person').click(); } };
+  document.addEventListener('click',function(){ var p=$('#pmenu'); if(p && !p.hidden){ p.hidden=true; $('#person').setAttribute('aria-expanded','false'); } });
+  $('#cambia-iniziale').onclick=function(){ location.hash='#/scelta'; openModal('Schermata iniziale','<p style="font-size:13.5px;color:var(--testo-tenue)">La volta successiva il login ti porta direttamente alla scelta selezionata, a meno che non ci siano anomalie critiche aperte.</p><div class="field" style="margin-top:10px"><select class="select"><option>Chat</option><option>Amministrazione</option></select></div>', function(){ toast('Preferenza salvata'); }); };
+  $('#esci').onclick=function(){ location.hash='#/scelta'; };
+  $('#drawer-close').onclick=function(){ document.body.removeAttribute('data-drawer'); };
+  var drawerEl=document.getElementById('drawer');
+  function syncDrawerInert(){ if(drawerEl) drawerEl.inert = !document.body.hasAttribute('data-drawer'); }
+  if('inert' in drawerEl) new MutationObserver(syncDrawerInert).observe(document.body,{attributes:true,attributeFilter:['data-drawer']});
+  syncDrawerInert();
+  $('#scrim').onclick=function(){ document.body.removeAttribute('data-drawer'); document.body.classList.remove('side-open'); };
+  $('#menu-btn').onclick=function(e){ e.stopPropagation(); var open=document.body.classList.toggle('side-open'); this.setAttribute('aria-expanded', open?'true':'false'); };
+  document.addEventListener('keydown', function(e){
+    if(e.key!=='Escape') return;
+    if(!mwrap.hasAttribute('hidden')){ mwrap.setAttribute('hidden',''); e.preventDefault(); return; }
+    if(document.body.hasAttribute('data-drawer')){ document.body.removeAttribute('data-drawer'); e.preventDefault(); return; }
+    if(document.body.classList.contains('side-open')){ document.body.classList.remove('side-open'); $('#menu-btn').setAttribute('aria-expanded','false'); e.preventDefault(); }
+  });
+  $$('.side a').forEach(function(a){ a.addEventListener('click', function(){ document.body.classList.remove('side-open'); document.getElementById('menu-btn').setAttribute('aria-expanded','false'); }); });
+  $$('.side a[data-ext]').forEach(function(a){ a.onclick=function(e){ e.preventDefault(); location.hash='#/esterno/'+a.dataset.tool; }; });
+  $('#azienda-sel').onchange=function(){ S.azienda=this.value; renderScreen(); };
+  document.addEventListener('click', function(e){
+    var a=e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if(!a) return;
+    var h=a.getAttribute('href');
+    if(!h || h.charAt(0)!=='#') return;
+    e.preventDefault();
+    if(h==='#') return;
+    if(location.hash!==h) location.hash=h;
+  }, true);
+  window.addEventListener('hashchange', function(){ route(true); });
+  window.addEventListener('resize', function(){ document.body.classList.remove('side-open'); });
+
+  /* ===================== avvio ===================== */
+  applyRole();
+  route(true);
+  </script>
+</body>
+</html>

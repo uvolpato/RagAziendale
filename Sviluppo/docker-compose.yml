@@ -199,6 +199,207 @@ services:
       litellm:
         condition: service_started
 
+  amministrazione:
+    # Portale dopo il login e amministrazione (decisione 58).
+    # Nessun segreto: client Keycloak pubblico con PKCE, sessioni in memoria.
+    # Utenti, gruppi e ruoli restano in Keycloak (decisione 60): qui si leggono
+    # con il token dell'amministratore, non con credenziali proprie.
+    build: ./amministrazione
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
+      APP_HOST: ${APP_HOST}
+      SSO_HOST: ${SSO_HOST}
+      REALM: ${REALM}
+      KEYCLOAK_INTERNO: http://keycloak:8080
+      NOME_AZIENDA: ${NOME_AZIENDA}
+      NOME_ASSISTENTE: ${NOME_ASSISTENTE}
+      MESSAGGIO_BENVENUTO: ${MESSAGGIO_BENVENUTO}
+      PIE_DI_PAGINA: ${PIE_DI_PAGINA}
+      # Vuoti finche' Dagster e Uptime Kuma non sono installati: la pagina
+      # segnaposto dice "non ancora installato" invece di un link rotto.
+      DAGSTER_URL: ${DAGSTER_URL:-}
+      UPTIME_URL: ${UPTIME_URL:-}
+      LITELLM_URL: ${LITELLM_URL:-}
+      # Servizio dei collegamenti: il pannello gli inoltra le password digitate
+      # dal Superutente; non ha la chiave dei segreti (decisione 70).
+      CONNETTORI_URL: http://connettori:8000
+      CONNETTORI_KEY: ${CONNETTORI_KEY}
+      # Servizio azioni (riavvio/stop dei servizi): il pannello inoltra, non
+      # ha il socket di Docker.
+      AZIONI_URL: http://azioni:8000
+      AZIONI_KEY: ${AZIONI_KEY}
+    volumes:
+      # Stato dei sistemi: legge Uptime Kuma in sola lettura (SQLite, WAL).
+      - uptime-kuma-data:/opt/uptime-kuma:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  connettori:
+    # Custode dei segreti dei collegamenti ai gestionali (SPECIFICA-CONNETTORI.md
+    # §4.1). Unico componente con CHIAVE_CREDENZIALI: cifra e decifra in memoria.
+    # Raggiunto solo dal pannello, sulla rete interna del compose.
+    build:
+      context: .
+      dockerfile: servizio-connettori/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
+      CHIAVE_CREDENZIALI: ${CHIAVE_CREDENZIALI}
+      CHIAVE_CREDENZIALI_PRECEDENTE: ${CHIAVE_CREDENZIALI_PRECEDENTE:-}
+      CONNETTORI_KEY: ${CONNETTORI_KEY}
+      # Scheduler ponte: disattivato quando pianifica Dagster (decisione 60).
+      SCHEDULER_INTERVALLO: ${SCHEDULER_INTERVALLO:-60}
+      SCHEDULER_OFF: ${SCHEDULER_OFF:-}
+    volumes:
+      # Stato dei sistemi (Uptime Kuma) per il controllo down->anomalia.
+      - uptime-kuma-data:/opt/uptime-kuma:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  azioni:
+    # Riavvio/stop dei servizi dal pannello (whitelist + registro). L'unico
+    # componente col socket di Docker: interno, raggiunto solo dal pannello.
+    build: ./azioni
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
+      AZIONI_KEY: ${AZIONI_KEY}
+      AZIONI_ALLOWED: postgres,keycloak,caddy,mongo,librechat,amministrazione,connettori,dagster-webserver,dagster-daemon,uptime-kuma,litellm
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  oauth2-proxy:
+    # SSO davanti agli strumenti esterni (Dagster, poi Uptime Kuma), decisione 60.
+    # Il login e' quello di Keycloak: niente password locale. In reverse-proxy
+    # mode davanti a Dagster (vedi Caddyfile, blocco dagster.localhost).
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.2
+    restart: unless-stopped
+    # Il token di accesso Keycloak ha aud=["account", ...] (non il client_id):
+    # si ammette "account", che Keycloak include sempre.
+    command: ["--oidc-extra-audience=account"]
+    environment:
+      OAUTH2_PROXY_PROVIDER: keycloak-oidc
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/${REALM}
+      OAUTH2_PROXY_CLIENT_ID: dagster
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: https://dagster.localhost/oauth2/callback
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_ALLOWED_GROUP: /amministratori/*
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_UPSTREAMS: http://dagster-webserver:3000
+      # Il token di accesso Keycloak ha aud=["account", ...] (non il client_id):
+      # si ammette "account", che Keycloak include sempre (vedi args).
+      OAUTH2_PROXY_OIDC_EXTRA_AUDIENCE: account
+      # Keycloak si raggiunge dall'interno (http://keycloak), ma l'issuer nei
+      # token e' l'hostname esterno (https://sso.localhost). La discovery dice
+      # l'issuer esterno, e i token lo rispettano: qui si salta solo il confronto
+      # fra issuer configurato e issuer scoperto, non la validazione del token.
+      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: "true"
+      # CA interna di Caddy: Keycloak e' raggiunto via http://keycloak (senza TLS).
+      OAUTH2_PROXY_SSL_INSECURE_SKIP_VERIFY: "true"
+    depends_on:
+      - keycloak
+
+  uptime-kuma:
+    # Monitoraggio dei servizi (decisione 60): su/giu' degli altri componenti.
+    # Autenticazione propria disattivata: davanti c'e' oauth2-proxy con SSO.
+    image: louislam/uptime-kuma:1
+    restart: unless-stopped
+    command: ["node", "server/server.js", "--disable-auth"]
+    volumes:
+      - uptime-kuma-data:/app/data
+
+  oauth2-proxy-uptime:
+    # SSO per Uptime Kuma (stesso pattern di Dagster), client Keycloak `uptime`.
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.2
+    restart: unless-stopped
+    command: ["--oidc-extra-audience=account"]
+    environment:
+      OAUTH2_PROXY_PROVIDER: keycloak-oidc
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/${REALM}
+      OAUTH2_PROXY_CLIENT_ID: uptime
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_UPTIME_CLIENT_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: https://uptime.localhost/oauth2/callback
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_UPTIME_COOKIE_SECRET}
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_ALLOWED_GROUP: /amministratori/*
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_UPSTREAMS: http://uptime-kuma:3001
+      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: "true"
+      # Il token endpoint di Keycloak e' l'hostname esterno (CA interna Caddy):
+      # senza questo lo scambio del codice fallisce con "unknown authority".
+      OAUTH2_PROXY_SSL_INSECURE_SKIP_VERIFY: "true"
+    depends_on:
+      - keycloak
+      - uptime-kuma
+
+  oauth2-proxy-litellm:
+    # SSO per la UI di LiteLLM (stesso pattern di Dagster e Uptime Kuma),
+    # client Keycloak `litellm`. Solo Superutente: basta un utente.
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.2
+    restart: unless-stopped
+    command: ["--oidc-extra-audience=account"]
+    environment:
+      OAUTH2_PROXY_PROVIDER: keycloak-oidc
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/${REALM}
+      OAUTH2_PROXY_CLIENT_ID: litellm
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_LITELLM_CLIENT_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: https://modelli.localhost/oauth2/callback
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_LITELLM_COOKIE_SECRET}
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_ALLOWED_GROUP: /amministratori/Superutente
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_UPSTREAMS: http://litellm:4000
+      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: "true"
+      OAUTH2_PROXY_SSL_INSECURE_SKIP_VERIFY: "true"
+    depends_on:
+      - keycloak
+
+  dagster-webserver:
+    # UI e GraphQL di Dagster (decisione 60): pianifica e mostra le importazioni.
+    # La code location sta in ./dagster (definitions.py). In sviluppo e' dietro
+    # Caddy con basic_auth; in produzione dietro oauth2-proxy + Keycloak.
+    build: ./dagster
+    restart: unless-stopped
+    command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "workspace.yaml"]
+    environment:
+      CONNETTORI_URL: http://connettori:8000
+      CONNETTORI_KEY: ${CONNETTORI_KEY}
+    volumes:
+      - dagster-data:/opt/dagster/dagster_home
+    depends_on:
+      - connettori
+
+  dagster-daemon:
+    # Esegue le schedule: a ogni scadenza crea una run del job. Condivide lo
+    # stesso DAGSTER_HOME del webserver (storico e schedule in SQLite, ponytail:
+    # in produzione si passa a Postgres).
+    build: ./dagster
+    restart: unless-stopped
+    command: ["dagster-daemon", "run", "-w", "workspace.yaml"]
+    environment:
+      CONNETTORI_URL: http://connettori:8000
+      CONNETTORI_KEY: ${CONNETTORI_KEY}
+    volumes:
+      - dagster-data:/opt/dagster/dagster_home
+    depends_on:
+      - connettori
+
   ingestion:
     # ponytail: on demand, non un servizio. Il file-watcher quando servira.
     #   docker compose run --rm ingestion
@@ -220,6 +421,24 @@ services:
     command: ["--config", "/app/config.yaml"]
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Database per utenti/chiavi/spend della UI e per l'SSO (senza, la UI e
+      # l'SSO non funzionano).
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/litellm
+      # Login della UI di amministrazione (credenziali dedicate, non la master
+      # key). L'SSO "vero" della UI e' un passo successivo (LiteLLM SSO/enterprise).
+      UI_USERNAME: ${UI_USERNAME:-admin}
+      UI_PASSWORD: ${UI_PASSWORD}
+      # SSO della UI (generic OIDC verso Keycloak): login aziendale, niente
+      # credenziali dedicate. Autorizzazione (solo Superutente) a monte, in
+      # oauth2-proxy-litellm.
+      PROXY_BASE_URL: https://modelli.localhost
+      GENERIC_CLIENT_ID: litellm-sso
+      GENERIC_CLIENT_SECRET: ${GENERIC_CLIENT_SECRET}
+      GENERIC_CLIENT_STATE: ${GENERIC_CLIENT_STATE}
+      GENERIC_AUTHORIZATION_ENDPOINT: https://${SSO_HOST}/realms/${REALM}/protocol/openid-connect/auth
+      GENERIC_TOKEN_ENDPOINT: http://keycloak:8080/realms/${REALM}/protocol/openid-connect/token
+      GENERIC_USERINFO_ENDPOINT: http://keycloak:8080/realms/${REALM}/protocol/openid-connect/userinfo
+      GENERIC_USER_ID_ATTRIBUTE: sub
       # Modello principale — scelto in .env, mappato in litellm-config.yaml
       MODELLO_RAGIONAMENTO: ${MODELLO_RAGIONAMENTO}
       MODELLO_API_KEY: ${MODELLO_API_KEY}
@@ -237,3 +456,5 @@ volumes:
   pg-data:
   mongo-data:
   caddy-data:
+  dagster-data:
+  uptime-kuma-data:

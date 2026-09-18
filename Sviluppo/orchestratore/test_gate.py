@@ -86,18 +86,28 @@ def token_di(utente):
 # ===========================================================================
 SEMI = """
 INSERT INTO sources (id, descrizione, percorso, acl_groups, residency, owner,
-                     approvato_da, approvato_il)
+                     approvato_da, approvato_il, stato, versione_autoritativa, aziende)
 VALUES ('t-manuali', 'Manuali (prova)', '/prova/manuali', '{tutti}',
-        'cloud_ok', 'uff.tecnico', 'direzione', now()),
+        'cloud_ok', 'uff.tecnico', 'direzione', now(), 'attiva', 'v1', '{luis}'),
        ('t-listini', 'Listini (prova)', '/prova/listini', '{vendite,direzione}',
-        'interno', 'commerciale', NULL, NULL)
+        'interno', 'commerciale', NULL, NULL, 'attiva', 'v1', '{luis}'),
+       -- Aperta a tutti i gruppi, ma SOSPESA: non deve rispondere (T1.15).
+       ('t-sospesa', 'Vecchia (prova)', '/prova/vecchia', '{tutti}',
+        'interno', 'uff.tecnico', NULL, NULL, 'sospesa', 'v0', '{luis}'),
+       -- Aperta a tutti i gruppi, ma di un'ALTRA azienda (T1.16).
+       ('t-altra', 'Altra azienda (prova)', '/prova/altra', '{tutti}',
+        'interno', 'uff.tecnico', NULL, NULL, 'attiva', 'v1', '{decobrands}')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO chunks (source_id, documento, page, content, content_hash)
 VALUES ('t-manuali', 'manuale.pdf', 12,
         'La garanzia della serie X dura 24 mesi dalla consegna.', 'h1'),
        ('t-listini', 'listino.pdf', 3,
-        'Sconto riservato del 18 percento sulla serie X per il cliente.', 'h2')
+        'Sconto riservato del 18 percento sulla serie X per il cliente.', 'h2'),
+       ('t-sospesa', 'vecchio.pdf', 1,
+        'La garanzia della serie X durava 12 mesi (edizione superata).', 'h3'),
+       ('t-altra', 'altra.pdf', 1,
+        'Garanzia della serie X presso l altra azienda: 36 mesi.', 'h4')
 ON CONFLICT DO NOTHING;
 """
 
@@ -160,7 +170,8 @@ def main():
     def _():
         claim = identita.verifica(f"Bearer {token_di('prova.vendite')}")
         g = set(identita.gruppi(claim))
-        assert g == {"tutti", "vendite"}, f"gruppi inattesi: {g}"
+        assert g == {"tutti", "vendite", "azienda-luis"}, f"gruppi inattesi: {g}"
+        assert identita.aziende(list(g)) == ["luis"]
 
     print("\n--- ACL (T1.14) " + "-" * 52)
 
@@ -186,12 +197,33 @@ def main():
         righe, _ = recupero.cerca(conn, "garanzia", [])
         assert righe == [], f"utente senza gruppi ha ottenuto {len(righe)} chunk"
 
+    print("\n--- Stato e aziende (T1.15-T1.17, decisione 67) " + "-" * 20)
+
+    @prova("T1.15", "fonte sospesa -> non risponde, anche se il gruppo la vede")
+    def _():
+        righe, _ = recupero.cerca(conn, "garanzia serie X", ["tutti", "azienda-luis"])
+        fonti = {r["source_id"] for r in righe}
+        assert "t-sospesa" not in fonti, f"una fonte sospesa ha risposto: {fonti}"
+        assert "t-manuali" in fonti, f"la fonte attiva non risponde: {fonti}"
+
+    @prova("T1.16", "fonte di un'altra azienda -> invisibile, anche con il gruppo giusto")
+    def _():
+        luis, _ = recupero.cerca(conn, "garanzia serie X", ["tutti", "azienda-luis"])
+        deco, _ = recupero.cerca(conn, "garanzia serie X", ["tutti", "azienda-decobrands"])
+        assert "t-altra" not in {r["source_id"] for r in luis}, "Luis vede i dati dell'altra azienda"
+        assert {r["source_id"] for r in deco} == {"t-altra"}, f"Decobrands vede: {deco}"
+
+    @prova("T1.17", "utente senza aziende -> nessun risultato, anche con i gruppi")
+    def _():
+        righe, _ = recupero.cerca(conn, "garanzia serie X", ["tutti", "vendite", "direzione"])
+        assert righe == [], f"utente senza aziende ha ottenuto {len(righe)} chunk"
+
     print("\n--- Gate e contaminazione (T1.8, T1.9, T1.10) " + "-" * 22)
 
     @prova("T1.10", "turno interno senza rotta interna -> rifiuto esplicito, non risposta parziale")
     def _():
         os.environ.pop("LLM_RAGIONAMENTO_INTERNO", None)
-        vendite = ["tutti", "vendite"]
+        vendite = ["tutti", "vendite", "azienda-luis"]
         righe, _ = recupero.cerca(conn, "sconto serie X", vendite)
         assert any(r["residency"] == "interno" for r in righe), "il seme non contiene fonti interne"
         try:
@@ -215,7 +247,7 @@ def main():
     def _():
         os.environ.pop("LLM_RAGIONAMENTO_INTERNO", None)
         with egress.registra_destinazioni() as visti:
-            righe, _ = recupero.cerca(conn, "sconto serie X", ["tutti", "vendite"])
+            righe, _ = recupero.cerca(conn, "sconto serie X", ["tutti", "vendite", "azienda-luis"])
             try:
                 gate.applica(conn, "test-conv-2", righe)
             except gate.RispostaRifiutata:
@@ -254,7 +286,7 @@ def main():
     @prova("T1.3c", "embedding non disponibile -> ricerca degradata su full-text, non errore")
     def _():
         righe, degradato = recupero.cerca(conn, "garanzia serie X",
-                                          ["tutti"], qvec=None)
+                                          ["tutti", "azienda-luis"], qvec=None)
         assert degradato is True, "il degrado non e' segnalato"
         assert len(righe) >= 1, "il full-text non ha trovato nulla"
         assert righe[0]["source_id"] == "t-manuali"

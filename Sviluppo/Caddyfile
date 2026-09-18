@@ -52,7 +52,11 @@
 			# Senza slash finale: LibreChat manda "https://host", non
 			# "https://host/". Nessun gruppo di cattura, cosi non si
 			# dipende dalla sintassi di sostituzione di Caddy.
-			header_down Location "^https?://{$APP_HOST}/?$" "https://{$APP_HOST}/c/new"
+			# Dopo il login si passa dal portale (decisione 55): gli operatori
+			# ricevono un 302 immediato verso /c/new, gli amministratori vedono
+			# la scelta Chat / Amministrazione. Percorso diverso da /: la catena
+			# di redirect termina sempre.
+			header_down Location "^https?://{$APP_HOST}/?$" "https://{$APP_HOST}/amministrazione/dopo-login"
 		}
 	}
 
@@ -65,6 +69,11 @@
 	# disegnata) e atterra su /c/new. Nessun cookie da controllare, quindi
 	# nessuna dipendenza da SameSite e nessun ciclo possibile.
 	redir / /oauth/openid 302
+
+	# Portale e amministrazione: servizio separato (decisione 58).
+	handle /amministrazione* {
+		reverse_proxy amministrazione:8000
+	}
 
 	# ------------------------------------------------------------------
 	# Caricamento file in chat BLOCCATO qui, non solo in librechat.yaml
@@ -87,4 +96,24 @@
 {$SSO_HOST} {
 	tls internal
 	reverse_proxy keycloak:8080
+}
+
+# Dagster: UI delle importazioni (decisione 60), dietro SSO aziendale via
+# oauth2-proxy + Keycloak (niente password locale). oauth2-proxy fa da reverse
+# proxy: autentica con Keycloak e inoltra a Dagster.
+dagster.localhost {
+	tls internal
+	reverse_proxy oauth2-proxy:4180
+}
+
+# Uptime Kuma: monitoraggio dei sistemi (decisione 60), SSO come Dagster.
+uptime.localhost {
+	tls internal
+	reverse_proxy oauth2-proxy-uptime:4180
+}
+
+# LiteLLM: UI dei modelli AI (decisioni 13/40), SSO come gli altri strumenti.
+modelli.localhost {
+	tls internal
+	reverse_proxy oauth2-proxy-litellm:4180
 }

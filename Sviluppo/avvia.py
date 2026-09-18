@@ -51,7 +51,7 @@ def leggi_env():
         raise SystemExit("manca .env — copiarlo da .env.example e compilarlo")
     env = {}
     for riga in f.read_text(encoding="utf-8").splitlines():
-        m = re.match(r"^([A-Z_]+)=(.*)$", riga)
+        m = re.match(r"^([A-Z0-9_]+)=(.*)$", riga)
         if m:
             env[m.group(1)] = m.group(2).split("#")[0].strip()
     return env
@@ -69,7 +69,7 @@ def rendi_template(env):
     FACOLTATIVE = {"URL_DISCLAIMER", "URL_PRIVACY"}
     for sorgente, destinazione in TEMPLATES:
         testo = sorgente.read_text(encoding="utf-8")
-        servono = sorted(set(re.findall(r"\$\{([A-Z_]+)\}", testo)))
+        servono = sorted(set(re.findall(r"\$\{([A-Z0-9_]+)\}", testo)))
         mancanti = [k for k in servono
                     if not env.get(k) and k not in FACOLTATIVE]
         if mancanti:
@@ -118,10 +118,13 @@ I gruppi non sono una gerarchia: il filtro e' un'intersezione di insiemi.
 
 | Utente | Password | Profilo | Cosa puo' fare |
 |---|---|---|---|
-| `prova.admin` | `{pw}` | Amministratore completo | tutto, compreso assegnare profili di amministrazione |
-| `prova.accessi` | `{pw}` | solo ruolo Gestione accessi | crea operatori, li mette nei gruppi; NON tocca gli amministratori |
+| `prova.super` | `{pw}` | Superutente | tutto: aziende, struttura dei gruppi e dei profili, tutte le aziende |
+| `prova.admin` | `{pw}` | Amministratore completo | tutto tranne la struttura; assegna i profili, non Superutente |
+| `prova.accessi` | `{pw}` | profilo Gestione accessi, solo Luis | crea operatori Luis, gruppi e password; NON tocca gli amministratori |
+| `prova.revisore` | `{pw}` | Revisore DPO | legge tutta l'amministrazione (aziende comprese), non modifica nulla |
 
-**Gestione utenti e gruppi:** https://{sso}/admin/{env.get("REALM", "azienda")}/console/
+**Amministrazione:** https://{app}/amministrazione/  (dati di esempio: `py amministrazione/esempio.py`)
+Aziende, utenti, gruppi e profili si gestiscono dall'amministrazione (aziende: solo `prova.super`). Luis S.r.l. e Decobrands esistono solo come dati di esempio. Console di Keycloak (solo Superutente): https://{sso}/admin/{env.get("REALM", "azienda")}/console/
 (si entra con un account del realm, non con `admin`).
 
 ## Console di amministrazione Keycloak — amministratore TECNICO
@@ -304,8 +307,10 @@ def main():
     # --import-realm non tocca un realm esistente. Vedi keycloak/deleghe.py.
     subprocess.run([sys.executable, str(QUI / "keycloak" / "deleghe.py")], check=True)
 
-    print("6/6 mongo + librechat")
+    print("6/6 mongo + librechat + amministrazione")
     dc("up", "-d", "mongo", "librechat")
+    # --build: il codice dell'amministrazione e' nell'immagine, non montato.
+    dc("up", "-d", "--build", "amministrazione")
     if not oidc_configurato():
         # Su Docker Desktop il bind mount di certs/ puo' non essere ancora
         # visibile dentro il container quando Node legge NODE_EXTRA_CA_CERTS:

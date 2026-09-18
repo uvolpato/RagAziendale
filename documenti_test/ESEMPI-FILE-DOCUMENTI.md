@@ -152,8 +152,7 @@ un riferimento cloud.
 
 - **Veri, non sensibili**: manuali, procedure, schede tecniche, listini fittizi
   anonimizzati. Niente dati personali, contratti, buste paga, dati riservati.
-- Da mettere in una cartella dedicata (es. `Sviluppo/valutazione/campione/`),
-  uno per una: nome file = `CAT-<progressivo>-<descrizione>.pdf`.
+- Da mettere in `documenti_test/`, uno per una: nome file = `CAT-<progressivo>-<descrizione>.pdf`.
 - Tenere il **gradevole dentro**: se i 6 cataloghi oppure i 4 "peggiori"
   risultano tutti leggibili, il test è già inquinato.
 - Le **domande valgono più del codice**: servono 20-30 domande che i colleghi

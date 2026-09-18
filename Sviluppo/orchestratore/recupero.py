@@ -2,9 +2,9 @@
 
 Due regole non negoziabili:
 
-1. Il filtro ACL sta nella query, non dopo. Si passa dalla tabella `sources`,
-   che e' l'unica casa del dato di sicurezza: le ACL non sono duplicate sui
-   chunk, quindi non possono disallinearsi.
+1. Il filtro sta nella query, non dopo: gruppi, aziende e stato della fonte.
+   Si passa dalla tabella `sources`, che e' l'unica casa del dato di
+   sicurezza: nulla e' duplicato sui chunk, quindi non puo' disallinearsi.
 
 2. Fusione RRF di vettoriale e full-text. Il vettoriale sbaglia i codici
    articolo e i part number, il full-text li prende; il full-text sbaglia le
@@ -26,9 +26,14 @@ CANDIDATI = 30      # quanti per ramo prima della fusione
 
 SQL_IBRIDA = """
 WITH consentite AS (
-    -- Il filtro ACL: intersezione fra i gruppi del token e quelli della
-    -- sorgente. Niente livelli numerici, niente gerarchie.
-    SELECT id, residency FROM sources WHERE acl_groups && %(gruppi)s::text[]
+    -- Il filtro: intersezione fra i gruppi del token e quelli della sorgente
+    -- (niente livelli numerici, niente gerarchie), E fra le aziende del token
+    -- e quelle della sorgente (decisione 53), E solo fonti attive: una fonte
+    -- sospesa o in attesa di approvazione non risponde (decisione 67).
+    SELECT id, residency FROM sources
+     WHERE acl_groups && %(gruppi)s::text[]
+       AND aziende && %(aziende)s::text[]
+       AND stato = 'attiva'
 ),
 vett AS (
     SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> %(qvec)s::vector) AS r
@@ -68,7 +73,10 @@ LIMIT %(limite)s;
 # Variante senza vettoriale: usata quando l'host di inferenza non risponde.
 SQL_SOLO_TESTO = """
 WITH consentite AS (
-    SELECT id, residency FROM sources WHERE acl_groups && %(gruppi)s::text[]
+    SELECT id, residency FROM sources
+     WHERE acl_groups && %(gruppi)s::text[]
+       AND aziende && %(aziende)s::text[]
+       AND stato = 'attiva'
 )
 SELECT c.id, c.source_id, c.documento, c.page, c.content,
        s.residency,
@@ -90,14 +98,16 @@ def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 5):
 
     `qvec` None significa embedding non disponibile -> solo full-text.
     """
-    if not gruppi:
-        # Nessun gruppo, nessun accesso. Esplicito per non dipendere dal
-        # comportamento di && con array vuoto.
+    from .identita import aziende as aziende_di
+    aziende = aziende_di(gruppi)
+    if not gruppi or not aziende:
+        # Nessun gruppo o nessuna azienda, nessun accesso. Esplicito per non
+        # dipendere dal comportamento di && con array vuoto.
         return [], False
 
     degradato = qvec is None
     sql = SQL_SOLO_TESTO if degradato else SQL_IBRIDA
-    par = {"gruppi": gruppi, "domanda": domanda, "limite": limite}
+    par = {"gruppi": gruppi, "aziende": aziende, "domanda": domanda, "limite": limite}
     if not degradato:
         par |= {"qvec": qvec, "cand": CANDIDATI, "k": K_RRF}
 

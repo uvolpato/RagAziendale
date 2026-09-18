@@ -86,12 +86,17 @@ passano da Cube e da strumenti dedicati, che il filtro lo applicano sempre.
 Ogni record ha un **`id` testuale** nel formato:
 
 ```
-<fonte>:<codice azienda nel gestionale>:<id nel gestionale>
-integra:001:20657
+<codice della nostra azienda>:<id nel gestionale>
+luis:20657
 ```
 
-- **Unico anche con più gestionali e più aziende**, senza tabelle di
-  decodifica da mantenere.
+(Rivisto con la decisione 69, migrazione 005. Prima era
+`<fonte>:<codice azienda nel gestionale>:<id>`.)
+
+- **Lo spazio dei nomi è la NOSTRA azienda**, non il gestionale: ogni azienda
+  ha il suo connettore e importa nel suo spazio. Due aziende sullo stesso tipo
+  di gestionale, anche con lo stesso codice interno (`001` capita spesso), non
+  si pestano mai i piedi: `luis:20657` e `decobrands:20657` sono record diversi.
 - **Leggibile**: in un log o in una traccia si capisce subito da dove viene.
 - **I riferimenti** fra tabelle (`soggetto_id`, `articolo_id`,
   `documento_id`...) usano lo stesso formato.
@@ -101,7 +106,7 @@ integra:001:20657
 
 Per le entità senza un id numerico nel gestionale (es. tabelle codici) il
 connettore compone l'id dai campi della chiave naturale:
-`integra:001:pagamento:007`.
+`luis:pagamento:007`.
 
 > ponytail: chiave testuale. Se un giorno i join su decine di milioni di righe
 > diventano il collo di bottiglia, si aggiunge una chiave surrogata intera.
@@ -200,18 +205,28 @@ contratto B2B, da mappare.
 
 ### 5.1 `aziende` — le aziende gestite
 
-Non storicizzata: poche righe, amministrate a mano.
+Non storicizzata: poche righe. Si amministra dal pannello, **Impostazioni →
+Aziende**, solo il Superutente (decisione 69). **Ogni azienda ha il suo
+connettore** al gestionale di riferimento e importa tutto nel proprio spazio di
+chiavi (§3).
 
 | Colonna | Tipo | Obbl. | Significato | Integra |
 |---|---|---|---|---|
-| `codice` | text PK | ✔ | slug stabile, usato ovunque: `luis`, `decobrands` | — |
+| `codice` | text PK | ✔ | slug stabile (minuscole, cifre, trattini): è nelle chiavi dei record e nel gruppo Keycloak `azienda-<codice>`. **Non si cambia** | — |
 | `ragione_sociale` | text | ✔ | | — |
 | `partita_iva` | text | | | — |
-| `fonte` | text | ✔ | gestionale: `integra`, ... | `integra` |
-| `codice_origine` | text | ✔ | codice azienda nel gestionale | `azi_cdazi` (`001`) |
-| `attiva` | boolean | ✔ | | — |
+| `connettore` | text | | tipo di connettore: `integra`, ...; vuoto = non ancora collegata | `integra` |
+| `codice_origine` | text | | codice dell'azienda DENTRO il gestionale, se è multi-azienda | `azi_cdazi` (`001`) |
+| `attiva` | boolean | ✔ | disattivata = importazioni ferme, dati conservati | — |
+| `note`, `creata_il` | | | | — |
 
-Vincolo: `(fonte, codice_origine)` unico.
+**Due posti da tenere allineati**: la riga qui e il gruppo Keycloak
+`azienda-<codice>`, che abilita le persone. Il pannello li crea insieme e, se
+uno fallisce, annulla l'altro. Le aziende **non si eliminano** (dati importati,
+fonti e registro vi fanno riferimento): si disattivano con motivo.
+
+**Le credenziali del collegamento** al gestionale stanno in `.env`, mai qui né
+nel pannello.
 
 ### 5.2 `soggetti` — anagrafica unica
 
@@ -555,7 +570,7 @@ dedotto dal suo sito; materiale dell'articolo estratto dalla scheda tecnica.
 
 | Colonna | Significato |
 |---|---|
-| `azienda`, `entita`, `chiave` | a cosa si riferisce (`soggetto`, `integra:001:4512`) |
+| `azienda`, `entita`, `chiave` | a cosa si riferisce (`soggetto`, `luis:4512`) |
 | `attributo`, `valore` | `settore`, `"arredo giardino"` |
 | `fonte` | `chunk:123` \| URL \| `regola:<nome>` — **obbligatoria** |
 | `metodo` | modello o regola che l'ha prodotto — **obbligatorio** |
@@ -598,7 +613,7 @@ WHERE codice = 'LU3210';
 ```sql
 SELECT costo_ultimo
 FROM erp_storico.articoli
-WHERE id = 'integra:001:20657'
+WHERE id = 'luis:20657'
   AND tstzrange(registrato_dal, registrato_al) @> '2026-03-01'::timestamptz;
 ```
 
@@ -610,8 +625,8 @@ SELECT date_trunc('month', d.data_documento) AS mese,
 FROM erp.documenti d
 JOIN erp.documenti_righe r ON r.documento_id = d.id
 WHERE d.ciclo = 'acquisto' AND d.tipo = 'fattura'
-  AND d.soggetto_id = 'integra:001:2'
-  AND r.articolo_id = 'integra:001:20657'
+  AND d.soggetto_id = 'luis:2'
+  AND r.articolo_id = 'luis:20657'
 GROUP BY 1 ORDER BY 1;
 ```
 
@@ -628,7 +643,7 @@ LEFT JOIN erp_storico.articoli a
        ON a.id = r.articolo_id
       AND tstzrange(a.registrato_dal, a.registrato_al) @> d.data_documento::timestamptz
 WHERE d.ciclo = 'vendita' AND d.tipo = 'fattura'
-  AND r.articolo_id = 'integra:001:20657'
+  AND r.articolo_id = 'luis:20657'
 GROUP BY 1 ORDER BY 1;
 ```
 

@@ -5,12 +5,9 @@
 model_list:
 
   # =====================================================================
-  # ragionamento — il modello principale. DA SCEGLIERE.
-  #
-  # Non c'e un default: la scelta e una decisione di progetto, e si prende
-  # con i numeri dell'eval sulle domande d'oro, non per simpatia.
-  # Scommentare UNA riga, verificare l'id esatto sulla documentazione del
-  # provider, e mettere la chiave in .env.
+  # ragionamento / veloce — DISATTIVATI finche' non si sceglie il modello
+  # (decisione 38: scelta del committente). Quando MODELLO_RAGIONAMENTO e
+  # MODELLO_VELOCE in .env sono compilati, scommentare i blocchi qui sotto.
   #
   # Criteri che contano per QUESTA architettura, in ordine:
   #   1. affidabilita del tool calling con argomenti corretti  <- il piu importante
@@ -19,31 +16,23 @@ model_list:
   #   4. disciplina nelle citazioni (non inventare fonti)
   #   5. costo per risposta completata, non per richiesta
   #   6. esiste una versione ospitabile in casa? (rilevante per la fase 1b)
+  #
+  # Candidati da confrontare nell'eval (ogni provider vuole il suo prefisso):
+  #   openai/<id> | anthropic/<id> | gemini/<id> | mistral/<id> | deepseek/<id>
+  #   together_ai/<id> | openrouter/<id> | azure/<deployment> | bedrock/<id>
+  #   hosted_vllm/<id> (in casa) | lm_studio/<id> (sviluppo)
   # =====================================================================
-  - model_name: ragionamento
-    litellm_params:
-      model: ${MODELLO_RAGIONAMENTO}
-      api_key: os.environ/MODELLO_API_KEY
-      api_base: os.environ/MODELLO_API_BASE   # vuoto se il provider e pubblico
-
-  # Candidati da confrontare nell'eval. Ogni provider vuole il suo prefisso
-  # LiteLLM e la sua chiave: verificare gli id correnti sulla loro documentazione.
-  #   openai/<id>          |  anthropic/<id>      |  gemini/<id>
-  #   mistral/<id>         |  deepseek/<id>       |  together_ai/<id>
-  #   openrouter/<id>      |  azure/<deployment>  |  bedrock/<id>
-  #   hosted_vllm/<id>     <- gia ospitato in casa
-  #   lm_studio/<id>       <- sulla macchina di sviluppo
-
-  # ---------------------------------------------------------------------
-  # veloce — titoli, classificazione, riscrittura query. Compiti banali:
-  # qui si sceglie il modello piu economico che li svolga, e puo essere di
-  # un provider diverso da quello di ragionamento.
-  # ---------------------------------------------------------------------
-  - model_name: veloce
-    litellm_params:
-      model: ${MODELLO_VELOCE}
-      api_key: os.environ/MODELLO_VELOCE_API_KEY
-      api_base: os.environ/MODELLO_VELOCE_API_BASE
+  # - model_name: ragionamento
+  #   litellm_params:
+  #     model: ${MODELLO_RAGIONAMENTO}
+  #     api_key: os.environ/MODELLO_API_KEY
+  #     api_base: os.environ/MODELLO_API_BASE   # vuoto se il provider e pubblico
+  #
+  # - model_name: veloce
+  #   litellm_params:
+  #     model: ${MODELLO_VELOCE}
+  #     api_key: os.environ/MODELLO_VELOCE_API_KEY
+  #     api_base: os.environ/MODELLO_VELOCE_API_BASE
 
   # ---------------------------------------------------------------------
   # embedding — locale per obbligo, non per scelta: in ingestion passa il
@@ -67,9 +56,8 @@ model_list:
 
 router_settings:
   # Se il modello principale non risponde, meglio una risposta dal veloce
-  # che nessuna risposta. NON valido per le rotte interne: un fallback che
-  # esce dal perimetro sarebbe una fuga di dati.
-  fallbacks: [{"ragionamento": ["veloce"]}]
+  # che nessuna risposta (da riattivare quando ragionamento/veloce esistono).
+  # fallbacks: [{"ragionamento": ["veloce"]}]
   num_retries: 2
 
 litellm_settings:

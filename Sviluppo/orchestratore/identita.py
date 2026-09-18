@@ -83,6 +83,15 @@ def gruppi(claim: dict) -> list[str]:
     return [str(x) for x in g if x]
 
 
+def aziende(gruppi_utente: list[str]) -> list[str]:
+    """Le aziende a cui l'utente e' abilitato: gruppi 'azienda-<codice>'
+    (decisione 53). Nessuna azienda = nessun dato, come per i gruppi.
+    Stessa regola di amministrazione/logica.aziende_da_gruppi: i due servizi
+    girano in container separati, la riga e' duplicata apposta."""
+    return sorted({g[len("azienda-"):] for g in gruppi_utente
+                   if g.startswith("azienda-") and len(g) > len("azienda-")})
+
+
 def autocontrollo():
     """Chiamato all'avvio: se la configurazione e' incompleta il servizio
     NON parte. Un fallimento rumoroso al boot invece di uno silenzioso in

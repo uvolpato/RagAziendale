@@ -49,6 +49,9 @@ def id_gruppo(h, percorso):
 
 
 def main():
+    master = c.post(f"{SSO}/realms/master/protocol/openid-connect/token", data={
+        "grant_type": "password", "client_id": "admin-cli", "username": "admin",
+        "password": E["KEYCLOAK_ADMIN_PASSWORD"]}).json()["access_token"]
     adm = token("prova.admin")
     acc = token("prova.accessi")
     io = id_utente(adm, "prova.accessi")
@@ -72,9 +75,6 @@ def main():
           c.put(f"{A}/users/{io}/groups/{completo}", headers=acc), [403])
     prova("aggiunge l'operatore a 'Responsabile IT'",
           c.put(f"{A}/users/{nuovo}/groups/{it}", headers=acc), [403])
-    master = c.post(f"{SSO}/realms/master/protocol/openid-connect/token", data={
-        "grant_type": "password", "client_id": "admin-cli", "username": "admin",
-        "password": E["KEYCLOAK_ADMIN_PASSWORD"]}).json()["access_token"]
     ruoli_realm = c.get(f"{A}/roles/offline_access",
                         headers={"Authorization": f"Bearer {master}"}).json()
     ruoli_realm = [ruoli_realm]
@@ -93,14 +93,63 @@ def main():
     prova("toglie un amministratore dal suo profilo",
           c.delete(f"{A}/users/{capo}/groups/{completo}", headers=acc), [403])
 
-    print("\nAmministratore completo (prova.admin) — puo' assegnare i profili")
+    prova("crea un gruppo", c.post(f"{A}/groups", headers=acc, json={"name": "verifica-gruppo"}), [403])
+
+    tecnico = {"Authorization": f"Bearer {master}"}
+    super_ = token("prova.super")
+    superutente = id_gruppo(adm, "/amministratori/Superutente")
+    capo_super = id_utente(adm, "prova.super")
+
+    print("\nAmministratore completo (prova.admin) — assegna i profili, ma non Superutente")
     prova("mette l'operatore in 'Responsabile IT'",
           c.put(f"{A}/users/{nuovo}/groups/{it}", headers=adm), [204])
+    prova("mette l'operatore in 'Superutente'",
+          c.put(f"{A}/users/{nuovo}/groups/{superutente}", headers=adm), [403])
+    prova("si mette in 'Superutente'",
+          c.put(f"{A}/users/{capo}/groups/{superutente}", headers=adm), [403])
+    r = c.put(f"{A}/users/{io}/reset-password", headers=adm,
+              json={"type": "password", "value": "Presa-123!", "temporary": False})
+    if r.status_code < 300:
+        c.put(f"{A}/users/{io}/reset-password", headers=tecnico,
+              json={"type": "password", "value": E["TEST_USER_PASSWORD"], "temporary": False})
+    prova("reimposta la password di un altro amministratore", r, [403])
+    prova("disattiva il Superutente",
+          c.put(f"{A}/users/{capo_super}", headers=adm, json={"enabled": False}), [403])
+    prova("crea un gruppo", c.post(f"{A}/groups", headers=adm, json={"name": "verifica-gruppo"}), [403])
+
+    print("\nRevisore (prova.revisore) — legge, non modifica")
+    rev = token("prova.revisore")
+    prova("elenca utenti", c.get(f"{A}/users", headers=rev), [200])
+    prova("crea un utente", c.post(f"{A}/users", headers=rev,
+          json={"username": "verifica.revisore", "enabled": True}), [403])
+
+    print("\nSuperutente (prova.super) — tutto")
+    prova("mette l'operatore in 'Superutente'",
+          c.put(f"{A}/users/{nuovo}/groups/{superutente}", headers=super_), [204])
+    prova("lo toglie da 'Superutente'",
+          c.delete(f"{A}/users/{nuovo}/groups/{superutente}", headers=super_), [204])
+    r = c.post(f"{A}/groups", headers=super_, json={"name": "verifica-gruppo"})
+    prova("crea un gruppo", r, [201])
+    for g in c.get(f"{A}/groups", params={"search": "verifica-gruppo", "exact": "true"}, headers=tecnico).json():
+        c.delete(f"{A}/groups/{g['id']}", headers=tecnico)
 
     print("\nOperatore (prova.vendite) — nessun accesso all'amministrazione")
     prova("elenca utenti", c.get(f"{A}/users", headers=token("prova.vendite")), [403])
 
-    c.delete(f"{A}/users/{nuovo}", headers=adm)   # pulizia
+    print("\nRegola: i ruoli di amministrazione si danno SOLO con i profili")
+    cid = c.get(f"{A}/clients", params={"clientId": "amministrazione"}, headers=tecnico).json()[0]["id"]
+    diretti = [f"{u['username']}:{r['name']}"
+               for r in c.get(f"{A}/clients/{cid}/roles", headers=tecnico).json()
+               for u in c.get(f"{A}/clients/{cid}/roles/{r['name']}/users", headers=tecnico).json()]
+    # /roles/{r}/users elenca anche chi lo riceve da un gruppo? No: solo le
+    # assegnazioni dirette. I divieti sui profili non proteggono queste.
+    esiti.append(not diretti)
+    print(f"  {'PASS' if not diretti else 'FAIL'}  nessun ruolo admin-* assegnato direttamente"
+          + ("" if not diretti else f": {diretti}"))
+
+    # Pulizia con l'account tecnico: un delegato, giustamente, non puo'
+    # cancellare un utente che e' diventato membro di un profilo.
+    c.delete(f"{A}/users/{nuovo}", headers=tecnico)
 
     print(f"\n{sum(esiti)}/{len(esiti)} passati")
     if not all(esiti):

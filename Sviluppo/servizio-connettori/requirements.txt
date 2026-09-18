@@ -1,0 +1,7 @@
+# Dipendenze del servizio connettori. Stesse versioni di amministrazione/orchestratore,
+# piu' cryptography (cifratura Fernet dei segreti, decisione 70): e' gia' dipendenza
+# indiretta di PyJWT, qui e' dichiarata perche' serve direttamente.
+fastapi==0.118.0
+uvicorn[standard]==0.37.0
+psycopg[binary]==3.2.10
+cryptography==50.0.1

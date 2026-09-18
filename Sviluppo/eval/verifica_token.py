@@ -19,9 +19,9 @@ KEYCLOAK = "http://localhost:8081"
 REALM = "azienda"
 
 ATTESI = {
-    "prova.magazzino": {"tutti", "magazzino"},
-    "prova.vendite": {"tutti", "vendite"},
-    "prova.direzione": {"tutti", "vendite", "amministrazione", "direzione"},
+    "prova.magazzino": {"tutti", "magazzino", "azienda-luis"},
+    "prova.vendite": {"tutti", "vendite", "azienda-luis"},
+    "prova.direzione": {"tutti", "vendite", "amministrazione", "direzione", "azienda-luis"},
 }
 
 

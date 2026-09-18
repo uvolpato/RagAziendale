@@ -1,0 +1,6 @@
+# Servizio azioni: FastAPI + docker-py (parla al socket di Docker) + psycopg
+# (registro modifiche). Stesse versioni di amministrazione/orchestratore.
+fastapi==0.118.0
+uvicorn[standard]==0.37.0
+psycopg[binary]==3.2.10
+docker==7.1.0

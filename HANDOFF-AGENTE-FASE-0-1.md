@@ -92,8 +92,9 @@ Comandi dalla cartella `Sviluppo/`, con il venv:
 Queste sono le proprietà che rendono il sistema sicuro. Ogni modifica deve
 lasciarle vere, e i test esistenti le verificano.
 
-1. **Il filtro ACL sta nella query SQL**, mai dopo il recupero. Passa da
-   `sources.acl_groups && gruppi_del_token`. Le ACL non si duplicano sui
+1. **Il filtro sta nella query SQL**, mai dopo il recupero: gruppi
+   (`acl_groups && gruppi_del_token`), aziende (`aziende && aziende_del_token`)
+   e stato (`stato = 'attiva'`). Le ACL non si duplicano sui
    chunk. → `recupero.py`, test T1.14.
 2. **Nessun percorso permissivo sull'identità.** Header assente, vuoto o
    malformato → rifiuto. Mai un utente di default. LibreChat sostituisce i
@@ -280,6 +281,21 @@ mini-corpus sintetico di esempio e fermarsi.
 | A4.2 | `branding/tema-keycloak/README.md` cita ancora `branding/logo.svg` e `favicon.png`, oggi `logo.png` e `favicon.ico` | **RISOLTO 18/09** — `Sviluppo/README.md` e `tema-keycloak/README.md` allineati a `logo.png`/`favicon.ico`; eval P6 ora valida `img/logo.png` come PNG (il compose era già corretto) |
 | A4.3 | LibreChat usa l'immagine `:latest` | **RISOLTO 18/09** — pinnato `ghcr.io/danny-avila/librechat:v0.8.7` (ultima stable al 18/09/2026; `v0.8.8-rc*` sono pre-release). Il pin va fatto **prima** di verificare A1 (contratto `X-Conversation-Id`): rilanciare T1.4 e quegli A1-criteri a valle del pin |
 | A4.4 | Traces: registrare anche `retrieval_vuoto`, `riformulazione`, `feedback` (colonne già in schema) | necessari alla diagnosi del pilota |
+
+### A6 — Gate: filtro per stato della fonte e per azienda (decisione 67)  ✅ FATTO il 18/09/2026
+
+`sources.stato` e `sources.aziende` esistono dalla migrazione 003 e
+l'amministrazione li gestisce, ma `recupero.py` filtra ancora solo per
+`acl_groups && gruppi`. Da fare:
+- predicato del gate: `stato = 'attiva' AND acl_groups && gruppi AND aziende && aziende_del_token`
+  (aziende dai gruppi `azienda-<codice>`, come `amministrazione/logica.aziende_da_gruppi`);
+- test in `test_gate.py`: fonte sospesa invisibile; utente senza l'azienda della
+  fonte non la vede; utente senza aziende non vede nulla;
+- aggiornare `amministrazione/logica.visibilita` perché gli avvisi diventino
+  motivi di esclusione (il test V2 di `test_amministrazione.py` cambiera').
+
+**Invariante**: il filtro resta nella query SQL (§4.1). Prima di indicizzare
+dati di piu' aziende.
 
 ### A5 — Pilota (passo 6 del piano)
 
