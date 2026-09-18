@@ -973,6 +973,10 @@ Il piano "noleggiare una GPU un pomeriggio" (§11.8) diventa **una variabile d'a
 | 48 | Motore prezzi | **Non si replica e non si ricostruisce** | Replicare i listini non replica la logica di sconto; ricostruirla in SQL significa sbagliarla | ✅ §15.3 |
 | 49 | Arricchimenti AI | Tabelle separate (`arricchimenti.*`), **mai sovrascrivere un campo ERP**, provenienza e stato di revisione su ogni riga | Il dato di sistema e quello derivato devono restare distinguibili | ✅ §15.5 |
 | 50 | Permessi sui dati strutturati | Tabelle e viste nel registro `sources`, default `interno`, RLS nel database, contaminazione estesa alle righe | Altrimenti la replica diventa il modo di aggirare le regole dei documenti | ✅ §15.6 |
+| 51 | **Modello dati gestionali** | **Canonico**, indipendente dal gestionale; un connettore per gestionale; colonne facoltative + `extra` jsonb | Integra è uno dei gestionali; le aziende non tengono tutte gli stessi dati | ✅ §15.9 |
+| 52 | **Storico** | SCD tipo 2 su tutte le tabelle gestionali, versione nuova solo se l'impronta cambia; l'assistente vede solo la versione corrente | Andamento prezzi, margini, attribuzione corretta del fatturato nel tempo | ✅ §15.9 |
+| 53 | **Più aziende** | L'azienda è un terzo asse di permesso (dati, sorgenti, utenti), applicato dal gate per intersezione, niente default permissivo | Un gestionale gestisce più aziende; un utente può essere abilitato solo ad alcune | ✅ §15.9 |
+| 54 | **Dati personali nel gestionale** | I contatti non si storicizzano; esclusi IBAN e mandati | GDPR: minimizzazione e cancellazione | ✅ §15.9 |
 
 ---
 
@@ -1310,6 +1314,67 @@ da tenere in mente già ora: il registro `sources` deve poter descrivere
 anche tabelle, non solo cartelle di documenti.
 
 ---
+
+### 15.9 Modello canonico, storico e più aziende
+
+Revisione di 15.2–15.3 dopo la discussione del 18/09/2026. Migrazione
+`Sviluppo/migrations/002_erp.sql`, applicata il 18/09/2026. **Descrizione
+dettagliata tabella per tabella: `MODELLO-DATI-GESTIONALE.md`.**
+
+**Indipendente dal gestionale.** Integra è uno dei gestionali, non *il*
+gestionale. Il modello è canonico: ogni gestionale ha un **connettore** (viste di
+mappatura, sul modello del contratto `b2b_*` del portale B2B Luis) che produce
+le stesse colonne. Arriva un gestionale nuovo → si scrive un connettore, il
+modello e l'assistente non cambiano.
+
+**Accoglie il massimo, pretende il minimo.** Quasi tutte le colonne sono
+facoltative: non tutte le aziende tengono costi, lotti o scadenze. Quello che il
+modello non prevede va in `extra` (jsonb): all'import non si perde niente.
+
+**Entità:** soggetti (clienti, fornitori, agenti, vettori, prospect in
+un'anagrafica unica) con ruoli e condizioni commerciali, indirizzi, contatti,
+articoli con codici alternativi, condizioni fornitore e distinta base, listini
+di vendita e acquisto, documenti di vendita **e di acquisto** con righe e
+collegamenti (ordine → DDT → fattura), scadenze, movimenti di magazzino,
+fotografie delle giacenze, tabelle codici. Esclusi per ora: contabilità generale,
+produzione, HR/paghe, CRM, cespiti — stesso schema quando serviranno.
+
+**Storico (SCD tipo 2).** Le tabelle vere stanno in `erp_storico`. Ogni
+modifica chiude la versione corrente e ne apre una nuova, ma solo se l'impronta
+della riga cambia. Il database rifiuta due versioni sovrapposte dello stesso
+record (vincolo di esclusione sui periodi), quindi niente doppi conteggi. Due
+assi di tempo: `registrato_dal/_al` (quando la versione era vera nel gestionale)
+e `in_vigore_dal/_al` (quando il dato vale per il business, es. un listino).
+
+- L'assistente legge **`erp.*`**, viste con la sola versione corrente. Lo
+  storico lo interrogano Cube e gli strumenti di analisi.
+- **Lo storico parte dal primo giorno di sincronizzazione.** L'andamento dei
+  prezzi fornitore degli anni passati si ricava dai **documenti di acquisto**,
+  che lo contengono già.
+- **Il margine nel tempo** è esatto e retroattivo se il gestionale registra il
+  costo sulle righe documento (`costo_unitario`); altrimenti si ricava dallo
+  storico dei costi articolo, da oggi in avanti.
+- **Eccezioni:** i contatti (dati personali) si sovrascrivono (GDPR); le
+  giacenze si fotografano periodicamente, invece di storicizzarle.
+- **Decisione 47 invariata:** giacenza attuale, fido residuo e prezzo netto si
+  leggono in diretta. Lo storico serve all'analisi, non a rispondere "posso
+  vendere?".
+
+**Più aziende.** Un gestionale può contenere più aziende (Integra:
+`azi_cdazi`), e un gruppo può averne in gestionali diversi. L'azienda è un
+**terzo asse di permesso**, accanto ai gruppi (chi vede) e alla residenza
+(dove può andare):
+
+- ogni riga dei dati gestionali appartiene a **un'azienda** (tabella `aziende`);
+- ogni **sorgente** documentale dichiara le aziende a cui appartiene
+  (`sources.aziende`), senza default permissivo;
+- ogni **utente** riceve dal token le aziende a cui è abilitato (gruppi
+  Keycloak dedicati, es. `azienda-luis`); nessuna azienda nel token = nessun
+  dato;
+- il **gate** filtra per intersezione, come per i gruppi. Da implementare
+  **insieme** alla migrazione: una colonna di permesso che il codice non applica
+  è peggio di nessuna colonna.
+- Anche **tracce, taint e arricchimenti** portano l'azienda, per l'audit.
 
 ## Fonti verificate
 

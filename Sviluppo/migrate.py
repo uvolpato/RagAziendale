@@ -33,7 +33,7 @@ def psql(sql=None, file_interno=None, silenzioso=False):
     cmd = ["docker", "compose", "exec", "-T", CONTAINER,
            "psql", "-U", "postgres", "-d", DB, "-v", "ON_ERROR_STOP=1"]
     if file_interno:
-        cmd += ["-f", file_interno]
+        cmd += ["-1", "-f", file_interno]   # -1: tutto il file in UNA transazione
     else:
         cmd += ["-tAc", sql]
     r = subprocess.run(cmd, cwd=QUI, capture_output=True, text=True)
@@ -75,7 +75,7 @@ def main():
         return
 
     # Copia dentro il container ed esegue. Ogni file gira in una transazione
-    # (ON_ERROR_STOP + BEGIN/COMMIT impliciti di psql -f su singolo file).
+    # (psql -1 + ON_ERROR_STOP): se fallisce a meta, non resta nulla applicato.
     for f, sha in pendenti:
         print(f"\n== applico {f.name}")
         subprocess.run(["docker", "compose", "cp", f"migrations/{f.name}",
