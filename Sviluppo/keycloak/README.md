@@ -65,3 +65,19 @@ comparire `groups` e `aud` con `orchestratore`.
 2. Gli utenti veri arrivano da LDAP/AD (user federation) o si creano in Keycloak.
 3. Aggiornare `redirectUris` e `webOrigins` con l'hostname di produzione.
 4. `sslRequired` è già `external`; verificare che valga anche per la rete interna.
+
+## Durata delle sessioni (decisione del 18/09/2026)
+
+| Campo | Valore | Significato |
+|---|---|---|
+| `ssoSessionIdleTimeout` | 14400 (4 h) | inattività oltre la quale serve di nuovo la password |
+| `ssoSessionMaxLifespan` | 36000 (10 h) | durata massima, anche se attivo: una giornata di lavoro |
+| `ssoSessionIdleTimeoutRememberMe` | 604800 (7 gg) | con "Ricordami" |
+| `ssoSessionMaxLifespanRememberMe` | 604800 (7 gg) | con "Ricordami" |
+| `accessTokenLifespan` | 900 (15 min) | il token che arriva all'orchestratore; si rinnova da solo |
+
+Governano **anche la sessione della chat**: LibreChat non chiede
+`offline_access` (vedi `docker-compose.yml`), quindi la chat resta aperta finché
+è viva la sessione SSO. Il template vale per le installazioni nuove; su un realm
+esistente (`--import-realm` non lo tocca) si applica con
+`kcadm.sh update realms/azienda -s ssoSessionIdleTimeout=14400 ...`.
