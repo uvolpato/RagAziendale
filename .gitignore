@@ -25,3 +25,8 @@ certs/
 librechat.yaml
 
 Sviluppo/CREDENZIALI-SVILUPPO.md
+
+# Materiale non usato dal progetto: resta sul disco, fuori da git.
+Prototipi/.od-skills/
+Sviluppo/branding/OLD/
+Sviluppo/branding/logo_LUIS.png
