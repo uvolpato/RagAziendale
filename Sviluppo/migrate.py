@@ -56,7 +56,10 @@ def main():
 
     pendenti = []
     for f in files:
-        sha = hashlib.sha256(f.read_bytes()).hexdigest()
+        # Fine riga normalizzati: git salva LF, Windows puo avere CRLF sul
+        # disco. Senza questo un checkout farebbe sembrare modificata ogni
+        # migrazione gia applicata, e l'avvio si fermerebbe.
+        sha = hashlib.sha256(f.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
         if f.name not in applicate:
             pendenti.append((f, sha))
             print(f"  PENDENTE  {f.name}")
