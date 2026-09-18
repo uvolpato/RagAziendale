@@ -42,7 +42,13 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    # Versione esatta, non '26.x': branding/tema-keycloak/login/login.ftl e una
+    # copia del template base di QUESTA versione. Per aggiornare: confrontare il
+    # login.ftl base vecchio e nuovo, fondere, rilanciare verifica_pagina_login.
+    # >= 26.2 serve per la delega per azienda (Fine-Grained Admin Permissions v2,
+    # decisione 60). Il primo avvio di una versione nuova migra lo schema del DB:
+    # backup prima (pg_dump keycloak).
+    image: quay.io/keycloak/keycloak:26.7.4
     restart: unless-stopped
     # Realm importato da file: riproducibile da zero, non cliccato a mano.
     # --import-realm importa solo se il realm non esiste: rilanciarlo e innocuo.
@@ -129,9 +135,15 @@ services:
       OPENID_CALLBACK_URL: /oauth/openid/callback
       OPENID_SESSION_SECRET: ${OPENID_SESSION_SECRET}
       OPENID_BUTTON_LABEL: Accedi con account aziendale
-      # offline_access e OBBLIGATORIO: senza refresh token i placeholder
-      # {{LIBRECHAT_OPENID_*}} restano VUOTI e l'orchestratore non sa chi chiede.
-      OPENID_SCOPE: openid profile email offline_access
+      # NIENTE offline_access. Da Keycloak 26.1, se il primo login chiede
+      # offline_access, Keycloak crea solo la sessione offline e cancella quella
+      # SSO: ogni redirect successivo richiede di nuovo le credenziali (issue
+      # keycloak#36717, nessuna opzione per evitarlo). Keycloak emette comunque un
+      # refresh token "online" nel flusso a codice: i placeholder
+      # {{LIBRECHAT_OPENID_*}} si popolano lo stesso (verificato il 18/09/2026 con
+      # un finto orchestratore: token con utente, aud e gruppi corretti).
+      # La sessione chat dura quanto la sessione SSO (realm: ssoSessionIdle/Max).
+      OPENID_SCOPE: openid profile email
       OPENID_REUSE_TOKENS: "true"
       OPENID_REUSE_MAX_SESSION_AGE_MS: "900000"
     volumes:

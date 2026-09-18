@@ -177,7 +177,10 @@ def keycloak_pronto(secondi=240):
         log = dc("logs", "keycloak", check=False).stdout
         if "Failed to run import" in log:
             raise SystemExit("import del realm FALLITO — vedi: docker compose logs keycloak")
-        if re.search(r"Listening on|started in [0-9]", log):
+        # Da Keycloak 26.x "Listening on" arriva PRIMA della fine dell'avvio:
+        # per altri ~15 s (migrazioni, import) risponde 503 e LibreChat, se
+        # parte adesso, fallisce la discovery OIDC. Il segnale giusto e questo.
+        if "Bootstrap completed" in log:
             return True
         time.sleep(3)
     return False

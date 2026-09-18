@@ -117,6 +117,8 @@ docker compose down -v && py avvia.py    # ricostruisce tutto da zero
 | `Unrecognized field` all'import del realm | JSON non ammette commenti, e Keycloak rifiuta le chiavi ignote → note in `keycloak/README.md` |
 | `only requests to HTTPS are allowed` | openid-client accetta la discovery OIDC solo su HTTPS → LibreChat passa da Caddy e si fida della sua CA |
 | `Offline tokens not allowed` al callback | Gli utenti importati non avevano `default-roles-azienda`, che contiene `offline_access` |
+| Dopo il login, ogni redirect chiede **di nuovo la password** | Da Keycloak 26.1, un login con scope `offline_access` crea solo la sessione offline e **cancella quella SSO**. Lo scope di LibreChat non include `offline_access`: il refresh token online basta |
+| `avvia.py` fa partire LibreChat mentre Keycloak risponde 503 | Da Keycloak 26.x "Listening on" arriva prima della fine dell'avvio: si aspetta "Bootstrap completed" |
 | `autenticazione con password fallita` su Postgres | Due cluster PostgreSQL nativi occupano 5432 **e** 5433 → in sviluppo si usa 55432 |
 | `getaddrinfo failed` su `*.localhost` | I browser lo risolvono (RFC 6761), il resolver di Windows no → gli script lo mappano a 127.0.0.1 |
 | `Ignoring extra certs ... No such file` | Bind mount non ancora visibile all'avvio → `avvia.py` riavvia LibreChat una volta |

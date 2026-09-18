@@ -212,7 +212,7 @@ Il reranker serviva a compensare un generatore interno più debole (§11.5 del d
 
 | Attività | Uscita |
 |---|---|
-| Mongo + LibreChat, `OPENID_REUSE_TOKENS=true`, scope con `offline_access` | Login aziendale dentro LibreChat |
+| Mongo + LibreChat, `OPENID_REUSE_TOKENS=true`, scope **senza** `offline_access` (da Keycloak 26.1 rompe l'SSO) | Login aziendale dentro LibreChat |
 | `librechat.yaml`: custom endpoint verso l'orchestratore, header `Authorization: Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}` | L'identità viaggia |
 | Orchestratore: scheletro che risponde `/v1/chat/completions` in eco, con verifica JWT contro il JWKS | Primo giro completo |
 | **Self-check all'avvio**: se manca l'header di autenticazione in configurazione, il servizio **non parte** | Fallimento rumoroso invece che silenzioso |

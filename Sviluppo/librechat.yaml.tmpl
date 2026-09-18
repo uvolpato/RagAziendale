@@ -23,7 +23,7 @@ endpoints:
       headers:
         # L'identita viaggia: l'orchestratore verifica la firma di questo token
         # contro il JWKS di Keycloak e ne ricava i gruppi. Richiede
-        # OPENID_REUSE_TOKENS=true e lo scope offline_access.
+        # OPENID_REUSE_TOKENS=true (NON offline_access: vedi docker-compose.yml).
         Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
         X-Conversation-Id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
 

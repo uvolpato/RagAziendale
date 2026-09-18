@@ -335,7 +335,7 @@ endpoints:
 OPENID_ISSUER=https://sso.azienda.it/realms/azienda/.well-known/openid-configuration
 OPENID_CLIENT_ID=librechat
 OPENID_CLIENT_SECRET=...
-OPENID_SCOPE=openid profile email offline_access
+OPENID_SCOPE=openid profile email
 OPENID_REUSE_TOKENS=true
 OPENID_REUSE_MAX_SESSION_AGE_MS=900000
 ```
@@ -344,7 +344,7 @@ OPENID_REUSE_MAX_SESSION_AGE_MS=900000
 
 - Esistono sette placeholder OIDC per gli header dei custom endpoint: `{{LIBRECHAT_OPENID_TOKEN}}`, `..._ACCESS_TOKEN`, `..._ID_TOKEN`, `..._USER_ID`, `..._USER_EMAIL`, `..._USER_NAME`, `..._EXPIRES_AT`.
 - **Keycloak è supportato esplicitamente** per il token reuse (con Auth0 ed Entra).
-- `offline_access` è **obbligatorio**: senza refresh token i placeholder restano vuoti.
+- ~~`offline_access` è obbligatorio~~ — **smentito il 18/09/2026.** Keycloak emette comunque un refresh token online nel flusso a codice e i placeholder si popolano (verificato end-to-end). Anzi, `offline_access` va **tolto**: da Keycloak 26.1 un primo login con `offline_access` crea solo la sessione offline e cancella quella SSO, rompendo il single sign-on (keycloak#36717). La sessione chat dura quanto la sessione SSO del realm.
 - Con `OPENID_REUSE_TOKENS=true` il refresh token nel cookie è emesso **da Keycloak, non da LibreChat**.
 - **Nessuna patch necessaria.** Il rischio identificato in prima analisi è chiuso.
 
@@ -982,7 +982,7 @@ Il piano "noleggiare una GPU un pomeriggio" (§11.8) diventa **una variabile d'a
 | 57 | **Anomalie ≠ registro eventi** | Tabella anomalie deduplicata (una riga per problema, contatore, stato, chiusura automatica), separata da `traces` e dal registro modifiche | Il B2B le ha fuse in `event_log`: mille eventi nascondono il problema che conta | 📝 idem §10 |
 | 58 | **Servizio `amministrazione` separato** | Nostre schermate (scelta, fonti, vedi come, anomalie, registro, aspetto). Verso Keycloak solo **lettura** di utenti e gruppi (per Vedi come); l'orchestratore non ha credenziali di gestione | Separazione dei privilegi; con la decisione 60 la gestione utenti resta in Keycloak e il nostro servizio non ha bisogno di scrivere | 📝 `SPECIFICA-INTERFACCE-AMMINISTRAZIONE.md` |
 | 59 | **Palette configurabili** | Solo token di ruolo; stati con token semantici separati dal colore del marchio; 4–6 colori configurabili, il resto derivato | Il prodotto si installa presso aziende con marchi diversi | 📝 idem §2.1 |
-| 60 | **Amministrazione mista** | Utenti, gruppi, ruoli, profili e delega per azienda: **console Keycloak** con Fine-Grained Admin Permissions v2 (richiede Keycloak ≥ 26.2: aggiornare da 26.0). Importazioni: **Dagster** (esecuzioni, frequenze, controlli di qualità). Stato sistemi: **Uptime Kuma**. Custom solo ciò che esiste solo qui: scelta, fonti, vedi come, anomalie, registro, aspetto. Dagster e Uptime Kuma dietro oauth2-proxy + Keycloak, visibili solo agli admin di tutte le aziende | Nessun open source copre tutto; quelli generici non conoscono aziende, fonti e residenza. Scartati: Keep (login Keycloak solo Enterprise), Appsmith (OIDC a pagamento), Directus (BSL: a pagamento sopra 5 M$ di fatturato) | ✅ |
+| 60 | **Amministrazione mista** | Utenti, gruppi, ruoli, profili e delega per azienda: **console Keycloak** con Fine-Grained Admin Permissions v2 (richiede Keycloak ≥ 26.2: aggiornato a 26.7.4 il 18/09/2026). Importazioni: **Dagster** (esecuzioni, frequenze, controlli di qualità). Stato sistemi: **Uptime Kuma**. Custom solo ciò che esiste solo qui: scelta, fonti, vedi come, anomalie, registro, aspetto. Dagster e Uptime Kuma dietro oauth2-proxy + Keycloak, visibili solo agli admin di tutte le aziende | Nessun open source copre tutto; quelli generici non conoscono aziende, fonti e residenza. Scartati: Keep (login Keycloak solo Enterprise), Appsmith (OIDC a pagamento), Directus (BSL: a pagamento sopra 5 M$ di fatturato) | ✅ |
 
 ---
 
