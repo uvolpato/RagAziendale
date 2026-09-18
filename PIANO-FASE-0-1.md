@@ -60,7 +60,7 @@ Quasi tutta lavoro con l'azienda, non codice. È la fase che la gente salta e ch
 | 0.2 | **Matrice ACL delle 3 sorgenti** | Ruoli × sorgenti → chi può vedere cosa | Tre righe, non quaranta. L'inventario completo è un problema della fase 2 |
 | 0.3 | **Approvazioni di residenza** | Default **`interno`**; servono 2-3 sorgenti approvate `cloud_ok`, **con il nome di chi firma** | Approvare 3 sorgenti innocue lo fa chiunque in dieci minuti; approvarne 40 è un progetto. Così la firma *sblocca copertura* invece di essere un permesso che l'IT rincorre |
 | 0.4 | **20 domande reali** | Raccolte da **ticket helpdesk, mail all'ufficio tecnico, canali interni** — non scritte da zero. Per il retrieval basta *"quale documento deve stare nei primi 5"* | Le persone non sanno scrivere domande di eval in astratto: scrivono banalità o domande impossibili. Le domande vere esistono già scritte. Le altre 80 le genera il pilota, gratis e reali per costruzione |
-| 0.5 | **Campione documenti** | 30-50 documenti veri non sensibili — **i peggiori che ci sono, non i più belli** | I PDF finti non hanno tabelle ruotate né scansioni storte. Se il campione è pulito, il test mente |
+| 0.5 | **Campione documenti** | 30-50 documenti veri non sensibili — **i peggiori che ci sono, non i più belli**. Ripartizione e regole di raccolta in `ESEMPI-FILE-DOCUMENTI.md` §2 | I PDF finti non hanno tabelle ruotate né scansioni storte. Se il campione è pulito, il test mente |
 | 0.6 | **Valutazione retrieval** | Script ~100 righe sulla macchina di sviluppo | ⭐ **La mossa a maggior rendimento del progetto.** Decide embedding e chunking prima di cementarli, e converte l'incognita più grande in un numero in due giorni |
 
 ## 0.6 — Il primo codice: valutazione del retrieval

@@ -1,0 +1,155 @@
+/* ============================================================================
+   RAG AZIENDALE · Design tokens — Amministrazione (esteso da Prototipi/tokens.css)
+   ----------------------------------------------------------------------------
+   Fonte        : SPECIFICA-INTERFACCE-AMMINISTRAZIONE.md §2.1, tokens.css,
+                  Sviluppo/branding/tema-keycloak/login/resources/css/paletta-colori.md
+   Regole       : 1) solo token di ruolo nei componenti, mai colori scritti a mano;
+                  2) il colore di marchio non ha mai significato semantico;
+                  3) gravità e stati = token propri (fg + sfondo + sempre icona/testo);
+                  4) per ogni sfondo-azione esiste il token del testo corrispondente;
+                  5) chiaro e scuro seguono prefers-color-scheme (o data-tema);
+                  6) 4-6 token configurabili, tutto il resto è derivato.
+   Convenzione  : i token marcati "CONFIG" si cambiano per palette/azienda.
+                  I token marcati "DERIV" scendono dai CONFIG (color-mix, mai hex nudi
+                  nei componenti). Le tre palette di prova (decobrands/verde/rossa)
+                  provano che il marchio non si confonde con gli stati semantici.
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   1 · Palette attiva — Decobrands (default). CONFIGURABILI SOLO QUESTI.
+   --------------------------------------------------------------------------- */
+:root {
+  --marchio:           #0d6efd;   /* CONFIG · colore di marca (azioni primarie)     */
+  --marchio-secondario:#475a6b;   /* CONFIG · opzionale, accento neutro dei dettagli */
+  --marchio-testo:     #ffffff;   /* CONFIG · testo sopra le superfici di marca     */
+  --sfondo-pagina:     #f4f6f8;   /* CONFIG · sfondo pagina                         */
+  --superficie:        #ffffff;   /* CONFIG · card, tavole, pannelli                */
+  --superficie-alt:    #eef1f4;   /* DERIV  · seconda superficie (righe, header)    */
+}
+
+/* Palette di prova §2.1: il marchio cambia, i ruoli semantici restano */
+html[data-palette="verde"] {
+  --marchio:           #2e7d32;
+  --marchio-secondario:#5a6b57;
+  --marchio-testo:     #ffffff;
+}
+html[data-palette="rossa"] {
+  --marchio:           #c62828;
+  --marchio-secondario:#7a4f4f;
+  --marchio-testo:     #ffffff;
+}
+
+/* ---------------------------------------------------------------------------
+   2 · Ruoli derivati dal marchio — mai modificati a mano nei componenti
+   --------------------------------------------------------------------------- */
+:root {
+  --azione:            var(--marchio);
+  --azione-testo:      var(--marchio-testo);
+  --azione-hover:      color-mix(in srgb, var(--marchio) 86%, var(--testo));
+  --azione-pressa:     color-mix(in srgb, var(--marchio) 78%, var(--testo));
+  --azione-tenue:      color-mix(in srgb, var(--marchio) 12%, transparent);
+  --azione-soft:       color-mix(in srgb, var(--marchio) 8%, var(--superficie));
+  --ring:              color-mix(in srgb, var(--marchio) 30%, transparent);
+
+  --testo:             #17181c;
+  --testo-tenue:       #5d6570;
+  --testo-debole:      #8b939e;
+  --bordo:             #e2e6eb;
+  --bordo-insieme:     #c6ccd4;
+  --ombra:             0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.07);
+  --ombra-alzata:      0 6px 24px rgba(16,24,40,.12);
+  --velato:            rgba(16,24,40,.45);
+}
+
+/* ---------------------------------------------------------------------------
+   3 · Stati semantici §2.1.2 — indipendenti dal marchio, con sfondo abbinato
+   --------------------------------------------------------------------------- */
+:root {
+  --stato-critico:       #d92d20;  --stato-critico-sfondo:       #fdf1f0;
+  --stato-errore:        #b42318;  --stato-errore-sfondo:        #fdf3f2;
+  --stato-attenzione:    #a15507;  --stato-attenzione-sfondo:    #fdf6ec;
+  --stato-ok:            #067647;  --stato-ok-sfondo:            #ecfdf3;
+  --stato-info:          #175cd3;  --stato-info-sfondo:          #eaf4fe;
+  --stato-neutro:        #475467;  --stato-neutro-sfondo:        #f2f4f7;
+}
+
+/* ---------------------------------------------------------------------------
+   4 · Residenza dei dati §7.1 — ha sempre icona + testo, mai solo colore
+   --------------------------------------------------------------------------- */
+:root {
+  --residenza-interno:      #0f766e;  --residenza-interno-sfondo: #ecfdf9;
+  --residenza-cloud:        #6d28d9;  --residenza-cloud-sfondo:   #f5f0fe;
+}
+
+/* ---------------------------------------------------------------------------
+   5 · Forme, tipografia e spaziatura
+   --------------------------------------------------------------------------- */
+:root {
+  --raggio:    8px;
+  --raggio-l:  12px;
+  --p:         999px;
+  --font-sans: "Inter", -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;  --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 40px;
+}
+body { font-size: 14px; }
+
+/* ---------------------------------------------------------------------------
+   6 · TEMA SCURO — stesso marchio, superfici e testi scuri (derivati)
+   --------------------------------------------------------------------------- */
+html[data-tema="scuro"] {
+  --superficie-alt:    #252a33;
+  --azione-tenue:      color-mix(in srgb, var(--marchio) 20%, transparent);
+  --azione-soft:       color-mix(in srgb, var(--marchio) 12%, var(--superficie));
+
+  --testo:             #e9ecf1;
+  --testo-tenue:       #a4abb6;
+  --testo-debole:      #6f7784;
+  --bordo:             #2c313a;
+  --bordo-insieme:     #3c434e;
+  --ombra:             0 1px 2px rgba(0,0,0,.30), 0 1px 3px rgba(0,0,0,.35);
+  --ombra-alzata:      0 6px 24px rgba(0,0,0,.50);
+  --velato:            rgba(0,0,0,.60);
+
+  --stato-critico:      #f97066;  --stato-critico-sfondo:       #2b1b1a;
+  --stato-errore:       #fda29b;  --stato-errore-sfondo:        #2a1c1a;
+  --stato-attenzione:   #fdb022;  --stato-attenzione-sfondo:    #29261a;
+  --stato-ok:           #6ce9a6;  --stato-ok-sfondo:            #152a20;
+  --stato-info:         #84caff;  --stato-info-sfondo:          #15223a;
+  --stato-neutro:       #a4abb6;  --stato-neutro-sfondo:        #23262d;
+
+  --residenza-interno:      #5eead4;  --residenza-interno-sfondo: #132b28;
+  --residenza-cloud:        #c4b5fd;  --residenza-cloud-sfondo:   #271f3a;
+}
+
+/* Auto: il sistema decide, salvo override esplicito dal pannello prototipo */
+@media (prefers-color-scheme: dark) {
+  html:not([data-tema]) {
+    --superficie-alt:    #252a33;
+    --azione-tenue:      color-mix(in srgb, var(--marchio) 20%, transparent);
+    --azione-soft:       color-mix(in srgb, var(--marchio) 12%, var(--superficie));
+
+    --testo:             #e9ecf1;
+    --testo-tenue:       #a4abb6;
+    --testo-debole:      #6f7784;
+    --bordo:             #2c313a;
+    --bordo-insieme:     #3c434e;
+    --ombra:             0 1px 2px rgba(0,0,0,.30), 0 1px 3px rgba(0,0,0,.35);
+    --ombra-alzata:      0 6px 24px rgba(0,0,0,.50);
+    --velato:            rgba(0,0,0,.60);
+
+    --stato-critico:      #f97066;  --stato-critico-sfondo:       #2b1b1a;
+    --stato-errore:       #fda29b;  --stato-errore-sfondo:        #2a1c1a;
+    --stato-attenzione:   #fdb022;  --stato-attenzione-sfondo:    #29261a;
+    --stato-ok:           #6ce9a6;  --stato-ok-sfondo:            #152a20;
+    --stato-info:         #84caff;  --stato-info-sfondo:          #15223a;
+    --stato-neutro:       #a4abb6;  --stato-neutro-sfondo:        #23262d;
+
+    --residenza-interno:      #5eead4;  --residenza-interno-sfondo: #132b28;
+    --residenza-cloud:        #c4b5fd;  --residenza-cloud-sfondo:   #271f3a;
+  }
+}
+
+/* Riepilogo token: CONFIG = marchio, marchio-secondario, marchio-testo,
+   sfondo-pagina, superfice. Tutto il resto è DERIV (color-mix su questi). */

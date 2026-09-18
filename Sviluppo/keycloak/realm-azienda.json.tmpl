@@ -21,8 +21,39 @@
     { "name": "magazzino",       "path": "/magazzino" },
     { "name": "vendite",         "path": "/vendite" },
     { "name": "amministrazione", "path": "/amministrazione" },
-    { "name": "direzione",       "path": "/direzione" }
+    { "name": "direzione",       "path": "/direzione" },
+    {
+      "name": "amministratori",
+      "path": "/amministratori",
+      "subGroups": [
+        { "name": "Responsabile IT",         "path": "/amministratori/Responsabile IT",
+          "clientRoles": { "amministrazione": ["admin-accessi", "admin-sistemi", "admin-anomalie"] } },
+        { "name": "Responsabile dati",       "path": "/amministratori/Responsabile dati",
+          "clientRoles": { "amministrazione": ["admin-fonti", "admin-importazioni", "admin-anomalie"] } },
+        { "name": "Amministratore completo", "path": "/amministratori/Amministratore completo",
+          "clientRoles": { "amministrazione": ["admin-accessi", "admin-fonti", "admin-importazioni",
+                                               "admin-anomalie", "admin-sistemi", "admin-ruoli"] } },
+        { "name": "Revisore DPO",            "path": "/amministratori/Revisore DPO",
+          "clientRoles": { "amministrazione": ["admin-revisore"] } }
+      ]
+    }
   ],
+
+  "roles": {
+    "client": {
+      "amministrazione": [
+        { "name": "admin-accessi", "description": "Gestione accessi: utenti, gruppi operativi, aziende abilitate. Non assegna ruoli di amministrazione. Permessi dati dalle deleghe (keycloak/deleghe.py), NON da ruoli di realm-management, che le scavalcherebbero" },
+        { "name": "admin-fonti", "description": "Gestione fonti: chi vede cosa, aziende, uso di servizi esterni" },
+        { "name": "admin-importazioni", "description": "Gestione importazioni dai gestionali e dei documenti" },
+        { "name": "admin-anomalie", "description": "Gestione anomalie: presa in carico, assegnazione, risoluzione" },
+        { "name": "admin-sistemi", "description": "Gestione sistemi: monitoraggio, aspetto" },
+        { "name": "admin-ruoli", "description": "Gestione amministratori: assegna ruoli e profili di amministrazione",
+          "composite": true, "composites": { "client": { "realm-management": ["view-users", "manage-users", "query-users", "query-groups", "view-clients", "query-clients"] } } },
+        { "name": "admin-revisore", "description": "Revisore: sola lettura su tutto, compresi eventi e configurazione",
+          "composite": true, "composites": { "client": { "realm-management": ["view-users", "query-users", "query-groups", "view-events", "view-realm", "view-clients"] } } }
+      ]
+    }
+  },
 
   "defaultGroups": ["/tutti"],
 
@@ -75,6 +106,16 @@
     {
       "clientId": "orchestratore",
       "name": "Orchestratore",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true,
+      "publicClient": false,
+      "standardFlowEnabled": false
+    },
+    {
+      "clientId": "amministrazione",
+      "name": "Amministrazione",
+      "description": "Possiede i ruoli admin-*. Diventera il client del portale di amministrazione",
       "enabled": true,
       "protocol": "openid-connect",
       "bearerOnly": true,
@@ -153,6 +194,33 @@
       "emailVerified": true,
       "realmRoles": ["default-roles-azienda"],
       "groups": ["/tutti", "/vendite", "/amministrazione", "/direzione"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    },
+    {
+      "username": "prova.admin",
+      "email": "prova.admin@esempio.local",
+      "firstName": "Prova",
+      "lastName": "Amministratore",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti", "/amministratori/Amministratore completo"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    },
+    {
+      "username": "prova.accessi",
+      "email": "prova.accessi@esempio.local",
+      "firstName": "Prova",
+      "lastName": "Accessi",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti"],
+      "clientRoles": { "amministrazione": ["admin-accessi"] },
       "credentials": [
         { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
       ]

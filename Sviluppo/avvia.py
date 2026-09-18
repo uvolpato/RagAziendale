@@ -114,9 +114,20 @@ def scrivi_credenziali(env):
 I gruppi non sono una gerarchia: il filtro e' un'intersezione di insiemi.
 `prova.magazzino` non e' "livello 1", e' un insieme diverso.
 
-## Console di amministrazione Keycloak
+### Amministratori di prova
 
-**https://{sso}** — realm `master`
+| Utente | Password | Profilo | Cosa puo' fare |
+|---|---|---|---|
+| `prova.admin` | `{pw}` | Amministratore completo | tutto, compreso assegnare profili di amministrazione |
+| `prova.accessi` | `{pw}` | solo ruolo Gestione accessi | crea operatori, li mette nei gruppi; NON tocca gli amministratori |
+
+**Gestione utenti e gruppi:** https://{sso}/admin/{env.get("REALM", "azienda")}/console/
+(si entra con un account del realm, non con `admin`).
+
+## Console di amministrazione Keycloak — amministratore TECNICO
+
+**https://{sso}/admin/** — realm `master`. Gestisce l'intero server Keycloak:
+per utenti e gruppi usare gli amministratori di prova qui sopra.
 
 | Utente | Password |
 |---|---|
@@ -289,6 +300,9 @@ def main():
     print("5/6 caddy + CA interna")
     dc("up", "-d", "caddy")
     estrai_ca()
+    # Deleghe di amministrazione (FGAP v2): idempotente, a ogni avvio, perche'
+    # --import-realm non tocca un realm esistente. Vedi keycloak/deleghe.py.
+    subprocess.run([sys.executable, str(QUI / "keycloak" / "deleghe.py")], check=True)
 
     print("6/6 mongo + librechat")
     dc("up", "-d", "mongo", "librechat")

@@ -629,6 +629,7 @@ sono configurabili e **come** si derivano gli altri.
 5. **Dati di esempio realistici**, in italiano: aziende Luis S.r.l. e
    Decobrands; gruppi Vendite, Magazzino, Amministrazione, Direzione, Acquisti;
    una trentina di utenti; una ventina di fonti; le anomalie di §9.4.
+   Materiale pronto in `ESEMPI-FILE-DOCUMENTI.md` §1.
 
 **Da non fare** (lezioni dal prototipo del login):
 - niente attributi di servizio dello strumento di design nell'HTML
