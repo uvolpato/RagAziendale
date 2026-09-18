@@ -2,7 +2,7 @@
   "tipo": "integra",
   "nome": "Integra",
   "versione": "0.1.0",
-  "descrizione": "Gestionale Integra su PostgreSQL, letto dalle viste del portale B2B (b2b_*).",
+  "descrizione": "Gestionale Integra su PostgreSQL, letto dal database parallelo 'rag' (postgres_fdw) tramite le viste rag_*.",
   "parametri": [
     {"chiave": "host", "etichetta": "Server", "tipo": "testo", "obbligatorio": true,
      "descrizione": "Indirizzo del server dove gira il gestionale (es. 192.168.1.41 o un nome di rete)."},
@@ -21,11 +21,10 @@
   "multi_azienda": true,
   "entita": {
     "soggetti":           {"strategia": "incrementale", "tabelle": ["soggetti", "soggetti_ruoli", "indirizzi"]},
-    "articoli":           {"strategia": "incrementale", "tabelle": ["articoli", "articoli_codici", "articoli_fornitori"]},
+    "articoli":           {"strategia": "incrementale", "tabelle": ["articoli", "articoli_codici"]},
     "listini":            {"strategia": "completa", "tabelle": ["listini", "listini_righe"]},
     "codici":             {"strategia": "completa", "tabelle": ["codici"]},
-    "documenti_vendita":  {"strategia": "incrementale", "tabelle": ["documenti", "documenti_righe"]},
-    "giacenze":           {"strategia": "fotografia", "tabelle": ["giacenze_istantanee"]}
+    "documenti_vendita":  {"strategia": "incrementale", "tabelle": ["documenti", "documenti_righe"]}
   },
   "letture_dirette": ["giacenza", "fido", "prezzo_netto"]
 }

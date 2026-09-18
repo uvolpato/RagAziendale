@@ -1,18 +1,20 @@
 -- Utente di SOLA LETTURA per il connettore Integra (SPECIFICA-CONNETTORI.md §4.3).
--- Da eseguire come superutente sul server del gestionale Integra.
--- Oggi il portale B2B legge con l'amministratore `postgres`: questo utente
--- dedicato e' il prerequisito per importare i dati con l'assistente.
+-- Da eseguire come superutente sul DB parallelo "rag", quello che espone le
+-- viste rag_* e legge il gestionale con postgres_fdw. Il connettore punta a
+-- QUESTO database, non al gestionale: qui basta la SELECT sulle viste.
 
 -- Sostituire la password prima di eseguire.
 CREATE ROLE assistente_ro LOGIN PASSWORD 'CAMBIAMI';
-GRANT CONNECT ON DATABASE integra TO assistente_ro;
+GRANT CONNECT ON DATABASE rag TO assistente_ro;
 GRANT USAGE ON SCHEMA public TO assistente_ro;
 
--- Solo le viste/tabelle del contratto B2B che servono, MAI la scrittura.
--- Adattare l'elenco alle viste reali del B2B.
-GRANT SELECT ON b2b_clienti, b2b_destinazioni_clienti, b2b_prodotti,
-  b2b_listini_testata, b2b_listini_righe, b2b_ordini_clienti, b2b_righe_ordini,
-  b2b_tabpag, b2b_tabpor, b2b_tabspe, b2b_vettori
+-- Solo le viste del portale B2B che servono, MAI la scrittura. Se le viste
+-- rag_* leggono tabelle FDW (schema integra), serve anche USAGE su quello
+-- schema; la scrittura non si concede mai in nessun caso.
+-- rag_pagamenti_clienti e' esclusa: espone IBAN/ABI/CAB/mandato (minimizzazione §7).
+GRANT SELECT ON rag_prodotti, rag_clienti, rag_indirizzi_clienti,
+  rag_ordini_clienti, rag_righe_ordini,
+  rag_listini_testata, rag_listini_righe, rag_tabpag, rag_tabpor, rag_tabspe
   TO assistente_ro;
 
 -- Il connettore rifiuta un utente con permessi di scrittura: qui NON si

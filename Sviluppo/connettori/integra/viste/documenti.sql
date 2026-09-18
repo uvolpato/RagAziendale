@@ -1,12 +1,11 @@
 -- Vista Integra -> documenti, ciclo VENDITA (MODELLO-DATI-GESTIONALE.md §5.10).
--- ⚠ Il contratto B2B espone solo gli ORDINI di vendita (b2b_ordini_clienti).
--- DDT, fatture e documenti di acquisto vanno aggiunti al connettore (e al B2B)
--- per avere il fatturato. DA VERIFICARE sullo schema reale.
+-- Fonte: vista rag_ordini_clienti = SOLO ordini di vendita (mvt_natmov = 'ORD').
+-- DDT, fatture e documenti di acquisto non hanno ancora una vista rag_*.
 SELECT
     o.id_ordine::text             AS id_origine,
     'vendita'                     AS ciclo,
-    'ordine'                      AS tipo,           -- da mvt_natmov
-    o.mvt_natmov::text            AS tipo_origine,
+    'ordine'                      AS tipo,
+    'ORD'                         AS tipo_origine,
     o.numero_ordine::text         AS numero,
     o.serie::text                 AS serie,
     o.anno_ordine::smallint       AS anno,
@@ -17,27 +16,45 @@ SELECT
     o.id_cliente::text            AS soggetto_id,
     o.id_destinazione_merce::text AS indirizzo_consegna_id,
     o.id_destinazione_fattura::text AS indirizzo_fatturazione_id,
-    o.codice_agente::text         AS agente_id,
-    o.codice_listino::text        AS listino,
-    o.codice_pagamento::text      AS pagamento,
-    o.codice_porto::text          AS porto,
-    o.codice_spedizione::text     AS spedizione,
-    o.codice_vettore::text        AS vettore_id,
-    o.codice_valuta::text         AS valuta,
+    NULL                          AS agente_id,        -- non esposto da rag_ordini_clienti
+    NULL                          AS listino,
+    NULLIF(o.codice_pagamento, '') AS pagamento,
+    NULLIF(o.codice_porto, '')    AS porto,
+    NULLIF(o.codice_spedizione, '') AS spedizione,
+    NULLIF(o.codice_vettore, '')  AS vettore_id,
+    NULLIF(o.codice_valuta, '')   AS valuta,
     NULL                          AS cambio,
-    NULL                          AS sconti,         -- sconto_1..4 + sconto_finale
+    (SELECT array_agg(x ORDER BY o) FROM (VALUES
+        (o.sconto_1, 1), (o.sconto_2, 2), (o.sconto_3, 3), (o.sconto_4, 4)
+    ) AS s(x, o) WHERE x IS NOT NULL) AS sconti,
     o.importo_imponibile          AS imponibile,
     o.importo_iva                 AS iva,
     NULL                          AS totale,
-    o.riferimento_ordine_cliente  AS riferimento_soggetto,
+    NULL                          AS spese_trasporto,
+    NULL                          AS spese_incasso,
+    NULL                          AS peso_totale,
+    NULL                          AS colli,
+    NULLIF(o.riferimento_ordine_cliente, '') AS riferimento_soggetto,
     o.data_riferimento_ordine     AS data_riferimento_soggetto,
-    o.stato_saldo::text           AS stato,
-    NULL                          AS stato_origine,
-    'b2b'                         AS canale,         -- mvt_liberoc5 = 'B2B'
+    CASE WHEN o.flag_fatturato IN ('S', '1', 'true', 'V') THEN 'evaso'
+         WHEN o.stato_saldo IN ('S', '1', 'true', 'V') THEN 'aperto'
+         ELSE 'aperto' END        AS stato,
+    o.stato_saldo::text           AS stato_origine,
+    CASE WHEN NULLIF(o.riferimento_b2b, '') IS NOT NULL THEN 'b2b' ELSE NULL END AS canale,
     o.utente_inserimento::text    AS utente_origine,
-    o.note_ordine                 AS note,
-    '{}'::jsonb                   AS extra,
+    NULLIF(o.note_ordine, '')     AS note,
+    jsonb_strip_nulls(jsonb_build_object(
+        'numero_progressivo', o.numero_progressivo,
+        'data_valuta', o.data_valuta,
+        'data_competenza', o.data_competenza,
+        'base_imponibile', o.base_imponibile,
+        'sconto_finale', o.sconto_finale,
+        'riferimento_b2b', NULLIF(o.riferimento_b2b, ''),
+        'data_riferimento_b2b', o.data_riferimento_b2b,
+        'id_destinazione_committente', o.id_destinazione_committente,
+        'flag_contabilizzato', o.flag_contabilizzato,
+        'stato_verifica', o.stato_verifica
+    ))                            AS extra,
     o.data_modifica::timestamptz  AS data_modifica_origine
-FROM b2b_ordini_clienti o
-WHERE o.azi_cdazi = %(codice_azienda)s
-  AND (%(dal)s::timestamptz IS NULL OR o.data_modifica::timestamptz > %(dal)s::timestamptz)
+FROM rag_ordini_clienti o
+WHERE (%(dal)s::timestamptz IS NULL OR o.data_modifica::timestamptz > %(dal)s::timestamptz)

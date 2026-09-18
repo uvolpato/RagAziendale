@@ -1,19 +1,16 @@
 """Connettore Integra (SPECIFICA-CONNETTORI.md §10).
 
-Legge il gestionale Integra con un utente di SOLA LETTURA, direttamente su
-PostgreSQL (psycopg), e traduce le tabelle del portale B2B (`b2b_*`) nelle
-colonne del modello canonico. La traduzione vive nei file `viste/<tabella>.sql`:
-aggiungere un'entita' = aggiungere una vista, il connettore non cambia.
+Legge il gestionale Integra con un utente di SOLA LETTURA, attraverso il
+database parallelo `rag` (postgres_fdw verso Integra): le viste `rag_*` sono
+li' e il connettore le traduce nelle colonne del modello canonico. La
+traduzione vive nei file `viste/<tabella>.sql`: aggiungere un'entita' =
+aggiungere una vista, il connettore non cambia.
 
 Stato attuale: il contratto (prova con verifica della sola lettura, estrai da
-vista, aziende, schema) e' completo; delle viste sono scritte quelle
-dell'anagrafica (`soggetti`, `soggetti_ruoli`, `indirizzi`) come riferimento.
-Le altre vanno scritte e VERIFICATE contro lo schema reale di Integra, che in
-sviluppo non e' raggiungibile: le mappature di partenza sono in
+vista, aziende, schema) e' completo. Le viste sono scritte contro le viste
+reali `rag_*`; restano da VERIFICARE contro il database `rag` reale, che in
+sviluppo non e' raggiungibile. Le mappature di partenza sono in
 MODELLO-DATI-GESTIONALE.md §5 e nella tabella della specifica §10.
-
-ponytail: lettura diretta via psycopg. In produzione si valutera' postgres_fdw
-per spingere i filtri (codice azienda) al gestionale, come nel B2B.
 """
 import json
 import pathlib
@@ -23,11 +20,13 @@ from psycopg.rows import dict_row
 
 QUI = pathlib.Path(__file__).parent
 
-# Tabelle che il connettore legge: servono al controllo di sola lettura in
-# prova(). Nomi del contratto B2B; da adattare allo schema reale.
-TABELLE_LETTE = ["b2b_clienti", "b2b_destinazioni_clienti", "b2b_prodotti",
-                 "b2b_listini_testata", "b2b_listini_righe", "b2b_ordini_clienti",
-                 "b2b_righe_ordini"]
+# Viste che il connettore legge: servono al controllo di sola lettura in
+# prova(). Le viste rag_* stanno nel database parallelo "rag". rag_pagamenti_clienti
+# e' esclusa di proposito: espone IBAN/ABI/CAB/mandato (dati minimizzati, §7).
+TABELLE_LETTE = ["rag_prodotti", "rag_clienti", "rag_indirizzi_clienti",
+                 "rag_ordini_clienti", "rag_righe_ordini",
+                 "rag_listini_testata", "rag_listini_righe", "rag_tabpag",
+                 "rag_tabpor", "rag_tabspe"]
 
 
 class Connettore:
@@ -95,11 +94,11 @@ class Connettore:
 
     def aziende(self):
         """Le aziende presenti nel gestionale (multi-azienda: azi_cdazi)."""
-        # ponytail: nome della tabella anagrafica aziende da confermare sullo
-        # schema reale. Qui si assume una vista b2b_aziende con codice/ragione/iva.
+        # ponytail: NON esiste una vista rag_aziende fra quelle fornite. Servira'
+        # una vista sull'anagrafica aziende di Integra prima della multi-azienda.
         with self._conn() as conn:
             return conn.execute(
-                "SELECT codice, ragione_sociale, partita_iva FROM b2b_aziende"
+                "SELECT codice, ragione_sociale, partita_iva FROM rag_aziende"
                 " ORDER BY codice").fetchall()
 
     def _vista(self, tabella):
@@ -110,17 +109,27 @@ class Connettore:
                 "(mappature di partenza in MODELLO-DATI-GESTIONALE.md §5)")
         return f.read_text(encoding="utf-8")
 
+    def _parametri(self, sql, codice_azienda, dal):
+        """Passa solo i parametri che la vista usa davvero: le viste rag_* hanno
+        gia' il filtro azienda hardcoded, quindi non tutte usano %(codice_azienda)s."""
+        p = {}
+        if "%(codice_azienda)s" in sql:
+            p["codice_azienda"] = codice_azienda
+        if "%(dal)s" in sql:
+            p["dal"] = dal
+        return p
+
     def estrai(self, tabella, codice_azienda, dal=None):
         sql = self._vista(tabella)
         with self._conn() as conn:
-            for r in conn.execute(sql, {"codice_azienda": codice_azienda, "dal": dal}):
+            for r in conn.execute(sql, self._parametri(sql, codice_azienda, dal)):
                 yield r
 
     def identificativi(self, tabella, codice_azienda):
         sql = self._vista(tabella)
         with self._conn() as conn:
             return {r["id_origine"] for r in
-                    conn.execute(sql, {"codice_azienda": codice_azienda, "dal": None})}
+                    conn.execute(sql, self._parametri(sql, codice_azienda, None))}
 
     def leggi_diretto(self, cosa, codice_azienda, chiave):
         # Giacenza, fido, prezzo netto: letture in diretta (decisione 47).
