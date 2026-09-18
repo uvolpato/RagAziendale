@@ -377,6 +377,7 @@ gestionali (clienti, listini, ordini...).
 |---|---|
 | Nome | Manuali tecnici · Listini di vendita |
 | Tipo | Documenti / Dati gestionali |
+| Provenienza | Cartella di rete `\\server\tecnico\manuali` · SharePoint «Ufficio tecnico» · Caricamento manuale · Integra — Luis |
 | Chi può vederla | Vendite, Direzione |
 | Aziende | Luis · Tutto il gruppo |
 | Uso di servizi esterni | **Resta in azienda** / **Può usare servizi esterni** |
@@ -397,6 +398,17 @@ responsabile".
 ### 7.2 Dettaglio / modifica
 
 - nome, descrizione, tipo, percorso (sola lettura: lo imposta chi installa);
+- **provenienza**: da dove arrivano i contenuti. Per i documenti il canale
+  principale è una **cartella collegata** (condivisione di rete, SharePoint,
+  OneDrive, Google Drive...): l'ufficio responsabile continua a usarla come
+  oggi, l'assistente la rilegge da solo. Mostrare il tipo di collegamento, il
+  percorso e l'esito dell'ultima lettura;
+- **documenti della fonte**: elenco con stato di ciascuno — *indicizzato*,
+  *illeggibile* (collegato all'anomalia), *escluso* (con il motivo: cartella
+  `_archivio`, tipo di file non ammesso, es. listini Excel);
+- **Carica documenti** (seconda fase, solo per fonti con provenienza
+  "Caricamento manuale", cioè senza una cartella): trascina i file, vedi
+  l'avanzamento dell'indicizzazione, sostituisci o ritira un documento;
 - **chi può vederla**: scelta di gruppi operativi (l'elenco dei gruppi viene
   da Gestione utenti). Almeno uno obbligatorio;
 - **aziende**: una, più di una o "tutto il gruppo". Obbligatorio, nessun valore
@@ -629,7 +641,9 @@ sono configurabili e **come** si derivano gli altri.
 
 ---
 
-## 14. Domande aperte (non bloccano il prototipo)
+## 14. Domande aperte
+
+*(Decise il 18/09/2026: i documenti entrano da cartelle collegate; il caricamento in chat è disattivato in fase 1 — decisioni 61–64.)* (non bloccano il prototipo)
 
 1. Notifiche per le anomalie critiche: email, Teams, entrambe?
 2. Doppia approvazione per "Può usare servizi esterni" (§7.3)?

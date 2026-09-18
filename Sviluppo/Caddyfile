@@ -66,6 +66,21 @@
 	# nessuna dipendenza da SameSite e nessun ciclo possibile.
 	redir / /oauth/openid 302
 
+	# ------------------------------------------------------------------
+	# Caricamento file in chat BLOCCATO qui, non solo in librechat.yaml
+	# (decisione 63). fileConfig.disabled nasconde il pulsante, ma non e'
+	# dimostrato che il server lo faccia rispettare: una regola di
+	# sicurezza non puo' dipendere da questo. I file caricati finirebbero
+	# nella ricerca di LibreChat, che non passa dal gate (niente ACL,
+	# residenza, taint).
+	# Blocca anche /api/files/speech: quando arrivera' la voce, si apre
+	# SOLO quel percorso.
+	@caricamenti {
+		method POST PUT
+		path /api/files /api/files/*
+	}
+	respond @caricamenti "Caricamento file disattivato" 403
+
 	reverse_proxy librechat:3080
 }
 

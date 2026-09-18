@@ -27,7 +27,22 @@ endpoints:
         Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
         X-Conversation-Id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
 
+# Caricamento file in chat DISATTIVATO in fase 1 (decisione 63). Il sistema
+# di file di LibreChat ha una sua ricerca separata che NON passa dal gate:
+# niente ACL, niente residenza, niente taint. I documenti aziendali entrano
+# solo dalle fonti registrate. "Chatta con questo PDF" tornera in fase 2,
+# passando dall'orchestratore.
+fileConfig:
+  endpoints:
+    default:
+      disabled: true
+    agents:
+      disabled: true
+    "${NOME_ASSISTENTE}":
+      disabled: true
+
 interface:
+  fileSearch: false
   # Una sola destinazione: niente scelta del modello, niente preset, niente
   # parametri. L'utente fa domande, non configura un LLM.
   modelSelect: false

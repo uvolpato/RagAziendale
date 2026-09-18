@@ -207,6 +207,20 @@ def main():
             f"atterrato su {atterrato!r} invece di /c/new"
         print(f"ok ({salti} salti -> {atterrato}, nessuna pagina intermedia)")
 
+        # Decisione 63: i file caricati in chat finirebbero nella ricerca di
+        # LibreChat, che non passa dal gate. Il blocco sta in Caddy; qui si
+        # prova da utente autenticato, dove LibreChat li accetterebbe.
+        passo(14, "caricamento file in chat bloccato (anche via API)")
+        token = c.post(f"{APP}/api/auth/refresh").json()["token"]
+        r = c.post(f"{APP}/api/files",
+                   headers={"Authorization": f"Bearer {token}",
+                            "User-Agent": "Mozilla/5.0 Chrome/140.0"},
+                   files={"file": ("prova.txt", b"prova", "text/plain")},
+                   data={"endpoint": "agents"})
+        assert r.status_code == 403, \
+            f"caricamento NON bloccato: HTTP {r.status_code} {r.text[:80]}"
+        print("ok (403)")
+
     print("\nT1.4: verde. Radice senza pagina intermedia, login e logout completi.")
 
 
