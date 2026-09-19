@@ -53,7 +53,11 @@ NON_LEGGIBILI = {".xls": "formato Excel 97-2003: salvarlo come .xlsx", ".ods": "
 # PDF lunghi a blocchi di pagine: Docling tiene in memoria le immagini delle
 # pagine che converte, e un PDF da 20 MB in un colpo solo supera i 4 GB del
 # container (successo il 19/09/2026).
-PAGINE_PER_BLOCCO = int(os.environ.get("PAGINE_PER_BLOCCO", "6"))
+# Dove si leggono i documenti: docling-serve su una GPU (sviluppo: container
+# docling; produzione: server GPU dietro TLS e INFERENCE_TOKEN). Vuoto = qui,
+# su CPU, in processi figli (piu' lento, ma senza dipendere da nessuno).
+DOCLING_URL = os.environ.get("DOCLING_URL", "").rstrip("/")
+PAGINE_PER_BLOCCO = int(os.environ.get("PAGINE_PER_BLOCCO", "30" if DOCLING_URL else "6"))
 # Un blocco che non finisce entro questo tempo si chiude: vicino al tetto di
 # memoria il processo non muore, si blocca (CPU all'1%, visto il 19/09/2026).
 SECONDI_PER_BLOCCO = int(os.environ.get("SECONDI_PER_BLOCCO", "600"))
@@ -176,7 +180,6 @@ def _converti(percorso, blocco):
     Docling non restituisce la memoria fra un blocco e l'altro (misurato:
     da 1,3 a oltre 6 GB, swap compreso, su un PDF di 266 pagine), e un
     processo che finisce la restituisce tutta."""
-    from docling.chunking import HierarchicalChunker
     from docling.datamodel.accelerator_options import AcceleratorOptions
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliOcrOptions
@@ -193,8 +196,14 @@ def _converti(percorso, blocco):
         InputFormat.PDF: PdfFormatOption(pipeline_options=opzioni),
         InputFormat.IMAGE: ImageFormatOption(pipeline_options=opzioni)})
     ris = conv.convert(percorso, page_range=blocco) if blocco else conv.convert(percorso)
+    return _chunk(ris.document)
+
+
+def _chunk(documento):
+    """DoclingDocument -> [(testo con i titoli, pagina)]."""
+    from docling_core.transforms.chunker.hierarchical_chunker import HierarchicalChunker
     out = []
-    for ch in HierarchicalChunker().chunk(ris.document):
+    for ch in HierarchicalChunker().chunk(documento):
         pagina = None
         for item in ch.meta.doc_items:
             if item.prov:
@@ -203,6 +212,28 @@ def _converti(percorso, blocco):
         titoli = " > ".join(ch.meta.headings or [])
         out.append(((titoli + "\n" if titoli else "") + ch.text, pagina))
     return out
+
+
+def _converti_remoto(percorso, blocco):
+    """Un blocco di pagine (o un file intero) a docling-serve: layout, tabelle
+    e OCR sulla GPU. Torna il documento strutturato; i pezzi si fanno qui."""
+    from docling_core.types.doc import DoclingDocument
+    token = os.environ.get("INFERENCE_TOKEN") or ""
+    campi = {"to_formats": ["json"], "do_ocr": "true", "ocr_lang": ["it", "en"],
+             "table_mode": "accurate", "image_export_mode": "placeholder", "abort_on_error": "false"}
+    if blocco:
+        campi["page_range"] = [str(blocco[0]), str(blocco[1])]
+    with open(percorso, "rb") as f:
+        r = httpx.post(f"{DOCLING_URL}/v1/convert/file", data=campi,
+                       files={"files": (pathlib.Path(percorso).name, f, "application/octet-stream")},
+                       headers={"Authorization": f"Bearer {token}"} if token else {},
+                       timeout=SECONDI_PER_BLOCCO, verify=os.environ.get("DOCLING_CA") or True)
+    if r.status_code >= 400:
+        raise RuntimeError(f"docling-serve {r.status_code}: {r.text[:300]}")
+    ris = r.json()
+    if ris.get("status") not in ("success", "partial_success"):
+        raise RuntimeError(f"docling-serve: {ris.get('status')} {str(ris.get('errors'))[:300]}")
+    return _chunk(DoclingDocument.model_validate(ris["document"]["json_content"]))
 
 
 class Lettore:
@@ -223,8 +254,14 @@ class Lettore:
             n = len(pdf)
             pdf.close()
             blocchi = [(a, min(a + PAGINE_PER_BLOCCO - 1, n)) for a in range(1, n + 1, PAGINE_PER_BLOCCO)] or [None]
-        import multiprocessing
         grezzi = []
+        if DOCLING_URL:
+            for blocco in blocchi:
+                grezzi += _converti_remoto(str(p), blocco)
+                if len(blocchi) > 1:
+                    print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]} (GPU)", flush=True)
+            return unisci(grezzi)
+        import multiprocessing
         for blocco in blocchi:
             # Un processo per blocco, chiuso a forza se non finisce in tempo.
             pool = multiprocessing.get_context("spawn").Pool(1, maxtasksperchild=1)

@@ -125,20 +125,21 @@ def contiene_interno(righe) -> str | None:
 
 
 def embedding(domanda: str):
-    """Embedding della domanda dall'host di inferenza interno.
+    """Embedding della domanda, chiesto a LiteLLM per nome logico (`embedding`),
+    come fa l'ingestion: il modello vero lo decide litellm-config.yaml.
 
-    Restituisce None se l'host non risponde: il chiamante degrada su BM25
-    invece di propagare l'errore.
+    Restituisce None se LiteLLM o l'host di inferenza non rispondono: il
+    chiamante degrada su BM25 invece di propagare l'errore.
     """
     from . import egress
 
-    url = os.environ["EMBEDDING_URL"].rstrip("/")
-    modello = os.environ["EMBEDDING_MODEL"]
-    token = os.environ.get("INFERENCE_TOKEN") or ""
+    url = os.environ["LITELLM_BASE_URL"].rstrip("/")
+    modello = os.environ.get("LLM_EMBEDDING", "embedding")
+    token = os.environ.get("LITELLM_MASTER_KEY") or ""
     testa = {"Authorization": f"Bearer {token}"} if token else {}
     try:
         with egress.client(timeout=20.0, verify=False) as c:
-            r = c.post(f"{url}/embeddings",
+            r = c.post(f"{url}/v1/embeddings",
                        json={"model": modello, "input": [domanda]},
                        headers=testa)
             r.raise_for_status()

@@ -188,7 +188,9 @@ services:
       LLM_RAGIONAMENTO: ragionamento
       LLM_VELOCE: veloce
       LLM_EMBEDDING: embedding
-      # Fase 1b: LLM_RAGIONAMENTO_INTERNO=ragionamento_interno
+      # Fase 1b: i dati 'interno' rispondono solo su questa rotta (gate). In
+      # sviluppo punta allo stesso modello locale (GUIDA-MODELLI.md §4).
+      LLM_RAGIONAMENTO_INTERNO: ragionamento_interno
       # --- Allowlist di egress: il gate consente SOLO questi host. Qualsiasi
       # richiesta verso un host non dichiarato e un errore, non un warning.
       EGRESS_INTERNAL: ${EGRESS_INTERNAL}
@@ -420,6 +422,15 @@ services:
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       LLM_EMBEDDING: embedding
+      # Dove si leggono i documenti (layout, tabelle, OCR): docling-serve su
+      # una GPU. Vuoto = sul posto, su CPU (lento ma funziona). In sviluppo lo
+      # imposta docker-compose.override.yml; in produzione e' il server GPU,
+      # dietro TLS e INFERENCE_TOKEN (docker-compose.inference.yml).
+      DOCLING_URL: ${DOCLING_URL:-}
+      # Certificato del server GPU se interno (tls internal di Caddy): percorso
+      # del .crt montato nel container. Vuoto = certificati di sistema.
+      DOCLING_CA: ${DOCLING_CA:-}
+      INFERENCE_TOKEN: ${INFERENCE_TOKEN}
       INTERVALLO: ${INTERVALLO_INDICIZZAZIONE:-300}
     volumes:
       # Radice delle cartelle: in produzione la condivisione di rete montata

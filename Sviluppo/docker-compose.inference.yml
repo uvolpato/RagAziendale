@@ -57,6 +57,25 @@ services:
               count: all
               capabilities: [gpu]
 
+  docling:
+    # Lettura dei documenti (layout, tabelle, OCR) per il servizio ingestion
+    # del server applicativo: DOCLING_URL=https://<questo-server>:7443/docling
+    # Qui passano i FILE interi, non solo il testo: stesse regole di sopra.
+    image: quay.io/docling-project/docling-serve-cu128:v1.34.0
+    restart: unless-stopped
+    environment:
+      DOCLING_DEVICE: cuda
+      DOCLING_SERVE_LOAD_MODELS_AT_BOOT: "true"
+      DOCLING_SERVE_MAX_SYNC_WAIT: "900"
+      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "false"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   # FASE 1b — il modello di ragionamento interno, quando la macchina arriva.
   #   docker compose -f docker-compose.inference.yml --profile fase1b up -d
   vllm:

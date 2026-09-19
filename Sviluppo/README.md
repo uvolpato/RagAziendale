@@ -224,8 +224,8 @@ va modificato a mano, si perde.
 
 | | |
 |---|---|
-| Endpoint `/v1/chat/completions` | `orchestratore/` ha gate, ACL ed egress con i test; manca il server HTTP. **Quindi la chat si apre ma i messaggi danno errore** |
-| Modello | `MODELLO_RAGIONAMENTO` in `.env` è vuoto: è una scelta di progetto (§11.9 dell'analisi) |
+| Chat end-to-end | `orchestratore/` ora ha server + prompt + Dockerfile: `/v1/chat/completions` cuce token → embedding → ricerca → gate → LiteLLM. **Da provare in esecuzione**: serve embedding e ragionamento caricati insieme in LM Studio (o si degrada a full-text) |
+| Modello | scelto `qwen3.8-27b-gsq-rco` su LM Studio (contesto 12947 token), vedi `GUIDA-MODELLI.md` |
 | Ingestion | Cartelle locali sì (`ingestion/`). Mancano: la condivisione vera (D15), gli altri connettori (SharePoint, Google Drive…), l'"indicizza ora" dal pannello |
 | Importazione ERP reale | il motore `connettori/`, Dagster e le viste Integra ci sono; mancano la **verifica delle colonne** sullo schema reale, un gestionale raggiungibile con utente di sola lettura, e (per `documenti`) il filtro per `ciclo` nella rilevazione delle cancellazioni |
 

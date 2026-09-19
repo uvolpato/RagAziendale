@@ -54,6 +54,32 @@ services:
       LOGIN_WINDOW: "1"
       BAN_VIOLATIONS: "false"
 
+  docling:
+    # Lettura dei documenti (layout, tabelle, OCR) sulla GPU di sviluppo.
+    # In produzione sta sul server GPU (docker-compose.inference.yml) e
+    # ingestion lo raggiunge con DOCLING_URL. Solo rete interna: nessuna porta.
+    # ponytail: tag pinnato; aggiornare insieme a docling in ingestion/.
+    image: quay.io/docling-project/docling-serve-cu128:v1.34.0
+    restart: unless-stopped
+    environment:
+      DOCLING_DEVICE: cuda
+      DOCLING_SERVE_LOAD_MODELS_AT_BOOT: "true"
+      DOCLING_SERVE_MAX_SYNC_WAIT: "900"
+      # Niente chiamate a servizi esterni dalla pipeline (egress).
+      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "false"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ingestion:
+    environment:
+      # Lettura sulla GPU del container docling qui sopra. Vuoto = CPU locale.
+      DOCLING_URL: ${DOCLING_URL:-http://docling:5001}
+
   orchestratore:
     volumes:
       - ./orchestratore:/app/orchestratore:ro   # ricarica a caldo

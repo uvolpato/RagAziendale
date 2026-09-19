@@ -21,6 +21,11 @@
 		reverse_proxy @autorizzato vllm:8000
 		respond 401
 	}
+	handle_path /docling/* {
+		# Lettura dei documenti (docling-serve) per ingestion.
+		reverse_proxy @autorizzato docling:5001
+		respond 401
+	}
 	handle /health {
 		reverse_proxy infinity:7997
 	}

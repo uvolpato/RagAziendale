@@ -43,6 +43,10 @@ fileConfig:
 
 interface:
   fileSearch: false
+  # Da v0.8.x "Agents" e' abilitata di default e il frontend ci atterra sopra:
+  # senza un agent_id scelto, ogni messaggio da' "agent_id is required".
+  # Qui gli Agents non esistono: si disabilitano e resta solo il custom endpoint.
+  agents: false
   # Una sola destinazione: niente scelta del modello, niente preset, niente
   # parametri. L'utente fa domande, non configura un LLM.
   modelSelect: false
