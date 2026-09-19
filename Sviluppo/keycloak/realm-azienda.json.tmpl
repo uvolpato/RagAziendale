@@ -23,6 +23,11 @@
     { "name": "amministrazione", "path": "/amministrazione" },
     { "name": "direzione",       "path": "/direzione" },
     { "name": "acquisti",        "path": "/acquisti" },
+    { "name": "sicurezza",       "path": "/sicurezza",
+      "attributes": { "descrizione": ["Addetti alla sicurezza: vedono e depositano i documenti della cartella Sicurezza"] } },
+    { "name": "sicurezza-gestori", "path": "/sicurezza-gestori",
+      "attributes": { "descrizione": ["Gestiscono la cartella Sicurezza e aggiungono i colleghi al gruppo sicurezza (amministrazione/gestori.py)"] },
+      "clientRoles": { "amministrazione": ["gestore-gruppo"] } },
     { "name": "azienda-luis",       "path": "/azienda-luis",
       "attributes": { "descrizione": ["Abilita ai dati di Luis S.r.l. (asse azienda, decisione 53)"] } },
     { "name": "azienda-decobrands", "path": "/azienda-decobrands",
@@ -58,6 +63,7 @@
         { "name": "admin-sistemi", "description": "Gestione sistemi: monitoraggio, aspetto. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
         { "name": "admin-ruoli", "description": "Gestione amministratori: assegna i profili di amministrazione, tranne Superutente. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
         { "name": "admin-revisore", "description": "Revisore: sola lettura su tutto. Permessi dalle deleghe (keycloak/deleghe.py), MAI da ruoli di realm-management: anche uno solo farebbe saltare le deleghe a chi lo somma ad altri ruoli" },
+        { "name": "gestore-gruppo", "description": "Gestore di un gruppo: aggiunge e toglie i colleghi del SUO gruppo (chi sta in <nome>-gestori gestisce <nome>). Permessi dalle deleghe (amministrazione/gestori.py). Si ha solo dal gruppo -gestori, mai assegnato direttamente" },
         { "name": "admin-super", "description": "Superutente: vede e modifica tutto, tutte le aziende, compresa la composizione dei profili. Unico ruolo con i ruoli classici di Keycloak (realm-admin). Si assegna solo da un altro Superutente o dall'amministratore tecnico.",
           "composite": true, "composites": { "client": { "realm-management": ["realm-admin"] } } }
       ]
@@ -342,6 +348,32 @@
       "emailVerified": true,
       "realmRoles": ["default-roles-azienda"],
       "groups": ["/tutti", "/azienda-luis", "/amministratori/Gestione accessi"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    },
+    {
+      "username": "prova.sicurezza",
+      "email": "prova.sicurezza@example.com",
+      "firstName": "Prova",
+      "lastName": "Sicurezza",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti", "/sicurezza", "/azienda-luis"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    },
+    {
+      "username": "prova.rspp",
+      "email": "prova.rspp@example.com",
+      "firstName": "Prova",
+      "lastName": "RSPP",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti", "/sicurezza", "/sicurezza-gestori", "/azienda-luis"],
       "credentials": [
         { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
       ]

@@ -401,16 +401,30 @@ services:
       - connettori
 
   ingestion:
-    # ponytail: on demand, non un servizio. Il file-watcher quando servira.
-    #   docker compose run --rm ingestion
+    # Indicizza le cartelle collegate (decisioni 61-64): un giro ogni
+    # INTERVALLO secondi. Legge le cartelle in SOLA LETTURA: chi deposita i
+    # file lo fa sulla condivisione, non qui. I vettori li chiede a LiteLLM,
+    # per nome logico, come l'orchestratore: il modello si cambia in un posto
+    # solo (litellm-config.yaml).
+    #   docker compose logs -f ingestion                      cosa sta facendo
+    #   docker compose run --rm ingestion python indicizza.py --una-volta
     build: ./ingestion
-    profiles: ["tools"]
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
-      EMBEDDING_URL: ${EMBEDDING_URL}
-      INFERENCE_TOKEN: ${INFERENCE_TOKEN}
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LLM_EMBEDDING: embedding
+      INTERVALLO: ${INTERVALLO_INDICIZZAZIONE:-300}
     volumes:
-      - ${DOCS_PATH:-./documenti-test}:/docs:ro
+      # Radice delle cartelle: in produzione la condivisione di rete montata
+      # sull'host. Il percorso di ogni fonte e' relativo a questa radice.
+      - ${CARTELLE_PATH:-./cartelle}:/cartelle:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      litellm:
+        condition: service_started
 
   litellm:
     # Owner unico del routing dei modelli, e l'UNICO componente che possiede
@@ -449,6 +463,7 @@ services:
       MODELLO_VELOCE_API_BASE: ${MODELLO_VELOCE_API_BASE}
       # Embedding: sempre interno
       EMBEDDING_URL: ${EMBEDDING_URL}
+      INFERENCE_TOKEN: ${INFERENCE_TOKEN}
     volumes:
       - ./litellm-config.yaml:/app/config.yaml:ro
 

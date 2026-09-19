@@ -28,6 +28,9 @@ un ruolo classico in un profilo annullerebbe le deleghe degli altri.
            assegnare/togliere             -> solo ruoli
            Superutente e la radice        -> NESSUN delegato (solo Superutente)
   Creare gruppi, comporre i profili, assegnare ruoli diretti -> solo Superutente.
+  Gestori di gruppo (chi sta in <gruppo>-gestori, ruolo gestore-gruppo):
+           leggere gli utenti e cambiarne i gruppi, ma Keycloak consente solo
+           il loro <gruppo> (amministrazione/gestori.py)
 
 Verificato da eval/verifica_deleghe.py.
 """
@@ -45,7 +48,10 @@ REALM = "azienda"
 CLIENT_RUOLI = "amministrazione"
 # Tutti i ruoli di amministrazione tranne admin-super: SOLO deleghe, mai ruoli classici.
 DELEGATI = ("admin-accessi", "admin-fonti", "admin-importazioni", "admin-anomalie",
-            "admin-sistemi", "admin-ruoli", "admin-revisore")
+            "admin-sistemi", "admin-ruoli", "admin-revisore", "gestore-gruppo")
+
+sys.path.insert(0, str(QUI))
+from amministrazione import gestori  # noqa: E402  (una lista sola di lettori, vedi sotto)
 
 _o = socket.getaddrinfo
 socket.getaddrinfo = lambda h, p, *a, **k: _o(
@@ -225,7 +231,12 @@ def main():
             ok(c.request("DELETE", f"{A}/roles-by-id/{r['id']}/composites", json=classici))
             print(f"  {nome}: tolti {len(classici)} ruoli classici")
 
-    # 3. Client delle deleghe, creato da Keycloak all'attivazione
+    # 3. Gestori di gruppo: il ruolo e i permessi sul loro gruppo. Prima delle
+    # politiche qui sotto, che citano il ruolo gestore-gruppo.
+    kc = httpx.Client(base_url=A, headers=c.headers, verify=str(ca) if ca.exists() else False, timeout=30)
+    coppie = gestori.allinea(kc)
+
+    # 3b. Client delle deleghe, creato da Keycloak all'attivazione
     ap = ok(c.get(f"{A}/clients", params={"clientId": "admin-permissions"})).json()[0]["id"]
     RS = f"{A}/clients/{ap}/authz/resource-server"
 
@@ -251,14 +262,19 @@ def main():
         if r.status_code >= 400:
             raise SystemExit(f"permesso «{nome}» rifiutato da Keycloak: {r.status_code} {r.text[:200]}")
 
-    LETTORI = ["admin-accessi", "admin-ruoli", "admin-fonti", "admin-revisore"]
+    LETTORI = list(gestori.LETTORI)
     p_lettori = politica("legge utenti e gruppi", LETTORI)
+    # I gestori scelgono i colleghi dall'elenco delle persone: leggono gli
+    # utenti, ma NON tutti i gruppi (p_lettori, sotto) ne' i profili.
+    p_utenti = politica("legge gli utenti", LETTORI + ["gestore-gruppo"])
     p_accessi = politica("e' Gestione accessi", ["admin-accessi"])
     p_ruoli = politica("e' Gestione amministratori", ["admin-ruoli"])
     p_nessuno = politica("NESSUN delegato", LETTORI, "NEGATIVE")
-    p_gruppi_utente = politica("cambia i gruppi di un utente", ["admin-accessi", "admin-ruoli"])
+    # Il gestore cambia i gruppi di chiunque LATO UTENTE; lato gruppo Keycloak
+    # glielo consente solo sul suo (permesso specifico in gestori.py).
+    p_gruppi_utente = politica("cambia i gruppi di un utente", ["admin-accessi", "admin-ruoli", "gestore-gruppo"])
 
-    permesso("leggere gli utenti", "Users", ["view"], [p_lettori])
+    permesso("leggere gli utenti", "Users", ["view"], [p_utenti])
     permesso("creare e modificare gli utenti", "Users", ["manage"], [p_accessi])
     permesso("cambiare i gruppi di un utente", "Users", ["manage-group-membership"], [p_gruppi_utente])
     permesso("leggere i gruppi e i membri", "Groups", ["view", "view-members"], [p_lettori])
@@ -292,7 +308,8 @@ def main():
         # Superutente: lo assegna solo un altro Superutente (ruoli classici).
         permesso("NESSUN delegato assegna Superutente", "Groups",
                  ["manage-membership", "manage-membership-of-members"], [p_nessuno], intoccabili)
-    print(f"  deleghe applicate (profili: {len(profili)}, protetti: {len(intoccabili)})")
+    print(f"  deleghe applicate (profili: {len(profili)}, protetti: {len(intoccabili)}, "
+          f"gruppi con gestori: {', '.join(g for g, _ in coppie) or 'nessuno'})")
 
 
 if __name__ == "__main__":

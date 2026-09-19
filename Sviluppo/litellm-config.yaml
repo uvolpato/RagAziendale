@@ -41,8 +41,15 @@ model_list:
   # ---------------------------------------------------------------------
   - model_name: embedding
     litellm_params:
+      # Server dedicato (vLLM, TEI, Ollama...): "openai/<id esatto del
+      # modello>" e api_base https://<server>:7443/v1. Cambiare modello vuol
+      # dire reindicizzare: l'indicizzazione se ne accorge (index_meta) e
+      # smette di scrivere vettori con un'anomalia critica.
       model: lm_studio/text-embedding-bge-m3-embeddings
       api_base: os.environ/EMBEDDING_URL
+      # Il token davanti all'host di inferenza (inference/Caddyfile). Vuoto in
+      # sviluppo: LM Studio non autentica.
+      api_key: os.environ/INFERENCE_TOKEN
 
   # ---------------------------------------------------------------------
   # FASE 1b — ragionamento sui dati che non lasciano l'azienda.

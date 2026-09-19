@@ -31,18 +31,47 @@ MATRICE = {
     "admin-super":        {v: "M" for v in ("panoramica", "fonti", "vedicome", "anomalie", "registro", "aspetto",
                                              "utenti", "gruppi", "profili", "struttura", "aziende",
                                              "collegamenti", "importazioni", "keycloak", "dagster", "uptime", "litellm")},
+    # Gestore di gruppo (chi sta in <nome>-gestori): solo i colleghi e la
+    # cartella del SUO gruppo. Non e' un profilo di amministrazione: lo da'
+    # il gruppo -gestori (amministrazione/gestori.py).
+    "gestore-gruppo":     {"gestiti": "M"},
 }
 RUOLI = tuple(MATRICE)
+RUOLI_PROFILO = tuple(r for r in RUOLI if r.startswith("admin-"))     # componibili nei profili
 NOMI_RUOLI = {
     "admin-accessi": "Gestione accessi", "admin-fonti": "Gestione fonti",
     "admin-importazioni": "Gestione importazioni", "admin-anomalie": "Gestione anomalie",
     "admin-sistemi": "Gestione sistemi", "admin-ruoli": "Gestione amministratori",
     "admin-revisore": "Revisore", "admin-super": "Superutente",
+    "gestore-gruppo": "Gestore di gruppo",
 }
 # Tipi di connettore ai gestionali (decisione 69): uno per azienda. Le
 # credenziali stanno in .env, mai nel database ne' nel pannello.
 CONNETTORI = {"integra": "Integra"}
 CODICE_AZIENDA = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}$")   # come il CHECK della migrazione 005
+
+# Tipi di fonte (decisioni 61-62): ognuno entra nella conoscenza a modo suo
+# (una cartella si rilegge, SharePoint si sincronizza, il gestionale si
+# importa), dietro la stessa regola: la fonte dichiara gruppi, aziende e
+# stato, e il gate filtra. Qui il catalogo che il pannello mostra; il lavoro
+# di ciascun tipo sta nel suo servizio (ingestion/, connettori/).
+TIPI_FONTE = [
+    {"id": "cartella", "nome": "Cartella", "disponibile": True,
+     "descrizione": "Una cartella della condivisione: tutto ciò che contiene si indicizza e si rilegge ogni pochi minuti."},
+    {"id": "sharepoint", "nome": "SharePoint / OneDrive / Teams", "disponibile": False,
+     "descrizione": "Una raccolta documenti di Microsoft 365, sincronizzata con le API di Microsoft."},
+    {"id": "gdrive", "nome": "Google Drive", "disponibile": False,
+     "descrizione": "Un Drive condiviso di Google Workspace."},
+    {"id": "nextcloud", "nome": "Nextcloud / WebDAV", "disponibile": False,
+     "descrizione": "Una cartella di gruppo di Nextcloud o un'altra condivisione WebDAV."},
+    {"id": "posta", "nome": "Casella di posta condivisa / PEC", "disponibile": False,
+     "descrizione": "Messaggi e allegati di una casella dell'ufficio (certificati, comunicazioni dei fornitori)."},
+    {"id": "caricamento", "nome": "Caricamento dal pannello", "disponibile": False,
+     "descrizione": "Documenti caricati a mano, per chi non ha una cartella (decisione 61, fase 2)."},
+    {"id": "gestionale", "nome": "Dati del gestionale", "disponibile": False,
+     "descrizione": "Anagrafiche, listini e documenti del gestionale: nascono dai collegamenti in Impostazioni → Gestionali, uno per azienda."},
+]
+TIPI_DISPONIBILI = {t["id"] for t in TIPI_FONTE if t["disponibile"]}
 
 # Strumenti che non conoscono le aziende (§3.3): solo a chi le ha tutte.
 SENZA_AZIENDE = {"dagster", "uptime", "litellm", "azioni"}
@@ -95,6 +124,23 @@ def aree_anomalie(ruoli):
 
 def aree_registro(ruoli):
     return _unione_aree(ruoli, AREE_REGISTRO)
+
+
+def home(permessi):
+    """La prima schermata di chi sceglie l'amministrazione."""
+    return "panoramica" if "panoramica" in permessi else next(iter(permessi), "panoramica")
+
+
+def percorso_cartella(testo):
+    """Percorso di una cartella, relativo alla radice montata (/cartelle).
+    None se non valido: niente assoluti, UNC, '..' o nomi con '_' iniziale
+    (le cartelle '_bozze' e '_archivio' non si indicizzano)."""
+    t = (testo or "").strip().strip("/").replace("\\", "/")
+    parti = t.split("/")
+    if not t or any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,60}", x) or x.startswith("_") or ".." in x
+                    for x in parti):
+        return None
+    return "/".join(parti)
 
 
 def aziende_da_gruppi(gruppi):

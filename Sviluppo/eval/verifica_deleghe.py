@@ -133,6 +133,33 @@ def main():
     for g in c.get(f"{A}/groups", params={"search": "verifica-gruppo", "exact": "true"}, headers=tecnico).json():
         c.delete(f"{A}/groups/{g['id']}", headers=tecnico)
 
+    print("\nGestore di gruppo (prova.rspp, in sicurezza-gestori) — solo il suo gruppo")
+    rspp = token("prova.rspp")
+    sicurezza = id_gruppo(adm, "/sicurezza")
+    # Un operatore qualunque: "nuovo" ora ha un profilo di amministrazione, e
+    # gli account degli amministratori non li tocca nessun delegato (sopra).
+    collega = id_utente(adm, "prova.vendite")
+    magazzino = id_gruppo(adm, "/magazzino")
+    gestori_sic = id_gruppo(adm, "/sicurezza-gestori")
+    prova("elenca le persone", c.get(f"{A}/users", headers=rspp), [200])
+    prova("vede chi c'e' in 'sicurezza'", c.get(f"{A}/groups/{sicurezza}/members", headers=rspp), [200])
+    prova("aggiunge un collega a 'sicurezza'", c.put(f"{A}/users/{collega}/groups/{sicurezza}", headers=rspp), [204])
+    prova("lo toglie da 'sicurezza'", c.delete(f"{A}/users/{collega}/groups/{sicurezza}", headers=rspp), [204])
+    prova("lo mette in 'magazzino' (non e' il suo gruppo)",
+          c.put(f"{A}/users/{collega}/groups/{magazzino}", headers=rspp), [403])
+    prova("nomina un altro gestore", c.put(f"{A}/users/{collega}/groups/{gestori_sic}", headers=rspp), [403])
+    prova("si aggiunge a 'Amministratore completo'",
+          c.put(f"{A}/users/{id_utente(adm, 'prova.rspp')}/groups/{completo}", headers=rspp), [403])
+    prova("vede i membri di 'vendite'", c.get(f"{A}/groups/{vendite}/members", headers=rspp), [403])
+    prova("crea un utente", c.post(f"{A}/users", headers=rspp, json={"username": "verifica.rspp", "enabled": True}), [403])
+    prova("un addetto (prova.sicurezza, non gestore) aggiunge un collega",
+          c.put(f"{A}/users/{collega}/groups/{sicurezza}", headers=token("prova.sicurezza")), [403])
+    prova("Gestione accessi gestisce ancora 'sicurezza'",
+          c.put(f"{A}/users/{collega}/groups/{sicurezza}", headers=acc), [204])
+    prova("il Revisore vede ancora i membri di 'sicurezza'",
+          c.get(f"{A}/groups/{sicurezza}/members", headers=rev), [200])
+    c.delete(f"{A}/users/{collega}/groups/{sicurezza}", headers=tecnico)
+
     print("\nOperatore (prova.vendite) — nessun accesso all'amministrazione")
     prova("elenca utenti", c.get(f"{A}/users", headers=token("prova.vendite")), [403])
 

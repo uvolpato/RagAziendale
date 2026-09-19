@@ -120,7 +120,7 @@
     .sys-barra { display:inline-flex; gap:2px; align-items:center; flex:none; }
     .seg { width:3px; height:16px; border-radius:3px; display:inline-block; background:var(--stato-neutro); }
     .seg-up { background:var(--stato-ok); }
-    .seg-down { background:#FF0000; }
+    .seg-down { background:var(--stato-critico); }
     .seg-pend { background:var(--stato-attenzione); }
     .sys-nome { flex:1; min-width:0; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .sys-nome small { color:var(--testo-debole); font-size:11px; margin-left:4px; }

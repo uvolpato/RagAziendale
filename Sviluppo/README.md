@@ -49,6 +49,53 @@ Amministratori di prova: `prova.super` (Superutente: tutto), `prova.admin`
 (completo, senza struttura), `prova.accessi` (Gestione accessi, solo Luis),
 `prova.revisore` (sola lettura). Password in `CREDENZIALI-SVILUPPO.md`.
 
+**Gestori di gruppo** (`amministrazione/gestori.py`): chi sta in
+`<gruppo>-gestori` entra nel pannello con la sola voce *I miei gruppi* e
+aggiunge o toglie i colleghi di `<gruppo>`, e di nessun altro. Lo fa rispettare
+Keycloak (deleghe FGAP), non il pannello. Di prova: `prova.rspp` (gestore di
+`sicurezza`) e `prova.sicurezza` (addetto). Per creare un gruppo con i suoi
+gestori, il Superutente crea in *Gruppi* `qualita` e `qualita-gestori` e ci
+mette le persone: le deleghe si riallineano da sole. **Dopo aver creato persone
+nuove** il gestore non le può aggiungere finché il Superutente non preme
+*Riallinea i gestori* (o al prossimo avvio): Keycloak valuta la singola persona
+solo con un permesso che la elenca (spiegazione in `gestori.py`).
+
+## Cartelle dei documenti
+
+Una cartella per gruppo (decisioni 61-64 e 71): chi sta nel gruppo vede i
+documenti nell'assistente e li deposita nella cartella; se esiste
+`<gruppo>-gestori`, i gestori la vedono e ne rispondono. Si collega da
+*Fonti → Nuova fonte → Cartella*: nasce **in attesa**, si indicizza subito, e
+l'assistente la usa solo quando qualcuno la attiva.
+
+- **Dove stanno**: sotto `CARTELLE_PATH` (in sviluppo `Sviluppo/cartelle/`,
+  fuori da git), montata in sola lettura nel servizio `ingestion`. Il percorso
+  di una fonte è relativo, es. `luis/sicurezza`. In produzione: la
+  condivisione di rete montata sull'host (D15: file server o Nextcloud).
+- **Cosa si legge**: PDF (anche scansioni, con OCR), Word, PowerPoint, HTML,
+  Markdown, testo, immagini. **Non** si leggono le sottocartelle che iniziano
+  con `_` (`_bozze`, `_archivio`) né i fogli di calcolo (i prezzi vengono dal
+  gestionale).
+- **Servizio `ingestion`** (`ingestion/indicizza.py`): un giro ogni 5 minuti
+  (`INTERVALLO_INDICIZZAZIONE`). File nuovi e cambiati entrano, i cancellati
+  escono, gli illeggibili e i doppioni diventano anomalie del pannello. I
+  vettori li chiede a LiteLLM (nome logico `embedding`), come l'orchestratore:
+  il modello si cambia solo in `litellm-config.yaml`, e se cambia rispetto
+  all'indice si fermano i vettori con un'anomalia critica. Se LM
+  Studio è spento i pezzi entrano senza vettori (la ricerca testuale li trova
+  già) e i vettori si aggiungono al giro dopo. I modelli di Docling sono
+  nell'immagine: a regime non esce su internet.
+
+```bash
+docker compose logs -f ingestion                                          # cosa sta facendo
+docker compose run --rm ingestion python indicizza.py --una-volta         # un giro subito
+```
+
+La verifica (`eval/verifica_cartelle.py`) prepara da sé la cartella di prova
+`Sviluppo/cartelle/luis/sicurezza/` (PDF da `documenti_test/campione/`, che si
+rigenerano con `genera_campione.py`), collega la fonte `sicurezza-luis`, la
+indicizza e la attiva.
+
 ## Connettori ai gestionali
 
 `connettori/` importa i dati dei gestionali nel modello canonico
@@ -97,6 +144,8 @@ py eval/verifica_token.py                          # T1.1, T1.3  forma dei token
 ./.venv/Scripts/python.exe eval/verifica_deleghe.py     # deleghe Keycloak: nessuno si alza i permessi
 ./.venv/Scripts/python.exe -m amministrazione.test_amministrazione   # permessi, contrasto, DB
 ./.venv/Scripts/python.exe eval/verifica_amministrazione.py          # login, permessi sulle API, flussi
+./.venv/Scripts/python.exe eval/verifica_cartelle.py   # cartella di gruppo: pannello, indicizzazione, gate, gestore
+./.venv/Scripts/python.exe ingestion/test_indicizza.py # regole dell'indicizzazione (cosa si legge, pezzi)
 ./.venv/Scripts/python.exe -m connettori.test_connettori    # motore SCD2, connettori (sintetico)
 ./.venv/Scripts/python.exe -m connettori.test_collegamenti # segreti cifrati, catalogo, vincoli DB
 ./.venv/Scripts/python.exe -m connettori.test_servizio     # servizio connettori: niente segreti in chiaro
@@ -167,7 +216,7 @@ va modificato a mano, si perde.
 |---|---|
 | Endpoint `/v1/chat/completions` | `orchestratore/` ha gate, ACL ed egress con i test; manca il server HTTP. **Quindi la chat si apre ma i messaggi danno errore** |
 | Modello | `MODELLO_RAGIONAMENTO` in `.env` è vuoto: è una scelta di progetto (§11.9 dell'analisi) |
-| Ingestion | `ingestion/` da scrivere. Serve la cartella dei documenti |
+| Ingestion | Cartelle locali sì (`ingestion/`). Mancano: la condivisione vera (D15), gli altri connettori (SharePoint, Google Drive…), l'"indicizza ora" dal pannello |
 | Importazione ERP reale | il motore `connettori/`, Dagster e le viste Integra ci sono; mancano la **verifica delle colonne** sullo schema reale, un gestionale raggiungibile con utente di sola lettura, e (per `documenti`) il filtro per `ciclo` nella rilevazione delle cancellazioni |
 
 ## Se qualcosa si rompe

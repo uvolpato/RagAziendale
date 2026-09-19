@@ -5,8 +5,10 @@ Sviluppo/.env
 Sviluppo/.env.local
 
 # Documenti aziendali: non finiscono nel repository.
+documenti_test/
 Sviluppo/documenti-test/
 Sviluppo/documenti/
+Sviluppo/cartelle/
 *.pdf
 *.docx
 *.xlsx

@@ -40,7 +40,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from jwt import PyJWKClient
 
-from amministrazione import logica
+from amministrazione import gestori, logica
 
 QUI = pathlib.Path(__file__).parent
 BASE = "/amministrazione"
@@ -203,7 +203,7 @@ def _destinazione(s, request):
     if ricordata == "chat":
         return CHAT
     if ricordata == "amministrazione":
-        return f"{BASE}/#/panoramica"
+        return f"{BASE}/#/{logica.home(s['permessi'])}"
     return f"{BASE}/#/scelta"
 
 
@@ -311,7 +311,8 @@ def io_(s=Depends(utente)):
             "ruoli": [logica.NOMI_RUOLI[r] for r in s["ruoli"]],
             "strumenti": {k: {"url": v[0], "nome": v[1], "prodotto": v[2]} for k, v in STRUMENTI.items()
                           if k in s["permessi"]},
-            "chat": CHAT, "assistente": os.environ.get("NOME_ASSISTENTE", "Assistente aziendale")}
+            "chat": CHAT, "assistente": os.environ.get("NOME_ASSISTENTE", "Assistente aziendale"),
+            "home": logica.home(s["permessi"])}
 
 
 @app.post(f"{BASE}/api/scelta")
@@ -382,6 +383,61 @@ async def residenza(fid: str, request: Request, s=Depends(utente)):
         registra(conn, s, "fonti", azione, f["descrizione"], ",".join(f["aziende"]) or None, motivo or None,
                  {"residenza": f["residency"]}, {"residenza": voluta})
     return {"ok": True}
+
+
+@app.get(f"{BASE}/api/fonti/tipi")
+def tipi_fonte(s=Depends(utente)):
+    serve(s, "fonti")
+    return logica.TIPI_FONTE
+
+
+@app.post(f"{BASE}/api/fonti")
+async def nuova_fonte(request: Request, s=Depends(utente)):
+    """Nuova fonte. Oggi solo il tipo cartella (decisioni 61-64 e 71, una
+    cartella per gruppo); gli altri tipi del catalogo arrivano con il loro
+    connettore. Nasce 'in attesa': si indicizza subito, ma l'assistente la usa
+    solo quando qualcuno la attiva dopo averla controllata."""
+    serve(s, "fonti", "M")
+    c = await request.json()
+    tipo = c.get("provenienza") or "cartella"
+    if tipo not in logica.TIPI_DISPONIBILI:
+        raise HTTPException(422, f"il tipo di fonte «{tipo}» non e' ancora disponibile")
+    gruppo = (c.get("gruppo") or "").strip()
+    fid = (c.get("id") or "").strip().lower()
+    descrizione = (c.get("descrizione") or "").strip()
+    percorso = logica.percorso_cartella(c.get("percorso"))
+    aziende_n = sorted({str(a) for a in c.get("aziende", []) if a})
+    if not logica.CODICE_AZIENDA.match(fid):
+        raise HTTPException(422, "codice non valido: minuscole, cifre e trattini (es. «sicurezza-luis»)")
+    if not descrizione:
+        raise HTTPException(422, "il nome e' obbligatorio")
+    if not percorso:
+        raise HTTPException(422, "percorso non valido: relativo alla radice delle cartelle, es. «luis/sicurezza»")
+    if not aziende_n:
+        raise HTTPException(422, "serve almeno un'azienda: nessun valore predefinito (decisione 53)")
+    if not set(aziende_n) <= set(s["aziende"]):
+        raise HTTPException(403, "puoi assegnare solo aziende a cui sei abilitato")
+    esistenti = {g["name"] for g in _kc(s, "/groups", max=1000, briefRepresentation="true")}
+    if gruppo not in esistenti or gruppo.startswith("azienda-") or gruppo == RADICE_PROFILI:
+        raise HTTPException(422, "gruppo inesistente: si crea prima in Accessi, Gruppi")
+    lettori, owner = [gruppo], "da-assegnare"
+    if gruppo + gestori.SUFFISSO in esistenti:
+        # I gestori vedono la cartella che gestiscono, e ne rispondono.
+        lettori.append(gruppo + gestori.SUFFISSO)
+        owner = gruppo + gestori.SUFFISSO
+    with db() as conn:
+        if conn.execute("SELECT 1 FROM sources WHERE id = %s", (fid,)).fetchone():
+            raise HTTPException(409, "esiste gia' una fonte con questo codice")
+        if conn.execute("SELECT 1 FROM sources WHERE provenienza = 'cartella' AND percorso = %s", (percorso,)).fetchone():
+            raise HTTPException(409, "questa cartella e' gia' collegata a un'altra fonte")
+        conn.execute("""INSERT INTO sources (id, descrizione, percorso, acl_groups, owner, versione_autoritativa,
+                                             tipo, provenienza, stato, aziende)
+                        VALUES (%s, %s, %s, %s, %s, %s, 'documenti', 'cartella', 'attesa', %s)""",
+                     (fid, descrizione, percorso, lettori, owner,
+                      "la cartella: solo versioni valide, _bozze e _archivio esclusi (decisione 64)", aziende_n))
+        registra(conn, s, "fonti", f"Ha collegato la cartella «{descrizione}»", descrizione, ",".join(aziende_n),
+                 dopo={"percorso": percorso, "gruppi": lettori, "responsabile": owner})
+    return {"ok": True, "id": fid, "gruppi": lettori, "responsabile": owner}
 
 
 @app.get(f"{BASE}/api/gruppi")
@@ -873,7 +929,7 @@ async def crea_gruppo(request: Request, s=Depends(utente)):
     _kc(s, "/groups", "POST", {"name": nome})
     with db() as conn:
         registra(conn, s, "accessi", f"Ha creato il gruppo operativo {nome}", nome)
-    return {"ok": True}
+    return {"ok": True, "gestori": _allinea_gestori(s)}
 
 
 @app.put(f"{BASE}/api/gruppi-operativi/{{gid}}")
@@ -890,7 +946,7 @@ async def rinomina_gruppo(gid: str, request: Request, s=Depends(utente)):
         _kc(s, f"/groups/{gid}", "PUT", {**g, "name": nome})
         registra(conn, s, "accessi", f"Ha rinominato il gruppo {g['name']} in {nome}", nome,
                  prima={"nome": g["name"]}, dopo={"nome": nome})
-    return {"ok": True}
+    return {"ok": True, "gestori": _allinea_gestori(s)}
 
 
 @app.delete(f"{BASE}/api/gruppi-operativi/{{gid}}")
@@ -906,6 +962,106 @@ def elimina_gruppo(gid: str, request: Request, s=Depends(utente)):
             raise HTTPException(422, "il gruppo e' usato da almeno una fonte")
         _kc(s, f"/groups/{gid}", "DELETE")
         registra(conn, s, "accessi", f"Ha eliminato il gruppo {g['name']}", g["name"])
+    return {"ok": True, "gestori": _allinea_gestori(s)}
+
+
+def _allinea_gestori(s):
+    """Deleghe dei gestori di gruppo (gestori.py) con il token del Superutente:
+    solo lui puo' modificare le deleghe di Keycloak. Un errore non annulla
+    l'operazione sul gruppo: si segnala, e l'avvio successivo riallinea."""
+    try:
+        with httpx.Client(base_url=f"{KC_INTERNO}/admin/realms/{REALM}", timeout=60,
+                          headers={"Authorization": "Bearer " + _token_valido(s)}) as c:
+            return {"ok": True, "gruppi": [g for g, _ in gestori.allinea(c)]}
+    except Exception as e:
+        return {"ok": False, "errore": str(e)[:300]}
+
+
+@app.post(f"{BASE}/api/gestori/allinea")
+def allinea_gestori(s=Depends(utente)):
+    """Dopo aver creato persone nuove: senza riallineare, il gestore non le
+    puo' aggiungere al suo gruppo (gestori.py spiega perche')."""
+    serve(s, "struttura", "M")
+    esito = _allinea_gestori(s)
+    if not esito["ok"]:
+        raise HTTPException(502, "riallineamento non riuscito: " + esito["errore"])
+    with db() as conn:
+        registra(conn, s, "accessi", "Ha riallineato i permessi dei gestori di gruppo", None,
+                 dopo={"gruppi": esito["gruppi"]})
+    return esito
+
+
+# ------------------------------------------------------- Gestori di gruppo
+# Chi sta in <nome>-gestori gestisce le persone di <nome>. Qui si chiama
+# Keycloak col token del gestore: e' Keycloak a limitarlo al suo gruppo
+# (gestori.py). Il controllo qui sotto serve solo a dare un errore chiaro.
+def _mio_gruppo(s, nome):
+    if nome not in gestori.gestiti(s["gruppi"]):
+        raise HTTPException(403, "non sei gestore di questo gruppo")
+    return _gruppo_da_percorso(s, f"/{nome}")
+
+
+@app.get(f"{BASE}/api/gestiti")
+def gestiti(s=Depends(utente)):
+    serve(s, "gestiti")
+    out = []
+    with db() as conn:
+        for nome in gestori.gestiti(s["gruppi"]):
+            g = _mio_gruppo(s, nome)
+            membri = [_utente_breve(u) for u in _kc(s, f"/groups/{g['id']}/members", max=1000, briefRepresentation="true")]
+            cartelle = conn.execute("""
+                SELECT s.id, s.descrizione, s.percorso, s.stato, s.aziende,
+                       (SELECT count(*) FROM documenti d WHERE d.source_id = s.id AND d.stato = 'indicizzato') AS documenti,
+                       (SELECT count(*) FROM documenti d WHERE d.source_id = s.id AND d.stato = 'errore') AS errori,
+                       (SELECT max(d.indicizzato_il) FROM documenti d WHERE d.source_id = s.id) AS aggiornata
+                  FROM sources s WHERE %s = ANY(acl_groups) AND provenienza = 'cartella'
+                 ORDER BY s.descrizione""", (nome,)).fetchall()
+            out.append({"nome": nome, "id": g["id"], "membri": sorted(membri, key=lambda u: u["nome"].lower()),
+                        "cartelle": cartelle})
+    return out
+
+
+@app.get(f"{BASE}/api/gestiti/{{nome}}/candidati")
+def candidati(nome: str, q: str = "", s=Depends(utente)):
+    serve(s, "gestiti")
+    g = _mio_gruppo(s, nome)
+    dentro = {u["id"] for u in _kc(s, f"/groups/{g['id']}/members", max=1000, briefRepresentation="true")}
+    return [_utente_breve(u) for u in _kc(s, "/users", search=q, max=20, briefRepresentation="true")
+            if u["id"] not in dentro and u.get("enabled", False)]
+
+
+@app.post(f"{BASE}/api/gestiti/{{nome}}/membri/{{uid}}")
+def aggiungi_membro(nome: str, uid: str, s=Depends(utente)):
+    serve(s, "gestiti", "M")
+    g = _mio_gruppo(s, nome)
+    u = next((x for x in _kc(s, "/users", max=10000, briefRepresentation="true") if x["id"] == uid), None)
+    if not u:
+        raise HTTPException(404, "persona non trovata")
+    try:
+        _kc(s, f"/users/{uid}/groups/{g['id']}", "PUT")
+    except HTTPException as e:
+        if e.status_code == 403:
+            raise HTTPException(403, "Keycloak non lo consente: e' un amministratore, oppure una persona creata "
+                                     "da poco (serve il riallineamento dal Superutente, in Gruppi)")
+        raise
+    with db() as conn:
+        registra(conn, s, "accessi", f"Ha aggiunto {u['username']} al gruppo {nome}", u["username"],
+                 dopo={"gruppo": nome})
+    return {"ok": True}
+
+
+@app.delete(f"{BASE}/api/gestiti/{{nome}}/membri/{{uid}}")
+def togli_membro(nome: str, uid: str, s=Depends(utente)):
+    serve(s, "gestiti", "M")
+    g = _mio_gruppo(s, nome)
+    u = next((x for x in _kc(s, f"/groups/{g['id']}/members", max=1000, briefRepresentation="true")
+              if x["id"] == uid), None)
+    if not u:
+        raise HTTPException(404, "la persona non e' nel gruppo")
+    _kc(s, f"/users/{uid}/groups/{g['id']}", "DELETE")
+    with db() as conn:
+        registra(conn, s, "accessi", f"Ha tolto {u['username']} dal gruppo {nome}", u["username"],
+                 prima={"gruppo": nome})
     return {"ok": True}
 
 
@@ -923,14 +1079,15 @@ def profili(s=Depends(utente)):
         out.append({"id": g["id"], "nome": g["name"], "percorso": g["path"], "ruoli": sorted(ruoli or []),
                     "membri": membri})
     return {"profili": sorted(out, key=lambda x: x["nome"]),
-            "ruoli": [{"id": k, "nome": v} for k, v in logica.NOMI_RUOLI.items()]}
+            "ruoli": [{"id": k, "nome": logica.NOMI_RUOLI[k]} for k in logica.RUOLI_PROFILO]}
 
 
 @app.put(f"{BASE}/api/profili/{{gid}}/ruoli")
 async def ruoli_profilo(gid: str, request: Request, s=Depends(utente)):
     """Comporre un profilo e' 'struttura': solo il Superutente."""
     serve(s, "struttura", "M")
-    voluti = {r for r in (await request.json()).get("ruoli", []) if r in logica.RUOLI}
+    # Il ruolo di gestore non si compone in un profilo: lo da' il gruppo -gestori.
+    voluti = {r for r in (await request.json()).get("ruoli", []) if r in logica.RUOLI_PROFILO}
     g = _kc(s, f"/groups/{gid}")
     if not g["path"].startswith(f"/{RADICE_PROFILI}/"):
         raise HTTPException(422, "non e' un profilo di amministrazione")
@@ -938,7 +1095,7 @@ async def ruoli_profilo(gid: str, request: Request, s=Depends(utente)):
     presenti = {r["name"]: r for r in _kc(s, f"/groups/{gid}/role-mappings/clients/{cid}")}
     tutti = {r["name"]: r for r in _kc(s, f"/clients/{cid}/roles")}
     da_aggiungere = [tutti[n] for n in voluti - set(presenti)]
-    da_togliere = [presenti[n] for n in set(presenti) - voluti]
+    da_togliere = [presenti[n] for n in set(presenti) - voluti if n in logica.RUOLI_PROFILO]
     if da_aggiungere:
         _kc(s, f"/groups/{gid}/role-mappings/clients/{cid}", "POST", da_aggiungere)
     if da_togliere:

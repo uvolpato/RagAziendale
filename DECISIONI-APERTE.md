@@ -5,7 +5,7 @@
 `PROGETTO-RAG-Aziendale.md` §12 (nuova riga numerata). Quando è registrata, la
 si cancella da qui. Lo stesso per le azioni: fatte → cancellate.
 
-Aggiornato: 18/09/2026
+Aggiornato: 19/09/2026
 
 ---
 
@@ -27,7 +27,7 @@ Aggiornato: 18/09/2026
 | **D12** | **Prima cartella di documenti per il pilota** | Quale cartella, quale ufficio | Documenti non sensibili, con un responsabile (manuali, cataloghi) | Indicizzazione, prova vera della chat |
 | **D13** | **Motore documentale open source** (lettura dei file, ricerca, grafo dei concetti) | **Cognee** (Apache 2.0; permessi per dataset; grafo + pgvector su Postgres) · RAGFlow (ottima lettura dei documenti, ma permessi solo «io / team» e accesso con Keycloak difettoso) · Onyx (permessi sui documenti solo nella versione a pagamento) · Open WebUI (seconda chat, clausola sul marchio) · LightRAG (solo spazi separati, nessun permesso) · R2R (manutenzione incerta) · motore di SWSB portato in casa | **Cognee dietro il nostro gate**: una fonte = un dataset. Il gate sceglie i dataset permessi (gruppi, azienda, stato) e Cognee cerca solo in quelli. Prima una prova di 1–2 giorni sulla cartella D12 con il modello D1 | Indicizzazione, grafo |
 | **D14** | **Agente personale per ogni utente** (posta, calendario, attività) | **Agenti di LibreChat + server MCP con accesso delegato del singolo utente** · OpenClaw (nato per uso personale, con accesso a terminale e skill esterne) · Letta · piattaforma a parte | Agenti di LibreChat: sono già dentro la chat, con Keycloak e con i permessi per utente. Ogni utente collega il **proprio** account di posta, quindi l'agente agisce solo come lui. Invio, risposta, inoltro e accettazione di inviti sempre con conferma. La posta si legge solo con il modello locale. La memoria personale va in Cognee, in un dataset privato di ogni utente | Agente personale |
-| **D15** | **Dove stanno le cartelle dei documenti e chi fa rispettare i permessi di scrittura** (modello: una cartella per gruppo, scritta e letta dai suoi membri; una cartella generale letta da tutti e scritta da pochi gruppi) | Condivisione Windows con gruppi di Active Directory (serve D8: Keycloak collegato ad AD) · **Nextcloud con cartelle di gruppo e accesso con Keycloak** (stessi gruppi, caricamento dal web e sincronizzazione da PC; in futuro anche SharePoint e Google Drive) · caricamento dal nostro pannello | Se l'azienda ha già un file server con AD → quello. Altrimenti Nextcloud. **Da sapere prima**: c'è un file server? c'è AD? | Cartelle dei gruppi |
+| **D15** | **Dove stanno le cartelle dei documenti e chi fa rispettare i permessi di scrittura** (modello: una cartella per gruppo, scritta e letta dai suoi membri; una cartella generale letta da tutti e scritta da pochi gruppi) | Condivisione Windows con gruppi di Active Directory (serve D8: Keycloak collegato ad AD) · **Nextcloud con cartelle di gruppo e accesso con Keycloak** (stessi gruppi, caricamento dal web e sincronizzazione da PC; in futuro anche SharePoint e Google Drive) · caricamento dal nostro pannello | Se l'azienda ha già un file server con AD → quello. Altrimenti Nextcloud. **Da sapere prima**: c'è un file server? c'è AD? Il modello (decisione 71) è fatto e funziona su cartelle locali: manca solo dove stanno i file veri | Cartelle dei gruppi in produzione |
 
 ---
 
@@ -54,7 +54,6 @@ Aggiornato: 18/09/2026
 | **A4** | **Inviare il tag ripulito del B2B** (permesso negato alla sessione) | Tu | `git -C "C:\Progetti\Luis Srl - B2B" push --force origin refs/tags/v0.1.0-wizard-ai` — finché non lo fai, il tag su GitHub punta alla cronologia vecchia, con la password |
 | **A5** | **Riallineare le altre copie del repository B2B** (server di produzione, altri PC) | Tu / chi fa i rilasci | La cronologia è stata riscritta: `git fetch && git reset --hard origin/master` oppure un clone nuovo. Un `git pull` normale reintrodurrebbe i commit vecchi |
 | **A6** | **Cancellare il backup della cronologia vecchia** quando non serve più | Tu | `C:\Progetti\_backup-segreti\` — contiene ancora la password |
-| **A7** | **Commit e push del progetto RAG** | Tu decidi quando | Molte modifiche della sessione non sono ancora in git |
 | **A8** | **Estendere il prototipo** con Utenti, Gruppi, Profili, Aziende | Designer | `SPECIFICA-INTERFACCE-AMMINISTRAZIONE.md` §7b e §11b |
 
 ---

@@ -96,6 +96,24 @@ def _():
     assert L.aziende_da_gruppi(["tutti", "azienda-luis", "azienda-", "vendite", "azienda-decobrands"]) == ["decobrands", "luis"]
 
 
+@prova("P7", "il gestore di gruppo vede solo 'I miei gruppi', e il suo ruolo non entra nei profili")
+def _():
+    from amministrazione import gestori
+    p = L.permessi(["gestore-gruppo"], False)
+    assert p == {"gestiti": "M"} and L.home(p) == "gestiti", p
+    assert L.home(L.permessi(["admin-accessi", "gestore-gruppo"], False)) == "panoramica"
+    assert "gestore-gruppo" not in L.RUOLI_PROFILO and "admin-super" in L.RUOLI_PROFILO
+    assert gestori.gestiti(["tutti", "sicurezza-gestori", "-gestori"]) == ["sicurezza"]
+
+
+@prova("P8", "percorso di una cartella: solo relativo, niente rete, unita', '..' o '_'")
+def _():
+    assert L.percorso_cartella(" luis/sicurezza/ ") == "luis/sicurezza"
+    assert L.percorso_cartella("luis\\sicurezza") == "luis/sicurezza"
+    for no in ("\\\\server\\qualita", "C:\\dati", "luis/../..", "luis/_bozze", "", "luis//x"):
+        assert L.percorso_cartella(no) is None, no
+
+
 print("\n--- Contrasto (spec §2.1.4, §11) " + "-" * 36)
 
 

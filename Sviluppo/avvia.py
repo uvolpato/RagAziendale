@@ -110,6 +110,8 @@ def scrivi_credenziali(env):
 | `prova.magazzino` | `{pw}` | tutti, magazzino | solo i manuali |
 | `prova.vendite` | `{pw}` | tutti, vendite | anche il listino riservato |
 | `prova.direzione` | `{pw}` | tutti, vendite, amministrazione, direzione | tutto |
+| `prova.sicurezza` | `{pw}` | tutti, sicurezza | la cartella Sicurezza (luis/sicurezza) |
+| `prova.rspp` | `{pw}` | tutti, sicurezza, sicurezza-gestori | la cartella Sicurezza; nel pannello *I miei gruppi*: aggiunge e toglie gli addetti |
 
 I gruppi non sono una gerarchia: il filtro e' un'intersezione di insiemi.
 `prova.magazzino` non e' "livello 1", e' un insieme diverso.

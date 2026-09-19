@@ -60,8 +60,8 @@
                      disattivato: ['neut', 'Disattivato', 'b-stato-neutro'] };
   var SISTEMI = { importazioni: 'Importazioni', documenti: 'Documenti', modelli: 'Modelli AI', accessi: 'Accessi',
                   sistemi: 'Sistemi', qualita: 'Qualità dati' };
-  var PROVENIENZA = { cartella: 'Cartella di rete', sharepoint: 'SharePoint', onedrive: 'OneDrive', gdrive: 'Google Drive',
-                      caricamento: 'Caricamento manuale', integra: 'Integra' };
+  var PROVENIENZA = { cartella: 'Cartella', sharepoint: 'SharePoint', onedrive: 'OneDrive', gdrive: 'Google Drive',
+                      nextcloud: 'Nextcloud', posta: 'Casella di posta', caricamento: 'Caricamento manuale', integra: 'Integra' };
   function badge(m) { return m ? '<span class="badge ' + m[2] + '">' + ic(m[0]) + esc(m[1]) + '</span>' : ''; }
   function bAnom(a) {
     if (a.stato === 'risolta' && a.risolta_auto) return '<span class="badge b-stato-ok">' + ic('refresh') + 'Risolta automaticamente</span>';
@@ -383,7 +383,7 @@
     if (FF.stato) chips.push(['stato', STATO_FONTE[FF.stato][1]]);
     if (FF.senza) chips.push(['senza', 'Senza responsabile']);
     c.innerHTML = schermata('Fonti', 'Le raccolte di documenti e di dati gestionali che l\'assistente può usare: chi le vede e se possono usare servizi esterni.',
-      may('fonti') && !can('fonti') ? roNota('Gestione fonti') : '',
+      can('fonti') ? '<button class="btn btn-primary" id="f-nuova">' + ic('plus') + 'Nuova fonte</button>' : (may('fonti') ? roNota('Gestione fonti') : ''),
       '<div class="card"><div class="filters">' +
       '<div class="field search-box grow"><label class="sr" for="f-q">Cerca</label>' + ic('search') + '<input class="input" id="f-q" placeholder="Cerca nome o percorso…" value="' + esc(FF.q) + '"></div>' +
       '<div class="field"><label for="f-tipo">Tipo</label><select class="select" id="f-tipo"><option value="">Tutti</option><option value="documenti">Documenti</option><option value="gestionale">Dati gestionali</option></select></div>' +
@@ -412,6 +412,66 @@
     ordinabili(c, FS, disegnaFonti);
     paginatore($('#f-pager'), FP, tot, disegnaFonti);
     righeAttive(c, apriFonte);
+    var bn = $('#f-nuova'); if (bn) bn.onclick = nuovaFonte;
+  }
+  /* Nuova fonte: prima il tipo, poi il modulo di quel tipo. Ogni tipo entra
+     nella conoscenza a modo suo; i non ancora disponibili si vedono, spenti. */
+  var MODULI_FONTE = { cartella: nuovaCartella };
+  function nuovaFonte() {
+    api('GET', '/fonti/tipi').then(function (tipi) {
+      dialogo('Nuova fonte',
+        '<fieldset style="border:0;padding:0;margin:0"><legend class="sr">Tipo di fonte</legend>' +
+        tipi.map(function (t, i) {
+          return '<label class="check-row" style="align-items:flex-start;padding:8px 0;font-weight:400' + (t.disponibile ? '' : ';color:var(--testo-debole)') + '">' +
+            '<input type="radio" name="m-tipo" value="' + esc(t.id) + '"' + (t.disponibile ? '' : ' disabled') + (i === 0 ? ' checked' : '') + '> ' +
+            '<span><b>' + esc(t.nome) + '</b>' + (t.disponibile ? '' : ' <span class="badge b-stato-neutro">' + ic('neut') + (t.id === 'gestionale' ? 'Da Impostazioni → Gestionali' : 'Non ancora disponibile') + '</span>') +
+            '<span class="sub" style="display:block">' + esc(t.descrizione) + '</span></span></label>';
+        }).join('') + '</fieldset>',
+        function () {
+          var t = $('input[name="m-tipo"]:checked');
+          if (!t || !MODULI_FONTE[t.value]) return false;
+          setTimeout(MODULI_FONTE[t.value], 0);     /* dopo la chiusura di questo dialogo */
+        }, 'Avanti');
+    }).catch(function (e) { toast(e.message, 'err'); });
+  }
+  /* Una cartella per gruppo: chi sta nel gruppo la vede (e ci deposita i
+     file, sulla condivisione); se esiste <gruppo>-gestori, i gestori la vedono
+     e ne rispondono. Nasce in attesa: si indicizza, poi qualcuno la attiva. */
+  function nuovaCartella() {
+    api('GET', '/gruppi').then(function (gruppi) {
+      var operativi = gruppi.filter(function (g) { return !/-gestori$/.test(g) && g !== 'tutti'; });
+      dialogo('Nuova fonte: cartella',
+        '<p style="font-size:13.5px;color:var(--testo-tenue);margin-top:0">Una cartella della condivisione diventa una fonte dell\'assistente. Tutto ciò che contiene viene indicizzato, tranne le sottocartelle <span class="mono">_bozze</span> e <span class="mono">_archivio</span> e i fogli di calcolo.</p>' +
+        '<div class="field"><label for="m-cg">Gruppo che la vede e ci deposita i file</label><select class="select" id="m-cg">' +
+          operativi.map(function (g) { return '<option value="' + esc(g) + '">' + esc(g) + (gruppi.indexOf(g + '-gestori') > -1 ? ' (con gestori)' : '') + '</option>'; }).join('') + '</select>' +
+          '<p class="ro-note" style="margin-top:6px">' + ic('info') + 'Il gruppo si crea in Accessi → Gruppi. Chi sta in «<i>gruppo</i>-gestori» gestisce le persone del gruppo e risponde della cartella.</p></div>' +
+        '<div class="field"><label for="m-cn">Nome</label><input class="input" id="m-cn" placeholder="es. Documenti della sicurezza"></div>' +
+        '<fieldset class="field" style="border:0;padding:0;margin:0 0 12px"><legend style="font-size:13px;font-weight:600;margin-bottom:6px">Aziende</legend>' +
+          AZIENDE.map(function (a, i) { return '<label class="check-row" style="font-weight:400"><input type="checkbox" name="m-caz" value="' + esc(a.codice) + '"' + (AZIENDE.length === 1 || (AZ ? AZ === a.codice : i === 0) ? ' checked' : '') + '> ' + esc(a.ragione_sociale) + '</label>'; }).join('') + '</fieldset>' +
+        '<div class="field"><label for="m-cp">Percorso della cartella (dalla radice delle cartelle)</label><input class="input mono" id="m-cp" placeholder="luis/sicurezza"></div>' +
+        '<div class="field"><label for="m-ci">Codice della fonte</label><input class="input mono" id="m-ci" placeholder="sicurezza-luis"></div>',
+        function () {
+          var az = $$('input[name="m-caz"]:checked').map(function (x) { return x.value; });
+          return api('POST', '/fonti', { provenienza: 'cartella', gruppo: $('#m-cg').value, descrizione: $('#m-cn').value, aziende: az,
+                                         percorso: $('#m-cp').value, id: $('#m-ci').value })
+            .then(function (r) { toast('Cartella collegata: in attesa di approvazione. Chi la vede: ' + r.gruppi.join(', ')); renderFonti(); })
+            .catch(function (e) { toast(e.message, 'err'); return false; });
+        }, 'Collega la cartella');
+      /* Suggerimenti: percorso e codice dal gruppo e dall'azienda, finché non li si tocca. */
+      var toccati = {};
+      function suggerisci() {
+        var g = $('#m-cg').value, az = $$('input[name="m-caz"]:checked').map(function (x) { return x.value; });
+        if (!toccati.p) $('#m-cp').value = (az.length === 1 ? az[0] + '/' : '') + g;
+        if (!toccati.i) $('#m-ci').value = g + (az.length === 1 ? '-' + az[0] : '');
+        if (!toccati.n) $('#m-cn').value = g ? 'Documenti ' + g : '';
+      }
+      $('#m-cp').oninput = function () { toccati.p = true; };
+      $('#m-ci').oninput = function () { toccati.i = true; };
+      $('#m-cn').oninput = function () { toccati.n = true; };
+      $('#m-cg').onchange = suggerisci;
+      $$('input[name="m-caz"]').forEach(function (x) { x.onchange = suggerisci; });
+      suggerisci();
+    }).catch(function (e) { toast(e.message, 'err'); });
   }
   function apriFonte(id) {
     var mostra = function (f) {
@@ -831,12 +891,17 @@
     api('GET', '/gruppi-operativi').then(function (g) {
       GRUPPI_OP = g;
       c.innerHTML = schermata('Gruppi', 'I gruppi operativi decidono quali fonti una persona può vedere. Le aziende e i profili di amministrazione si gestiscono dalla scheda della persona.',
-        can('struttura') ? '<button class="btn btn-primary" id="g-nuovo">' + ic('plus') + 'Nuovo gruppo</button>' : '<span class="ro-note">' + ic('lock') + 'Creare e rinominare gruppi: solo Superutente</span>',
+        can('struttura') ? '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-secondary" id="g-allinea" title="Da fare dopo aver creato persone nuove: senza, i gestori non le possono aggiungere">' + ic('refresh') + 'Riallinea i gestori</button><button class="btn btn-primary" id="g-nuovo">' + ic('plus') + 'Nuovo gruppo</button></div>' : '<span class="ro-note">' + ic('lock') + 'Creare e rinominare gruppi: solo Superutente</span>',
         '<div class="card"><div class="table-box"><table class="tbl"><thead><tr><th scope="col">Gruppo</th><th scope="col" class="num-col">Persone</th><th scope="col">Fonti che vede</th></tr></thead><tbody>' +
         g.map(function (x) { return '<tr data-apri="' + esc(x.id) + '"><td class="prim">' + esc(x.nome) + (x.nome === 'tutti' ? '<span class="sub">Assegnato a tutti automaticamente</span>' : '') + '</td><td class="num-col">' + x.membri + '</td><td>' + (x.fonti.map(esc).join(', ') || '<span style="color:var(--testo-debole)">nessuna</span>') + '</td></tr>'; }).join('') +
         '</tbody></table></div></div>');
+      var ba = $('#g-allinea'); if (ba) ba.onclick = function () {
+        ba.disabled = true;
+        api('POST', '/gestori/allinea').then(function (r) { toast('Gestori riallineati' + (r.gruppi.length ? ': ' + r.gruppi.join(', ') : ' (nessun gruppo con gestori)')); })
+          .catch(function (e) { toast(e.message, 'err'); }).then(function () { ba.disabled = false; });
+      };
       var bn = $('#g-nuovo'); if (bn) bn.onclick = function () {
-        dialogo('Nuovo gruppo operativo', '<div class="field"><label for="m-gn">Nome (minuscolo, es. «qualita»)</label><input class="input" id="m-gn"></div>',
+        dialogo('Nuovo gruppo operativo', '<div class="field"><label for="m-gn">Nome (minuscolo, es. «qualita»)</label><input class="input" id="m-gn"><p class="ro-note" style="margin-top:6px">' + ic('info') + 'Per dare a qualcuno la gestione delle persone di un gruppo, crea anche «<i>nome</i>-gestori» e mettici quelle persone.</p></div>',
           function () { return api('POST', '/gruppi-operativi', { nome: $('#m-gn').value }).then(function () { toast('Gruppo creato'); renderGruppi(); }).catch(function (e) { toast(e.message, 'err'); return false; }); }, 'Crea');
       };
       righeAttive(c, function (gid) {
@@ -860,6 +925,64 @@
         }).catch(function (e) { toast(e.message, 'err'); });
       });
     }).catch(function (e) { errore(c, e, renderGruppi); });
+  }
+
+  /* I miei gruppi: chi sta in <gruppo>-gestori aggiunge e toglie i colleghi
+     del suo gruppo. Keycloak lo limita a quel gruppo (gestori.py): qui si
+     mostra solo cio' che il server restituisce. */
+  function renderGestiti() {
+    var c = $('#content'); caricamento(c);
+    api('GET', '/gestiti').then(function (d) {
+      if (!d.length) { c.innerHTML = schermata('I miei gruppi', '', '', vuoto('Nessun gruppo da gestire', 'Non sei nei gestori di nessun gruppo.')); return; }
+      c.innerHTML = schermata('I miei gruppi', 'Le persone dei gruppi che gestisci, e le cartelle che vedono. Chi è nel gruppo vede i documenti della cartella nell\'assistente.', '',
+        d.map(function (g) {
+          return '<div class="card"><div class="c-head"><div><h2>' + esc(g.nome) + '</h2><p class="h-intro">' + g.membri.length + (g.membri.length === 1 ? ' persona' : ' persone') + '</p></div>' +
+            '<button class="btn btn-primary btn-sm" data-aggiungi="' + esc(g.nome) + '">' + ic('plus') + 'Aggiungi una persona</button></div>' +
+            (g.cartelle.length ? '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">Cartella</th><th scope="col">Percorso</th><th scope="col" class="num-col">Documenti</th><th scope="col">Aggiornata</th><th scope="col">Stato</th></tr></thead><tbody>' +
+              g.cartelle.map(function (f) {
+                return '<tr><td class="prim">' + esc(f.descrizione) + '</td><td class="mono">' + esc(f.percorso) + '</td><td class="num-col">' + f.documenti +
+                  (f.errori ? ' <span class="badge b-stato-attenzione">' + ic('warn') + f.errori + ' non leggibili</span>' : '') + '</td><td>' + quando(f.aggiornata) + '</td><td>' + badge(STATO_FONTE[f.stato]) + '</td></tr>';
+              }).join('') + '</tbody></table></div>'
+              : '<p class="ro-note" style="padding:0 18px">' + ic('info') + 'Nessuna cartella collegata a questo gruppo: la collega chi gestisce le fonti.</p>') +
+            '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">Persona</th><th scope="col">Utente</th><th scope="col">Email</th><th scope="col"><span class="sr">Azioni</span></th></tr></thead><tbody>' +
+            (g.membri.map(function (u) {
+              return '<tr><td class="prim">' + esc(u.nome) + '</td><td class="mono">' + esc(u.username) + '</td><td>' + esc(u.email) + '</td>' +
+                '<td style="text-align:right"><button class="btn btn-ghost btn-sm" data-togli="' + esc(g.nome) + '" data-uid="' + esc(u.id) + '" data-nome="' + esc(u.nome) + '">Togli</button></td></tr>';
+            }).join('') || '<tr><td colspan="4" class="empty-note">Nessuno.</td></tr>') + '</tbody></table></div></div>';
+        }).join(''));
+      $$('[data-togli]', c).forEach(function (b) {
+        b.onclick = function () {
+          dialogo('Togliere ' + b.dataset.nome + ' da «' + b.dataset.togli + '»?',
+            '<p style="margin-top:0;font-size:13.5px">Non vedrà più i documenti delle cartelle di questo gruppo.</p>',
+            function () { return api('DELETE', '/gestiti/' + encodeURIComponent(b.dataset.togli) + '/membri/' + b.dataset.uid).then(function () { toast('Persona tolta'); renderGestiti(); }).catch(function (e) { toast(e.message, 'err'); return false; }); }, 'Togli');
+        };
+      });
+      $$('[data-aggiungi]', c).forEach(function (b) {
+        b.onclick = function () {
+          var gruppo = b.dataset.aggiungi;
+          dialogo('Aggiungi a «' + gruppo + '»',
+            '<div class="field search-box"><label for="m-ag">Cerca per nome, utente o email</label>' + ic('search') + '<input class="input" id="m-ag" autocomplete="off"></div><div id="m-ag-ris" aria-live="polite"></div>',
+            function () { return true; }, 'Chiudi');
+          var t;
+          function cerca() {
+            api('GET', '/gestiti/' + encodeURIComponent(gruppo) + '/candidati?q=' + encodeURIComponent($('#m-ag').value)).then(function (l) {
+              $('#m-ag-ris').innerHTML = l.length ? '<table class="tbl"><tbody>' + l.map(function (u) {
+                return '<tr><td class="prim">' + esc(u.nome) + '<span class="sub">' + esc(u.email || u.username) + '</span></td><td style="text-align:right"><button class="btn btn-secondary btn-sm" data-uid="' + esc(u.id) + '">Aggiungi</button></td></tr>';
+              }).join('') + '</tbody></table>' : '<p class="empty-note">Nessuno da aggiungere con questo nome.</p>';
+              $$('#m-ag-ris [data-uid]').forEach(function (x) {
+                x.onclick = function () {
+                  x.disabled = true;
+                  api('POST', '/gestiti/' + encodeURIComponent(gruppo) + '/membri/' + x.dataset.uid).then(function () { toast('Persona aggiunta'); x.closest('tr').remove(); renderGestiti(); })
+                    .catch(function (e) { toast(e.message, 'err'); x.disabled = false; });
+                };
+              });
+            }).catch(function (e) { $('#m-ag-ris').innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>'; });
+          }
+          $('#m-ag').oninput = function () { clearTimeout(t); t = setTimeout(cerca, 250); };
+          cerca();
+        };
+      });
+    }).catch(function (e) { errore(c, e, renderGestiti); });
   }
 
   function renderProfili() {
@@ -1302,7 +1425,8 @@
                     'vedi-come': ['vedicome', 'Vedi come', renderVediCome], anomalie: ['anomalie', 'Anomalie', renderAnomalie],
                     registro: ['registro', 'Registro modifiche', renderRegistro], aspetto: ['aspetto', 'Aspetto', renderAspetto],
                     utenti: ['utenti', 'Utenti', renderUtenti], gruppi: ['gruppi', 'Gruppi', renderGruppi], profili: ['profili', 'Profili amministrativi', renderProfili], aziende: ['aziende', 'Aziende', renderAziende],
-                    collegamenti: ['collegamenti', 'Gestionali', renderCollegamenti], importazioni: ['importazioni', 'Importazioni', renderImportazioni] };
+                    collegamenti: ['collegamenti', 'Gestionali', renderCollegamenti], importazioni: ['importazioni', 'Importazioni', renderImportazioni],
+                    gestiti: ['gestiti', 'I miei gruppi', renderGestiti] };
   function instrada() {
     chiudiPannello();
     var h = (location.hash || '#/scelta').replace(/^#\//, ''), seg = h.split('/')[0];
@@ -1314,7 +1438,7 @@
       renderEsterno(k); return;
     }
     var s = SCHERMATE[seg];
-    if (!s || !may(s[0])) { location.replace('#/panoramica'); return; }
+    if (!s || !may(s[0])) { if (seg !== IO.home) location.replace('#/' + IO.home); return; }
     $$('.side a').forEach(function (a) { var on = a.dataset.area === seg; a.classList.toggle('active', on); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     document.title = s[1] + ' · Amministrazione';
     s[2]();
@@ -1329,6 +1453,7 @@
     $('#p-ini').textContent = IO.nome.split(' ').map(function (x) { return x.charAt(0); }).join('').slice(0, 2).toUpperCase();
     $('#p-ruoli').textContent = 'Ruoli: ' + IO.ruoli.join(' · ');
     $$('#vai-chat, #card-chat').forEach(function (a) { a.href = IO.chat; });
+    $$('#card-admin, .brand').forEach(function (a) { a.href = '#/' + IO.home; });
     /* Voci senza permesso: NON mostrate (spec §3.4), non solo disattivate. */
     $$('.side a[data-voce]').forEach(function (a) { a.hidden = !may(a.dataset.voce); });
     $$('.side .gl[data-gruppo]').forEach(function (g) { g.hidden = !g.dataset.gruppo.split(' ').some(may); });
