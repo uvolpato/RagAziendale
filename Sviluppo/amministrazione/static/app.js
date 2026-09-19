@@ -441,7 +441,7 @@
     api('GET', '/gruppi').then(function (gruppi) {
       var operativi = gruppi.filter(function (g) { return !/-gestori$/.test(g) && g !== 'tutti'; });
       dialogo('Nuova fonte: cartella',
-        '<p style="font-size:13.5px;color:var(--testo-tenue);margin-top:0">Una cartella della condivisione diventa una fonte dell\'assistente. Tutto ciò che contiene viene indicizzato, tranne le sottocartelle <span class="mono">_bozze</span> e <span class="mono">_archivio</span> e i fogli di calcolo.</p>' +
+        '<p style="font-size:13.5px;color:var(--testo-tenue);margin-top:0">Una cartella della condivisione diventa una fonte dell\'assistente. Tutto ciò che contiene viene indicizzato, tranne le sottocartelle <span class="mono">_bozze</span> e <span class="mono">_archivio</span> e i fogli di calcolo con i prezzi.</p>' +
         '<div class="field"><label for="m-cg">Gruppo che la vede e ci deposita i file</label><select class="select" id="m-cg">' +
           operativi.map(function (g) { return '<option value="' + esc(g) + '">' + esc(g) + (gruppi.indexOf(g + '-gestori') > -1 ? ' (con gestori)' : '') + '</option>'; }).join('') + '</select>' +
           '<p class="ro-note" style="margin-top:6px">' + ic('info') + 'Il gruppo si crea in Accessi → Gruppi. Chi sta in «<i>gruppo</i>-gestori» gestisce le persone del gruppo e risponde della cartella.</p></div>' +
@@ -473,6 +473,39 @@
       suggerisci();
     }).catch(function (e) { toast(e.message, 'err'); });
   }
+  /* Scheda Documenti: cosa l'indicizzazione ha trovato, file per file, per
+     controllare una fonte PRIMA di attivarla. Solo nomi e stati, mai il testo. */
+  var STATO_DOC = { indicizzato: ['ok', 'Indicizzato', 'b-stato-ok'], vuoto: ['neut', 'Nessun testo', 'b-stato-neutro'],
+                    errore: ['err', 'Non leggibile', 'b-stato-errore'], escluso: ['neut', 'Escluso', 'b-stato-neutro'] };
+  function peso(b) { return b < 1024 ? b + ' B' : b < 1048576 ? Math.round(b / 1024) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
+  function documentiFonte(f, p) {
+    p.innerHTML = '<div class="sk-row"><span class="sk" style="width:60%"></span></div>';
+    api('GET', '/fonti/' + encodeURIComponent(f.id) + '/documenti').then(function (d) {
+      var l = d.documenti;
+      if (d.provenienza !== 'cartella') { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Questa fonte non è una cartella: i suoi contenuti arrivano da ' + esc(PROVENIENZA[d.provenienza] || d.provenienza) + ', non file per file.</span></div>'; return; }
+      if (!l.length) { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Nessun documento ancora. La cartella si legge ogni pochi minuti: se resta vuota, controlla il percorso e le anomalie.</span></div>'; return; }
+      var n = { indicizzato: 0, errore: 0, vuoto: 0, escluso: 0 }, doppi = 0, senza = 0, pezzi = 0;
+      l.forEach(function (x) { n[x.stato] = (n[x.stato] || 0) + 1; if (x.doppione) doppi++; if (x.senza_vettori) senza++; pezzi += x.pezzi; });
+      p.innerHTML =
+        '<p style="font-size:13.5px;margin-top:0">' + l.length + (l.length === 1 ? ' file' : ' file') + ', ' + pezzi + ' pezzi di testo. ' +
+          (n.indicizzato ? badge(['ok', n.indicizzato + ' indicizzati', 'b-stato-ok']) + ' ' : '') +
+          (n.errore ? badge(['err', n.errore + ' non leggibili', 'b-stato-errore']) + ' ' : '') +
+          (n.vuoto ? badge(['neut', n.vuoto + ' senza testo', 'b-stato-neutro']) + ' ' : '') +
+          (n.escluso ? badge(['neut', n.escluso + ' esclusi', 'b-stato-neutro']) + ' ' : '') +
+          (doppi ? badge(['warn', doppi + ' doppioni', 'b-stato-attenzione']) + ' ' : '') +
+          (senza ? badge(['warn', senza + ' senza vettori', 'b-stato-attenzione']) : '') + '</p>' +
+        '<p class="ro-note">' + ic('info') + 'Non compaiono, di proposito, le sottocartelle <span class="mono">_bozze</span> e <span class="mono">_archivio</span>. I fogli di calcolo con i prezzi restano fuori («Escluso», con il motivo): i prezzi vengono dal gestionale.' +
+          (senza ? ' «Senza vettori»: il servizio dei modelli non rispondeva; si completano da soli al giro dopo, intanto la ricerca testuale li trova.' : '') + '</p>' +
+        '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">File</th><th scope="col">Stato</th><th scope="col" class="num-col">Pezzi</th><th scope="col">Modificato</th><th scope="col">Letto</th></tr></thead><tbody>' +
+        l.map(function (x) {
+          return '<tr><td class="mono" style="word-break:break-all">' + esc(x.documento) + '<span class="sub">' + peso(x.dimensione) + '</span>' +
+            (x.errore ? '<span class="sub"' + (x.stato === 'errore' ? ' style="color:var(--stato-critico)"' : '') + '>' + esc(x.errore) + '</span>' : '') + '</td>' +
+            '<td>' + badge(STATO_DOC[x.stato]) + (x.doppione ? ' ' + badge(['warn', 'Doppione', 'b-stato-attenzione']) : '') +
+              (x.senza_vettori ? ' ' + badge(['warn', 'Senza vettori', 'b-stato-attenzione']) : '') + '</td>' +
+            '<td class="num-col">' + x.pezzi + '</td><td>' + esc(dataOra(x.modificato_il)) + '</td><td>' + quando(x.indicizzato_il) + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }).catch(function (e) { p.innerHTML = '<div class="notice notice-crit">' + ic('err') + '<span>' + esc(e.message) + '</span></div>'; });
+  }
   function apriFonte(id) {
     var mostra = function (f) {
       var ro = !f.modificabile;
@@ -500,7 +533,7 @@
           var b = $('#btn-res'); if (b) b.onclick = function () { cambiaResidenza(f); };
           var bm = $('#btn-modifica'); if (bm) bm.onclick = function () { modificaFonte(f); };
         } else if (t === 'doc') {
-          p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span><b>Seconda fase.</b> L\'elenco dei documenti con lo stato di ciascuno (indicizzato, illeggibile, escluso e perché) arriva con l\'indicizzazione. I documenti illeggibili compaiono già come anomalie.</span></div>';
+          documentiFonte(f, p);
         } else {
           p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span><b>Seconda fase.</b> Il caricamento manuale serve alle fonti senza una cartella collegata. Oggi i contenuti arrivano solo dalle cartelle collegate.</span></div>';
         }

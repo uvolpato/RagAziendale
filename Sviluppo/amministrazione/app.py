@@ -356,6 +356,31 @@ def fonti(s=Depends(utente)):
         return _fonti(conn, s)
 
 
+@app.get(f"{BASE}/api/fonti/{{fid}}/documenti")
+def documenti_fonte(fid: str, s=Depends(utente)):
+    """Cosa l'indicizzazione ha trovato nella fonte, file per file: serve a
+    chi approva per vedere cosa entra PRIMA di attivarla. Solo metadati e
+    stato, mai il contenuto: il testo si legge dalla chat, attraverso il gate."""
+    serve(s, "fonti")
+    with db() as conn:
+        f = conn.execute("SELECT aziende, provenienza FROM sources WHERE id = %s", (fid,)).fetchone()
+        if not f:
+            raise HTTPException(404, "fonte inesistente")
+        if f["aziende"] and not set(f["aziende"]) & set(s["aziende"]):
+            raise HTTPException(403, "la fonte riguarda aziende a cui non sei abilitato")
+        righe = conn.execute("""
+            SELECT d.documento, d.stato, d.errore, d.pezzi, d.dimensione, d.modificato_il, d.indicizzato_il,
+                   (SELECT count(*) FROM chunks c WHERE c.source_id = d.source_id AND c.documento = d.documento
+                     AND c.embedding IS NULL) AS senza_vettori
+              FROM documenti d WHERE d.source_id = %s ORDER BY d.documento""", (fid,)).fetchall()
+        doppi = {r["documento"] for r in conn.execute("""
+            SELECT unnest(array_agg(documento)) AS documento FROM documenti WHERE source_id = %s
+             GROUP BY impronta HAVING count(*) > 1""", (fid,))}
+    for r in righe:
+        r["doppione"] = r["documento"] in doppi
+    return {"provenienza": f["provenienza"], "documenti": righe}
+
+
 @app.post(f"{BASE}/api/fonti/{{fid}}/residenza")
 async def residenza(fid: str, request: Request, s=Depends(utente)):
     """§7.3: verso 'servizi esterni' e' un'approvazione (motivo obbligatorio,

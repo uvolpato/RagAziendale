@@ -85,7 +85,7 @@ def trova(utente, domanda):
 
 def indicizza():
     r = subprocess.run(["docker", "compose", "run", "--rm", "-T", "ingestion", "python", "indicizza.py", "--una-volta"],
-                       cwd=QUI, capture_output=True, text=True, timeout=3600)
+                       cwd=QUI, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3600)
     if r.returncode:
         raise SystemExit("indicizzazione non riuscita:\n" + r.stdout[-2000:] + r.stderr[-2000:])
     return r.stdout
@@ -111,7 +111,12 @@ PROVA = {   # file di prova: testo scritto qui, PDF presi dal campione
         "Scheda di sicurezza ACETONE (DOCUMENTO DI PROVA).\n\nPericoli: liquido e vapori facilmente "
         "infiammabili (H225). Provoca grave irritazione oculare (H319).\n\nConservazione: armadio per infiammabili.\n",
     "_bozze/nuova-procedura.txt": "bozza da non indicizzare: PAROLA-SEGRETA-BOZZA\n",
-    "listino-dpi.xlsx": "non e' un vero foglio: non deve nemmeno essere aperto\n",
+    # Fogli di calcolo (decisione 72): il listino resta fuori, il registro entra.
+    "listino-dpi.xlsx": [["Codice", "Descrizione", "Prezzo netto"], ["DPI-01", "Guanti in nitrile", 4.9],
+                         ["DPI-02", "Occhiali a tenuta", 12.5]],
+    "registro-rischi.xlsx": [["Rischio", "Reparto", "Misura", "Costo stimato"],
+                             ["Caduta dall'alto", "Magazzino", "Parapetti sulle scaffalature", "medio"],
+                             ["Esposizione a solventi", "Verniciatura", "Aspirazione localizzata", "alto"]],
     "procedure-emergenza/MAN-004-istruzioni-gruppo-soccorso.pdf": "MAN-004-istruzioni-gruppo-soccorso.pdf",
     "formazione/PRO-004-procedura-formazione.pdf": "PRO-004-procedura-formazione.pdf",
     "formazione/copia-PRO-004.pdf": "PRO-004-procedura-formazione.pdf",
@@ -126,7 +131,13 @@ def prepara_cartella():
         if dest.exists():
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
-        if rel.endswith(".pdf"):
+        if rel.endswith(".xlsx"):
+            import openpyxl
+            wb = openpyxl.Workbook()
+            for riga in contenuto:
+                wb.active.append(riga)
+            wb.save(dest)
+        elif rel.endswith(".pdf"):
             origine = CAMPIONE / contenuto
             if not origine.exists():
                 raise SystemExit(f"manca {origine}: rigenerare il campione con documenti_test/genera_campione.py")
@@ -173,12 +184,23 @@ def main():
               "formazione/copia-PRO-004.pdf"}
     prova("I1", "letti i documenti della cartella (Markdown, testo, PDF)",
           all(doc.get(x) == "indicizzato" for x in attesi), doc)
-    prova("I2", "saltati _bozze e i fogli di calcolo",
-          not any(k.startswith("_bozze/") or k.endswith(".xlsx") for k in doc)
+    prova("I2", "saltate le _bozze; il foglio con i prezzi resta fuori, il registro dei rischi entra",
+          not any(k.startswith("_bozze/") for k in doc) and doc.get("listino-dpi.xlsx") == "escluso"
+          and doc.get("registro-rischi.xlsx") == "indicizzato"
+          and not db.execute("SELECT 1 FROM chunks WHERE source_id = %s AND content LIKE '%%nitrile%%'", (FONTE,)).fetchone()
           and not db.execute("SELECT 1 FROM chunks WHERE content LIKE '%%PAROLA-SEGRETA-BOZZA%%'").fetchone(), doc)
     prova("I3", "la scansione senza testo (PES-003) passa dall'OCR o risulta vuota, senza bloccare il resto",
           doc.get("schede-sicurezza/PES-003-dichiarazione-foto.pdf") in ("indicizzato", "vuoto"), doc)
     prova("I4", "la copia doppia di PRO-004 apre un'anomalia", anomalia_aperta(f"doppione:{FONTE}:") == 1)
+    r = sup.get(f"{API}/fonti/{FONTE}/documenti")
+    elenco = {x["documento"]: x for x in r.json().get("documenti", [])} if r.status_code == 200 else {}
+    prova("D1", "scheda Documenti: i file con il loro stato, i doppioni segnati, niente bozze ne' testo",
+          elenco.keys() == doc.keys() and elenco["formazione/copia-PRO-004.pdf"]["doppione"]
+          and not elenco["procedure-emergenza/piano-evacuazione.md"]["doppione"]
+          and all("content" not in x for x in elenco.values()), r.text[:300])
+    prova("D2", "la scheda Documenti la legge anche chi ha le fonti in sola lettura; il gestore no",
+          login("prova.accessi").get(f"{API}/fonti/{FONTE}/documenti").status_code == 200
+          and login("prova.rspp").get(f"{API}/fonti/{FONTE}/documenti").status_code == 403)
     copia = CARTELLA / "formazione" / "copia-PRO-004.pdf"
     tenuta = copia.read_bytes()
     copia.unlink()

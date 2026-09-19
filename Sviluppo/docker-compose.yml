@@ -410,6 +410,11 @@ services:
     #   docker compose run --rm ingestion python indicizza.py --una-volta
     build: ./ingestion
     restart: unless-stopped
+    # Docling con layout, tabelle e OCR occupa 2,5-3 GB mentre legge. Il tetto
+    # fa si' che, se sbaglia, muoia questo container e non la VM di Docker con
+    # tutto lo stack (successo il 19/09/2026 con due giri in parallelo). Il
+    # lavoro fatto resta: ogni file e' salvato appena letto.
+    mem_limit: 4g
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
       LITELLM_BASE_URL: http://litellm:4000

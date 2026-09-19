@@ -73,9 +73,11 @@ l'assistente la usa solo quando qualcuno la attiva.
   di una fonte è relativo, es. `luis/sicurezza`. In produzione: la
   condivisione di rete montata sull'host (D15: file server o Nextcloud).
 - **Cosa si legge**: PDF (anche scansioni, con OCR), Word, PowerPoint, HTML,
-  Markdown, testo, immagini. **Non** si leggono le sottocartelle che iniziano
-  con `_` (`_bozze`, `_archivio`) né i fogli di calcolo (i prezzi vengono dal
-  gestionale).
+  Markdown, testo, immagini, fogli di calcolo (`.xlsx`, `.csv`). **Non** si
+  leggono le sottocartelle che iniziano con `_` (`_bozze`, `_archivio`) né i
+  fogli con i **prezzi** (decisione 72: colonne da soldi con numeri sotto, o
+  celle in formato valuta): restano «Esclusi» con il motivo nella scheda
+  Documenti. `.xls` e `.ods` compaiono come esclusi: vanno salvati in `.xlsx`.
 - **Servizio `ingestion`** (`ingestion/indicizza.py`): un giro ogni 5 minuti
   (`INTERVALLO_INDICIZZAZIONE`). File nuovi e cambiati entrano, i cancellati
   escono, gli illeggibili e i doppioni diventano anomalie del pannello. I
@@ -85,6 +87,14 @@ l'assistente la usa solo quando qualcuno la attiva.
   Studio è spento i pezzi entrano senza vettori (la ricerca testuale li trova
   già) e i vettori si aggiungono al giro dopo. I modelli di Docling sono
   nell'immagine: a regime non esce su internet.
+- **File grandi**: i PDF si leggono a blocchi di pagine
+  (`PAGINE_PER_BLOCCO`, 6), ognuno in un processo che poi muore e restituisce la
+  memoria (Docling non la restituisce da solo). Il servizio ha un tetto di
+  4 GB: se un file lo supera muore il processo del blocco, il file risulta
+  «non leggibile» con un'anomalia e il giro prosegue; si riprova quando il file
+  cambia; un blocco oltre 10 minuti (`SECONDI_PER_BLOCCO`) si chiude allo
+  stesso modo. Un PDF di 266 pagine con molte immagini richiede circa mezz'ora la
+  prima volta, solo su CPU. Un giro alla volta (blocco nel database).
 
 ```bash
 docker compose logs -f ingestion                                          # cosa sta facendo
