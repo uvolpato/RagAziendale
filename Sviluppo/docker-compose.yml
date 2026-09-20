@@ -197,6 +197,10 @@ services:
       # Qwen3 serve "/no_think": ragiona a voce alta e la risposta arriverebbe
       # vuota (il pensiero viaggia in reasoning_content, che LibreChat ignora).
       SUFFISSO_SISTEMA: ${SUFFISSO_SISTEMA-}
+      # Le immagini si offrono in fondo alla risposta e si mostrano a chi
+      # scrive "mostra": quattro figure attaccate a ogni risposta sono rumore.
+      # 0 = le attacca sempre, come prima.
+      IMMAGINI_SU_RICHIESTA: ${IMMAGINI_SU_RICHIESTA-1}
       # --- Allowlist di egress: il gate consente SOLO questi host. Qualsiasi
       # richiesta verso un host non dichiarato e un errore, non un warning.
       EGRESS_INTERNAL: ${EGRESS_INTERNAL}

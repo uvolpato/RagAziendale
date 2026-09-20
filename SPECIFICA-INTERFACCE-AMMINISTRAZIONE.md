@@ -660,6 +660,42 @@ Utenti.
 obbligatorio (le importazioni si fermano, i dati restano) / riattiva. **Nessuna
 eliminazione.**
 
+## 11c. Da fare: viste che si aggiornano da sole, un dato alla volta
+
+Oggi ogni riquadro si ridisegna intero: la funzione che lo popola riscrive
+`innerHTML` di tutta la porzione di pagina (65 punti nel codice). Finché i dati
+sono fermi non si nota; con l'indicizzazione in corso sì, perché quei riquadri
+si rileggono spesso e ogni volta:
+
+- la barra di avanzamento del documento in lettura riparte da capo invece di
+  avanzare, e a schermo sembra un lampeggio;
+- chi stava scorrendo l'elenco torna in cima;
+- il campo o il pulsante che aveva il fuoco lo perde, e chi naviga da tastiera
+  o con un lettore di schermo si ritrova all'inizio;
+- un testo selezionato si deseleziona, quindi non si riesce a copiare un nome
+  di file mentre la pagina si aggiorna.
+
+**Cosa serve**: una vista di dati **unica per tabella**, con le righe
+identificate da una chiave stabile (`source_id` + `documento` per i documenti,
+`id` per anomalie e fonti). Quando arrivano dati nuovi si toccano **solo** le
+celle cambiate: le righe uguali restano gli stessi nodi del DOM, quelle nuove
+si inseriscono, quelle sparite si tolgono. Scorrimento, fuoco e selezione
+sopravvivono perché non si ricostruisce niente attorno a loro.
+
+Regole per quando si farà, così non diventa un framework:
+
+- niente librerie nuove: bastano una chiave per riga e un confronto fra il dato
+  vecchio e quello nuovo (il pannello è JavaScript senza dipendenze, e resta così);
+- **una** funzione di aggiornamento riusata da tutte le tabelle, non una per
+  scheda: oggi il codice ripetuto è il motivo per cui il difetto si presenta in
+  più punti;
+- l'aggiornamento è **atomico per riga**: o la riga mostra tutti i valori nuovi
+  o resta come prima, mai un misto delle due letture;
+- il caso che la rende necessaria è la scheda **Documenti** di una fonte durante
+  l'indicizzazione: è lì che si misura se il lavoro è riuscito.
+
+---
+
 ## 12. Fuori da questo prototipo
 
 - **gestione delle importazioni**: Dagster;

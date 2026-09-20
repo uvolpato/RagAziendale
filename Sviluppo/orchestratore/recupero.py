@@ -99,8 +99,14 @@ LIMIT %(limite)s;
 """
 
 
-def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 5):
+def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8):
     """Restituisce (righe, degradato).
+
+    limite 8 e non 5 (dal 20/09/2026): sui cataloghi un solo prodotto occupa
+    piu' pezzi fra testo, tabella e descrizione della figura, e con 5 posti una
+    domanda larga ("sassi rossi") restava senza il testo del prodotto. Da
+    validare con l'eval: piu' pezzi significa anche piu' contesto da leggere per
+    il modello, e con 5 utenti in parallelo il contesto costa VRAM.
 
     `qvec` None significa embedding non disponibile -> solo full-text.
     """
@@ -154,3 +160,49 @@ def embedding(domanda: str):
         raise           # non si mascherano le violazioni di egress
     except Exception:
         return None     # host giu', modello scaricato, timeout: si degrada
+
+
+SQL_IMMAGINI = """
+WITH consentite AS (
+    -- Stesso filtro della ricerca sul testo: gruppi, aziende, fonte attiva.
+    -- Le ACL stanno sulla fonte e non si duplicano sulle immagini.
+    SELECT id FROM sources
+     WHERE acl_groups && %(gruppi)s::text[]
+       AND aziende && %(aziende)s::text[]
+       AND stato = 'attiva'
+)
+SELECT i.id, i.documento, i.page, i.descrizione,
+       (i.embedding <=> %(qvec)s::vector) AS distanza
+  FROM immagini i
+ WHERE i.source_id IN (SELECT id FROM consentite)
+   AND i.embedding IS NOT NULL
+   AND (%(documenti)s::text[] IS NULL OR i.documento = ANY(%(documenti)s::text[]))
+ ORDER BY i.embedding <=> %(qvec)s::vector
+ LIMIT %(limite)s;
+"""
+
+
+def immagini_pertinenti(conn, qvec, gruppi, documenti=None, limite: int = 4):
+    """Le figure che RISPONDONO alla domanda, non quelle che stanno vicino al
+    testo che ha risposto.
+
+    Prima le immagini si prendevano per pagina: in un catalogo una pagina
+    contiene dieci prodotti, e uscivano figure che non c'entravano. Ora si
+    cerca fra le descrizioni prodotte dal modello visivo, nello stesso spazio
+    vettoriale dei pezzi: «sassi rossi» puo' incontrare «dark red lava rocks».
+
+    `documenti`: se valorizzato, si resta nei documenti che hanno risposto —
+    la figura deve appartenere alla stessa fonte della risposta, altrimenti si
+    mostrano prodotti di un catalogo mentre il testo parla di un altro.
+    """
+    if qvec is None:
+        return []
+    from .identita import aziende as aziende_di
+    aziende = aziende_di(gruppi)
+    if not gruppi or not aziende:
+        return []
+    par = {"gruppi": gruppi, "aziende": aziende, "qvec": qvec,
+           "documenti": documenti or None, "limite": limite}
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(SQL_IMMAGINI, par)
+        return cur.fetchall()

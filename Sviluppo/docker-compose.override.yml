@@ -97,12 +97,17 @@ services:
       # LM Studio sta fuori da Docker, sulla macchina: da qui si raggiunge
       # con host.docker.internal, come per i vettori.
       LMSTUDIO_HOST: ${LMSTUDIO_HOST-host.docker.internal:1234}
-      # Chi descrive le immagini: un VLM su LM Studio (glm-ocr, 2,3 GB, che
-      # trascrive nomi e quantita' dei prodotti), oppure off. Dentro il
-      # servizio non ne gira piu' nessuno: pesava 3,3 GB e descriveva appena.
+      # Chi descrive le immagini: un VLM su LM Studio (Qwen3-VL 4B, 3,3 GB:
+      # trascrive le etichette e descrive colori e materiali), oppure off.
+      # Dentro il servizio non ne gira piu' nessuno: pesava 3,3 GB e diceva
+      # solo "a few bottles".
       VLM_DESCRIZIONI: ${VLM_DESCRIZIONI-api}
       VLM_URL: ${VLM_URL-http://host.docker.internal:1234/v1}
       VLM_MODELLO: ${VLM_MODELLO-}
+      # Prezzi trascritti dalle immagini: fuori dall'indice di regola (i prezzi
+      # vengono dal gestionale, decisione 72), ammessi sui cataloghi fornitore
+      # dove sono l'unico prezzo esistente.
+      PREZZI_DESCRIZIONI: ${PREZZI_DESCRIZIONI-escludi}
     deploy:
       resources:
         reservations:

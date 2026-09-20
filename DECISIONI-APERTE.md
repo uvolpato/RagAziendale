@@ -34,6 +34,94 @@ Aggiornato: 19/09/2026
 3. **Archi concettuali trasversali** (fra documenti di aree diverse) — **ESCLUSI** (decisione del 19/09/2026). Verifica Cognee: il permesso è a livello *dataset* (isolamento EBAC, grafi fisicamente separati per dataset), non a livello di *arco/nodo*. Un arco trasversale con ACL sui singoli archi richiederebbe fork/ristrutturazione del sorgente, costo da settimane + revisione di sicurezza esterna, e il rischio di un bug è fuga di dati (il costo peggiore). Il valore reale del cross-area è già servito da: (a) dati strutturati via SQL + semantic layer (decisione 6), (b) ricerca su più dataset per chi ha accesso a più aree (unione, decisione 44). Si riapre **solo** se emerge un caso concreto e nominato di "navigazione da concetto a concetto".
 4. **Cognee e le immagini** (verificato sulla documentazione): Cognee tratta i **file immagine standalone** (`.png`, `.jpg`, scansioni) trascrivendoli in testo (VLM + OCR) — **non** estrae né conserva le immagini annidate dentro i PDF. Quindi: **Docling resta indispensabile** per estrarre le immagini dai PDF (cataloghi), Cognee da solo non le vede. Il ruolo di Docling si semplifica (solo estrazione di qualità, niente chunk/embedding). La lacuna "immagini dentro i PDF" va confermata nella prova pratica.
 | **D14** | **Agente personale per ogni utente** (posta, calendario, attività) | **Agenti di LibreChat + server MCP con accesso delegato del singolo utente** · OpenClaw (nato per uso personale, con accesso a terminale e skill esterne) · Letta · piattaforma a parte | Agenti di LibreChat: sono già dentro la chat, con Keycloak e con i permessi per utente. Ogni utente collega il **proprio** account di posta, quindi l'agente agisce solo come lui. Invio, risposta, inoltro e accettazione di inviti sempre con conferma. La posta si legge solo con il modello locale. La memoria personale va in Cognee, in un dataset privato di ogni utente | Agente personale |
+| **D16** | **Impostazioni di lettura per fonte** (oggi valgono per tutte le cartelle allo stesso modo: sono variabili d'ambiente del servizio) | Tutto globale, come adesso · un piccolo insieme di valori per fonte (colonna `impostazioni jsonb` su `sources`, modificabile dal pannello) · **profili** scelti quando si collega la fonte («Cataloghi prodotto», «Procedure e policy», «Scansioni»), con la possibilità di ritoccare i singoli valori | **Profili con ritocchi**: chi collega una cartella sceglie che tipo di documenti contiene, non quanti dpi vuole. Sotto, il profilo imposta i valori; il pannello mostra quelli **efficaci** e quali sono stati cambiati rispetto al profilo | Niente oggi. Serve quando le fonti diventano eterogenee: succede già ora |
+
+**Requisiti di design per D16** (emersi il 20/09/2026, misurando cataloghi veri):
+
+1. **Perché serve.** Le fonti chiedono lavori diversi. Il catalogo IPURO ha
+   prodotto **324 immagini su 41 pagine** (~8 per pagina), ognuna descritta da
+   un modello visivo: è il grosso del tempo di lettura. Le cartelle di
+   sicurezza, 37 documenti, hanno prodotto **zero immagini**. Con le
+   impostazioni globali, chi indicizza procedure paga il costo dei cataloghi, e
+   chi indicizza cataloghi non può alzare la risoluzione senza rallentare tutti.
+2. **Cosa può cambiare per fonte** (costo e qualita' della lettura, nessun
+   effetto sui permessi): estrarre le immagini sì/no; descriverle sì/no e con
+   quale modello; risoluzione delle figure (`images_scale`, `MAX_LATO`, scala
+   dell'immagine mandata al modello); soglia dell'area sotto la quale una
+   figura non si descrive; pagine per blocco; lingue dell'OCR; limiti di orario
+   e di dimensione (`FINESTRA_NOTTE`, `MB_MAX_DI_GIORNO`).
+3. **Cosa NON può cambiare per fonte**, o cambia solo con la stessa
+   approvazione che attiva la fonte: l'esclusione dei fogli con i prezzi
+   (decisione 72), gruppi e aziende (ACL), residenza, allowlist di egress.
+   Sono regole su *cosa entra nell'indice e chi lo vede*: se diventano una
+   casella per cartella, prima o poi qualcuno la spunta per fretta.
+4. **Le soglie della GPU restano della macchina, non della fonte**:
+   `VRAM_MINIMA_MB`, `GPU`, `LMSTUDIO_HOST` descrivono l'hardware su cui gira il
+   servizio, non il contenuto della cartella.
+5. **Il pannello mostra i valori efficaci**, non solo quelli scelti: chi guarda
+   una fonte deve capire *perché* un file è stato saltato o letto in un certo
+   modo, senza aprire il codice né il `.env`.
+6. **Pochi valori, default sensati.** Il rischio non è tecnico: è una pagina
+   di impostazioni che nessuno sa compilare. Per questo la proposta è partire
+   dai profili e non dalla ventina di manopole.
+
+**Prezzi nelle descrizioni delle immagini** (emerso il 20/09/2026, precisa la
+decisione 72). Indicizzando un catalogo, il modello che descrive le figure ha
+trascritto un listino: «F0305 370 ml 12 € 2,15 F0405 500 ml 12 € 2,85…». La
+decisione 72 tiene i prezzi fuori dall'indice perché vengono dal gestionale, e
+il controllo esisteva solo sui fogli di calcolo: dalle immagini rientravano
+senza che nessuno se ne accorgesse. Ora c'è il filtro, ma **è un parametro**
+(`PREZZI_DESCRIZIONI=escludi|ammetti`), perché il caso contrario è altrettanto
+reale: su un **catalogo fornitore** quel prezzo è l'unico che esiste — nel
+gestionale non c'è — e una domanda come «trovami dieci articoli sotto i 10 euro
+con queste caratteristiche» senza quei numeri non si può soddisfare.
+Da decidere insieme a D16 (è una delle impostazioni per fonte):
+
+- default **escludi**, e si ammette solo dove il documento È la fonte
+  autorevole del prezzo (cataloghi fornitore, listini dei fornitori);
+- quando si ammette, la risposta deve citare **documento e data**, perché un
+  prezzo di catalogo invecchia: è l'opposto del prezzo del gestionale, che è
+  valido adesso;
+- prezzi da documenti e prezzi dal gestionale non vanno mai mescolati nella
+  stessa risposta senza dire da dove vengono.
+
+**Cosa succede quando due fonti hanno impostazioni diverse** (analisi del
+20/09/2026). Oggi non succede niente: un `pg_advisory_lock` garantisce **un solo
+giro** in tutto il sistema, le fonti si leggono una dopo l'altra in ordine di
+id, i file uno dopo l'altro, i blocchi di pagine uno dopo l'altro. Due letture
+non si sovrappongono mai. Ma le impostazioni per fonte introducono quattro
+punti che vanno previsti **prima** di scriverle, non dopo:
+
+7. **Le impostazioni viaggiano col file, non nell'ambiente.** Oggi
+   `_opzioni_pdf()` legge variabili globali, e il processo figlio che converte
+   un blocco le rilegge da lì. Se restano globali, basta un domani in cui due
+   letture si sovrappongono e il file della fonte A viene letto con i parametri
+   della B: non dà errore, produce solo un indice peggiore, e non se ne accorge
+   nessuno per mesi. Vanno **passate come argomento** fino al processo figlio.
+8. **Un modello visivo per fonte fa ballare la VRAM.** Cambiare VLM fra una
+   fonte e l'altra significa scaricare e ricaricare ~2,3 GB. Finché si processa
+   **una fonte per intero prima di passare alla successiva**, il costo è una
+   volta per fonte e si accetta; se si mescolano i file diventa un'altalena.
+   Altro motivo per tenere l'ordine «fonte per fonte».
+9. **Lo scarico del modello di chat NON è per fonte.** Quando l'indicizzazione
+   lo scarica, l'assistente tace **per tutti** e per tutta la durata del giro,
+   non della fonte. Finestra oraria e soglia di dimensione si possono decidere
+   per fonte; la decisione di liberare la VRAM resta del giro, come
+   `VRAM_MINIMA_MB` e `GPU` restano della macchina (punto 4).
+10. **Una fonte non deve affamare le altre.** Un catalogo da 312 pagine tiene
+    il giro occupato per venti minuti: se quella fonte riceve documenti di
+    continuo, le altre non vengono lette mai. Serve un tetto di **N file per
+    fonte per giro**, poi si passa alla prossima e si riprende al giro dopo.
+11. **Il modello di embedding non diventa per fonte, mai.** I vettori di fonti
+    diverse vivono nello stesso spazio e si confrontano fra loro: due modelli
+    danno punteggi che non vogliono dire niente. È già protetto da
+    `index_meta` (canary) e lì deve restare.
+12. **Se un giorno si leggeranno due file in parallelo** (`ingestion/PRESTAZIONI.md`
+    §3.5): solo file della **stessa fonte** — stesse impostazioni, stesso
+    modello già caricato — e solo se la VRAM libera regge due conversioni.
+    Parallelizzare fonti diverse è il modo più rapido per ottenere insieme
+    l'altalena dei modelli e il difetto del punto 7.
+
 | **D15** | **Dove stanno le cartelle dei documenti e chi fa rispettare i permessi di scrittura** (modello: una cartella per gruppo, scritta e letta dai suoi membri; una cartella generale letta da tutti e scritta da pochi gruppi) | Condivisione Windows con gruppi di Active Directory (serve D8: Keycloak collegato ad AD) · **Nextcloud con cartelle di gruppo e accesso con Keycloak** (stessi gruppi, caricamento dal web e sincronizzazione da PC; in futuro anche SharePoint e Google Drive) · caricamento dal nostro pannello | Se l'azienda ha già un file server con AD → quello. Altrimenti Nextcloud. **Da sapere prima**: c'è un file server? c'è AD? Il modello (decisione 71) è fatto e funziona su cartelle locali: manca solo dove stanno i file veri | Cartelle dei gruppi in produzione |
 
 ---

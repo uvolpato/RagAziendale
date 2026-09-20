@@ -18,6 +18,7 @@ LibreChat non fa scegliere nulla all'utente (librechat.yaml.tmpl).
 """
 import json
 import os
+import re
 import time
 
 import psycopg
@@ -25,7 +26,7 @@ from psycopg.rows import dict_row
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from orchestratore import egress, gate, identita, immagini, prompt, recupero
+from orchestratore import egress, gate, identita, immagini, prompt, recupero, riformula
 
 app = FastAPI()
 
@@ -83,6 +84,21 @@ def _risposta_unica(testo: str):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+def _senza_aggiunte(messaggio: dict) -> dict:
+    """Toglie dalla cronologia le righe che ha scritto il SISTEMA, non il
+    modello: l'offerta delle immagini e i collegamenti alle figure.
+
+    Rimandargliele indietro lo porta a imitarle: il modello le riscriveva in
+    coda alla propria risposta, e l'offerta compariva due volte (visto il
+    20/09/2026, conversazione sui profumatori). Al modello interessa cosa ha
+    detto, non come il sistema ha decorato la risposta."""
+    if messaggio.get("role") != "assistant":
+        return messaggio
+    righe = [r for r in messaggio["content"].splitlines()
+             if MARCA_OFFERTA not in r and not r.lstrip().startswith("![immagine")]
+    return {**messaggio, "content": "\n".join(righe).strip()}
+
+
 def _domanda(messages) -> str:
     """L'ultimo messaggio dell'utente: e' la domanda di questo turno."""
     for m in reversed(messages):
@@ -91,15 +107,97 @@ def _domanda(messages) -> str:
     return ""
 
 
-def _immagini_del_turno(righe):
-    """Le immagini dei chunk recuperati, senza doppioni, fino a MAX_IMMAGINI.
+# Le immagini non si attaccano piu' a ogni risposta: si OFFRONO, e si mostrano
+# a chi le chiede. Vederle serve di rado (un catalogo, uno schema), e quattro
+# figure in fondo a ogni risposta sono rumore che nasconde il testo.
+# IMMAGINI_SU_RICHIESTA=0 torna al comportamento di prima.
+SU_RICHIESTA = os.environ.get("IMMAGINI_SU_RICHIESTA", "1") != "0"
+# Frase dell'offerta. Contiene MARCA: al turno dopo si guarda se l'assistente
+# aveva davvero offerto qualcosa, prima di interpretare un "si" come consenso.
+MARCA_OFFERTA = "immagini collegate a questa risposta"
+# "Si", "mostra", "fammi vedere": un consenso, non una domanda. Deve essere un
+# messaggio breve, altrimenti "quali immagini ci sono nel catalogo?" verrebbe
+# scambiato per un si'.
+CONSENSO = re.compile(r"^(si|sì|certo|ok|va bene|volentieri|vedi|vediamo|mostra\w*|"
+                      r"fammi vedere|fammele vedere|le voglio vedere|immagini|foto|figure)\b", re.I)
 
-    Le descrizioni VLM stanno gia' nel testo dei chunk (le produce Docling in
-    ingestion): qui si cita solo l'URL firmato, in fondo alla risposta, cosi'
-    l'utente vede le figure a cui il testo si riferisce."""
+
+# "Fammi vedere le foto dei diffusori" e' una domanda E una richiesta di
+# immagini: si risponde CON le figure, non offrendole. Si cercano i nomi delle
+# figure (foto, immagine, figura, illustrazione) e non verbi generici come
+# "vedere", che compaiono anche in "vorrei vedere se avete profumatori".
+CHIEDE_IMMAGINI = re.compile(r"\b(foto|fotografi\w*|immagin\w*|figur\w*|illustrazion\w*)\b", re.I)
+
+
+def chiede_le_immagini(domanda: str) -> bool:
+    """L'utente ha chiesto lui stesso di vedere le figure."""
+    return bool(CHIEDE_IMMAGINI.search(domanda or ""))
+
+
+def vuole_le_immagini(domanda: str, ultima_risposta: str) -> bool:
+    """True se l'utente sta dicendo di si' a un'offerta di immagini appena
+    fatta. Servono ENTRAMBE le condizioni: l'offerta nel turno precedente e una
+    risposta breve e affermativa."""
+    if not (ultima_risposta and MARCA_OFFERTA in ultima_risposta):
+        return False
+    d = domanda.strip()
+    return len(d) <= 60 and bool(CONSENSO.match(d))
+
+
+def _ultima_risposta(messages) -> str:
+    """L'ultimo messaggio dell'assistente: serve a sapere se l'offerta c'e' stata."""
+    for m in reversed(messages):
+        if m.get("role") == "assistant" and isinstance(m.get("content"), str):
+            return m["content"]
+    return ""
+
+
+def _domanda_precedente(messages) -> str:
+    """La domanda prima di questa: e' quella a cui le immagini si riferiscono."""
+    trovate = [m["content"].strip() for m in messages
+               if m.get("role") == "user" and isinstance(m.get("content"), str)]
+    return trovate[-2] if len(trovate) > 1 else ""
+
+
+def _blocco_immagini(url_per_pos) -> str:
+    """Le figure, in markdown, una per riga."""
+    return "\n".join(f"![immagine {n}]({u})" for n, u in url_per_pos.items())
+
+
+def _immagini_per_la_domanda(conn, qvec, gruppi, righe):
+    """Gli id delle figure che rispondono alla domanda.
+
+    Si cerca fra le DESCRIZIONI delle immagini (prodotte dal modello visivo,
+    vettorizzate come i pezzi), restando nei documenti che hanno risposto: la
+    figura deve venire dalla stessa fonte del testo citato, altrimenti si
+    mostrano prodotti di un catalogo mentre la risposta parla di un altro.
+
+    Se i vettori non ci sono — embedding giu', oppure documenti letti prima
+    che le descrizioni venissero salvate — si torna alla scelta per pagina.
+    """
+    documenti = list({r["documento"] for r in righe}) if righe else None
+    trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI)
+    if trovate:
+        return [r["id"] for r in trovate]
+    return _immagini_del_turno(righe)
+
+
+def _immagini_del_turno(righe):
+    """Le immagini dei pezzi recuperati, senza doppioni, fino a MAX_IMMAGINI.
+
+    UNA per pezzo, partendo dai meglio piazzati: cosi' le figure vengono dalle
+    pagine che hanno risposto alla domanda, invece di arrivare tutte dalla
+    stessa. Serve perche' l'immagine e' legata al pezzo solo dalla PAGINA, e in
+    un catalogo una pagina contiene dieci prodotti diversi: su "profumatori per
+    auto" un pezzo pertinente stava in una pagina con 28 figure, e ne uscivano
+    quattro che non c'entravano (20/09/2026).
+
+    Resta un rattoppo: la correzione vera e' sapere COSA mostra ogni immagine
+    (colonna `descrizione` su `immagini`) e scegliere le figure che rispondono
+    alla domanda, non quelle che stanno vicino al testo che ha risposto."""
     ids = []
-    for r in righe:
-        for iid in (r.get("immagini") or []):
+    for r in righe:                      # righe: gia' in ordine di punteggio
+        for iid in (r.get("immagini") or [])[:1]:
             if iid not in ids:
                 ids.append(iid)
     return ids[:MAX_IMMAGINI]
@@ -143,19 +241,24 @@ def _stream_litellm(messages, rotta, uso):
 
 
 def _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
-                      token_in, token_out, latenza_ms):
+                      token_in, token_out, latenza_ms, riscritta=False, cercata=None):
     # token_in/out arrivano dall'ultimo chunk di LiteLLM (stream_options
     # include_usage); se la rotta non li espone restano NULL (colonna ammessa).
     conn.execute(
         """INSERT INTO traces (conversation_id, utente, domanda, chunk_ids,
-                               retrieval_vuoto, taint, modello, token_in, token_out, latenza_ms)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-        (conversation_id, utente, domanda,
+                               retrieval_vuoto, taint, modello, token_in, token_out, latenza_ms,
+                               riformulazione)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (conversation_id, utente,
+         # Nella traccia resta la domanda VERA; se e' stata riscritta per la
+         # ricerca si annota anche quella, perche' una risposta strana si
+         # spiega guardando cosa e' stato cercato davvero.
+         domanda if not riscritta else f"{domanda}\n[cercata: {cercata}]",
          [r["id"] for r in righe] if righe else None,
          not righe,
          decisione.get("fonte_contaminante") if decisione.get("interno") else None,
          decisione.get("rotta"),
-         token_in, token_out, latenza_ms))
+         token_in, token_out, latenza_ms, riscritta))
     conn.commit()
 
 
@@ -184,11 +287,32 @@ async def chat(request: Request):
         conn.close()
         return _risposta_unica(INDICE_IN_AGGIORNAMENTO)
 
-    # 2. Embedding della domanda (puo degradare a full-text).
-    qvec = recupero.embedding(domanda)
+    # 1-ter. "Mostra le immagini": non e' una domanda nuova, e' il si' a
+    # un'offerta. Si rifa' il recupero sulla domanda PRECEDENTE — cosi' le ACL
+    # sono quelle di chi sta chiedendo adesso, come in ogni altro turno — e si
+    # rispondono le figure, senza disturbare il modello.
+    storico_messaggi = corpo.get("messages", [])
+    if SU_RICHIESTA and vuole_le_immagini(domanda, _ultima_risposta(storico_messaggi)):
+        precedente = _domanda_precedente(storico_messaggi)
+        qvec_prec = recupero.embedding(precedente)
+        righe, _ = recupero.cerca(conn, precedente, gruppi, qvec=qvec_prec)
+        ids = _immagini_per_la_domanda(conn, qvec_prec, gruppi, righe)
+        conn.close()
+        if not ids:
+            return _risposta_unica("Non ho immagini da mostrare per quella risposta.")
+        urls = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}") for i, iid in enumerate(ids)}
+        return _risposta_unica("Ecco le figure delle pagine citate:\n\n" + _blocco_immagini(urls))
 
-    # 3. Ricerca con ACL nella query.
-    righe, degradato = recupero.cerca(conn, domanda, gruppi, qvec=qvec)
+    # 2. La domanda per la RICERCA: in una conversazione l'ultima frase da sola
+    # non basta ("ne ho bisogno in auto"). Si riscrive con le battute
+    # precedenti; se non si puo', resta com'era.
+    cercata, riscritta = riformula.per_la_ricerca(domanda, storico_messaggi, SUFFISSO_SISTEMA)
+    if riscritta:
+        print(f"riformulata: {domanda!r} -> {cercata!r}", flush=True)
+
+    # 3. Embedding della domanda (puo degradare a full-text) e ricerca con ACL.
+    qvec = recupero.embedding(cercata)
+    righe, degradato = recupero.cerca(conn, cercata, gruppi, qvec=qvec)
 
     # 4. Gate: contaminazione e rotta. Puo rifiutare il turno.
     try:
@@ -199,21 +323,29 @@ async def chat(request: Request):
             {"error": {"message": str(e), "type": "risposta_rifiutata"}}, status_code=403)
 
     # 5. Prompt: system + contesto + la cronologia dei messaggi.
-    ids_immagini = _immagini_del_turno(righe)
+    ids_immagini = _immagini_per_la_domanda(conn, qvec, gruppi, righe)
     url_per_pos = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}")
                    for i, iid in enumerate(ids_immagini)}
     messaggi = [{"role": "system",
                  "content": prompt.SYSTEM + "\n" + prompt.contesto(righe) + SUFFISSO_SISTEMA}]
-    storico = [m for m in corpo.get("messages", [])
+    storico = [_senza_aggiunte(m) for m in corpo.get("messages", [])
                if isinstance(m.get("content"), str) and m.get("role") in ("user", "assistant")]
     messaggi += storico
 
+    chieste = chiede_le_immagini(domanda)
+
     def _immagini_finali():
-        """Il blocco markdown con le figure citate, in coda alla risposta."""
+        """Coda della risposta: le figure se le ha chieste l'utente (o se
+        SU_RICHIESTA e' spento), altrimenti l'offerta."""
         if not url_per_pos:
-            return ""
-        return ("\n\n" + "\n".join(f"![immagine {n}]({u})"
-                                    for n, u in url_per_pos.items()))
+            # Le ha chieste e non ce ne sono: meglio dirlo che tacere.
+            return "\n\n_Non ho figure collegate a questa risposta._" if chieste else ""
+        if not SU_RICHIESTA or chieste:
+            return "\n\n" + _blocco_immagini(url_per_pos)
+        quante = len(url_per_pos)
+        return (f"\n\n_Ci sono {quante} {MARCA_OFFERTA}"
+                f"{' (figure, schemi, foto dei prodotti)' if quante > 1 else ''}: "
+                f"scrivi «mostra» se vuoi vederle._")
 
     def gen():
         uso = {}
@@ -230,7 +362,7 @@ async def chat(request: Request):
         finally:
             _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
                               uso.get("token_in"), uso.get("token_out"),
-                              int((time.monotonic() - inizio) * 1000))
+                              int((time.monotonic() - inizio) * 1000), riscritta, cercata)
             conn.close()
 
     return StreamingResponse(gen(), media_type="text/event-stream")

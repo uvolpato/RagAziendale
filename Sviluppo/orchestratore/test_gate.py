@@ -291,6 +291,37 @@ def main():
         assert len(righe) >= 1, "il full-text non ha trovato nulla"
         assert righe[0]["source_id"] == "t-manuali"
 
+    print("\n--- Immagini su richiesta " + "-" * 43)
+
+    @prova("T1.19", "le immagini si mostrano solo a chi dice di si' a un'offerta fatta davvero")
+    def _():
+        from orchestratore.main import MARCA_OFFERTA, vuole_le_immagini
+        offerta = f"Risposta... _Ci sono 3 {MARCA_OFFERTA}: scrivi «mostra» se vuoi vederle._"
+        for si in ("si", "sì", "mostra", "mostrale", "fammi vedere", "ok", "Certo", "volentieri"):
+            assert vuole_le_immagini(si, offerta), f"«{si}» dopo l'offerta doveva mostrare le immagini"
+        # Domande vere: non sono un consenso, nemmeno se parlano di immagini.
+        for no in ("quali immagini ci sono nel catalogo dei diffusori?",
+                   "mostrami tutti i documenti sulla sicurezza informatica del 2025 per favore",
+                   "e le misure?"):
+            assert not vuole_le_immagini(no, offerta), f"«{no}» e' una domanda, non un si'"
+        # Senza offerta nel turno prima, "si" resta una risposta qualsiasi.
+        assert not vuole_le_immagini("si", "Una risposta senza immagini collegate.")
+        assert not vuole_le_immagini("mostra", "")
+
+    @prova("T1.20", "la cronologia rimandata al modello non contiene le righe aggiunte dal sistema")
+    def _():
+        from orchestratore.main import MARCA_OFFERTA, _senza_aggiunte
+        risposta = ("I diffusori IPURO CLASSIC sono adatti all'auto [4].\n\n"
+                    "_Ci sono 4 " + MARCA_OFFERTA + ": scrivi \u00abmostra\u00bb._\n"
+                    "![immagine 1](https://assistente.localhost/immagini/1?firma=x)")
+        pulita = _senza_aggiunte({"role": "assistant", "content": risposta})["content"]
+        assert "IPURO CLASSIC" in pulita, "la risposta vera non deve sparire"
+        assert MARCA_OFFERTA not in pulita, "l\u2019offerta rimandata indietro fa imitare la riga al modello"
+        assert "![immagine" not in pulita, "i collegamenti li aggiunge il sistema, non il modello"
+        utente = {"role": "user", "content": "ne ho bisogno in auto"}
+        assert _senza_aggiunte(utente) == utente, "le domande dell\u2019utente non si toccano"
+
+
     print("\n--- Indicizzazione che scarica il modello " + "-" * 27)
 
     @prova("T1.18", "mentre l'indicizzazione tiene il lock, la chat risponde senza chiamare il modello")

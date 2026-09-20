@@ -28,6 +28,35 @@ def test_unisci_accorpa_i_frammenti_della_stessa_pagina():
     assert unisci([("Titolo", 1), ("riga uno", 1), ("riga due", 2), ("  ", 2)]) == [("Titolo\nriga uno", 1), ("riga due", 2)]
 
 
+def test_le_varianti_di_una_tabella_restano_pezzi_distinti():
+    """Nei cataloghi il prodotto sta in cima alla pagina e i colori in tabella:
+    unendoli si perde il soggetto, e il vettore di venti colori insieme non
+    significa piu' nessun colore. «sassi rossi» non trovava «DST2001 rot red»
+    (misurato: era il pezzo MENO pertinente di tutto il catalogo)."""
+    titolo = "DEKOSTEINE deco rocks | pietre decorative 9 - 13 mm"
+    pagina = [("\u00ae", 7), (titolo, 7), ("A rustic arrangement of rocks in white and grey.", 7),
+              ("DST2090 blau blue", 7), ("DST2001 rot red", 7), ("DST2030 gelb yellow", 7)]
+    pezzi = [testo for testo, _ in unisci(pagina)]
+    varianti = [x for x in pezzi if "DST20" in x]
+    assert len(varianti) == 3, f"le righe di colore vanno tenute separate: {varianti}"
+    assert all(x.startswith(titolo) for x in varianti), "ogni variante porta con se' il prodotto"
+    rosso = [x for x in varianti if "rot red" in x]
+    assert len(rosso) == 1 and "pietre decorative" in rosso[0], rosso
+    # La prosa continua a unirsi come prima: la regola vale solo per le tabelle.
+    assert any("rustic arrangement" in x and "DST20" not in x for x in pezzi)
+
+
+def test_una_riga_qualsiasi_non_e_una_variante():
+    """Il riconoscimento deve essere stretto: un codice a inizio riga e riga
+    corta. Una frase che cita un codice resta prosa."""
+    from indicizza import _e_variante
+    assert _e_variante("DST2001 rot red")
+    assert _e_variante("GRA1040 weiss white")
+    assert not _e_variante("Il prodotto DST2001 va ordinato entro il 30 del mese")
+    assert not _e_variante("ISO 27001 richiede un riesame annuale della politica")
+    assert not _e_variante("A rustic arrangement of decorative rocks in white and grey")
+
+
 def test_unisci_taglia_i_pezzi_troppo_lunghi():
     lungo = "\n".join(["capoverso " * 20] * 20)
     pezzi = unisci([(lungo, 3)])
@@ -88,13 +117,18 @@ def test_finestra_dentro_la_giornata_e_casi_storti():
     assert not in_finestra("dalle 22 alle 6", adesso=_alle(3))   # scritta male: non si indovina
 
 
-def test_i_file_grossi_aspettano_solo_fuori_finestra():
+def test_i_file_grossi_aspettano_solo_se_la_gpu_e_occupata():
     indicizza.MB_MAX_DI_GIORNO = 5
     grosso, piccolo = 6 * 1024 * 1024, 4 * 1024 * 1024
-    assert rimanda(grosso, finestra=False) and not rimanda(piccolo, finestra=False)
-    assert not rimanda(grosso, finestra=True)        # di notte (o --forza) passa tutto
-    indicizza.MB_MAX_DI_GIORNO = 0                   # default: nessun limite, come prima
-    assert not rimanda(grosso, finestra=False)
+    # Di giorno, GPU occupata: il file grosso aspetta, il piccolo passa.
+    assert rimanda(grosso, finestra=False, gpu=False)
+    assert not rimanda(piccolo, finestra=False, gpu=False)
+    # GPU libera: si legge subito, a qualsiasi ora e dimensione. L'indicizzazione
+    # e' continua finche' c'e' posto in VRAM, che e' il punto di tutto.
+    assert not rimanda(grosso, finestra=False, gpu=True)
+    assert not rimanda(grosso, finestra=True, gpu=False)   # di notte (o --forza) passa tutto
+    indicizza.MB_MAX_DI_GIORNO = 0                         # default: nessun limite, come prima
+    assert not rimanda(grosso, finestra=False, gpu=False)
 
 
 def test_le_immagini_di_un_documento_hanno_una_cartella_sola(tmp_path):

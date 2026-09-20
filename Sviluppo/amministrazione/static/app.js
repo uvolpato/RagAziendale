@@ -486,7 +486,11 @@
       if (d.provenienza !== 'cartella') { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Questa fonte non è una cartella: i suoi contenuti arrivano da ' + esc(PROVENIENZA[d.provenienza] || d.provenienza) + ', non file per file.</span></div>'; return; }
       if (!l.length) { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Nessun documento ancora. La cartella si legge ogni pochi minuti: se resta vuota, controlla il percorso e le anomalie.</span></div>'; return; }
       var n = { indicizzato: 0, errore: 0, vuoto: 0, escluso: 0 }, doppi = 0, senza = 0, pezzi = 0, inLettura = 0;
-      l.forEach(function (x) { n[x.stato] = (n[x.stato] || 0) + 1; if (x.doppione) doppi++; if (x.senza_vettori) senza++; pezzi += x.pezzi; if (x.in_lettura) inLettura++; });
+      /* Un file in lettura NON si conta fra i non leggibili: prima di leggerlo
+         l'indicizzazione lo segna cosi' apposta (se il servizio muore a meta',
+         al riavvio risulta illeggibile invece di ripartire in ciclo), ma
+         finche' sta leggendo e' «in elaborazione», non un errore. */
+      l.forEach(function (x) { if (x.in_lettura) inLettura++; else n[x.stato] = (n[x.stato] || 0) + 1; if (x.doppione) doppi++; if (x.senza_vettori) senza++; pezzi += x.pezzi; });
       p.innerHTML =
         '<p style="font-size:13.5px;margin-top:0">' + l.length + (l.length === 1 ? ' file' : ' file') + ', ' + pezzi + ' pezzi di testo. ' +
           (n.indicizzato ? badge(['ok', n.indicizzato + ' indicizzati', 'b-stato-ok']) + ' ' : '') +
@@ -498,7 +502,7 @@
           (inLettura ? badge(['info', 'In elaborazione…', 'b-stato-info']) : '') + '</p>' +
         '<p class="ro-note">' + ic('info') + 'Non compaiono, di proposito, le sottocartelle <span class="mono">_bozze</span> e <span class="mono">_archivio</span>. I fogli di calcolo con i prezzi restano fuori («Escluso», con il motivo): i prezzi vengono dal gestionale.' +
           (senza ? ' «Senza vettori»: il servizio dei modelli non rispondeva; si completano da soli al giro dopo, intanto la ricerca testuale li trova.' : '') + '</p>' +
-        '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">File</th><th scope="col">Stato</th><th scope="col" class="num-col">Pezzi</th><th scope="col">Modificato</th><th scope="col">Letto</th>' +
+        '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">File</th><th scope="col">Stato</th><th scope="col" class="num-col">Pezzi</th><th scope="col">Elaborato</th>' +
         (can('fonti') ? '<th scope="col"></th>' : '') + '</tr></thead><tbody>' +
         l.map(function (x) {
           var el = '';
@@ -510,11 +514,11 @@
                     '<span class="sub" style="margin-top:2px">' + pc + '% · pagina ' + x.pagine_fatte + ' di ' + x.pagine_totali + '</span>';
             }
           }
-          return '<tr><td class="mono" style="word-break:break-all">' + esc(x.documento) + '<span class="sub">' + peso(x.dimensione) + '</span>' +
-            (x.errore ? '<span class="sub"' + (x.stato === 'errore' ? ' style="color:var(--stato-critico)"' : '') + '>' + esc(x.errore) + '</span>' : '') + '</td>' +
+          return '<tr><td class="mono nome-file">' + esc(x.documento) + '<span class="sub">' + peso(x.dimensione) + ' · file del ' + esc(dataOra(x.modificato_il)) + '</span>' +
+            (x.errore && !x.in_lettura ? '<span class="sub"' + (x.stato === 'errore' ? ' style="color:var(--stato-critico)"' : '') + '>' + esc(x.errore) + '</span>' : '') + '</td>' +
             '<td>' + (el || badge(STATO_DOC[x.stato]) + (x.doppione ? ' ' + badge(['warn', 'Doppione', 'b-stato-attenzione']) : '') +
               (x.senza_vettori ? ' ' + badge(['warn', 'Senza vettori', 'b-stato-attenzione']) : '')) + '</td>' +
-            '<td class="num-col">' + x.pezzi + '</td><td>' + esc(dataOra(x.modificato_il)) + '</td><td>' + quando(x.indicizzato_il) + '</td>' +
+            '<td class="num-col">' + x.pezzi + '</td><td>' + esc(dataOra(x.indicizzato_il)) + '</td>' +
             (can('fonti') ? '<td><button class="btn btn-secondary btn-sm btn-rielabora" data-doc="' + esc(x.documento) + '"' +
               (x.in_lettura ? ' disabled' : '') + '>Rielabora</button></td>' : '') + '</tr>';
         }).join('') + '</tbody></table></div>';

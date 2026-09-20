@@ -36,6 +36,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -100,10 +101,56 @@ SECONDI_PER_BLOCCO = int(os.environ.get("SECONDI_PER_BLOCCO", "600"))
 # legge (memoria), al giro dopo il file risulta non leggibile invece di far
 # ripartire il servizio all'infinito sullo stesso file.
 IN_LETTURA = "lettura interrotta: il servizio si e' fermato mentre leggeva questo file (probabile memoria esaurita)"
+# Il file che stiamo leggendo adesso: serve a distinguere un riavvio VOLUTO
+# (deploy, docker stop: arriva SIGTERM) da un guasto vero (memoria esaurita,
+# corrente che manca: il processo muore e basta). Nel primo caso il documento
+# non ha nessuna colpa e deve tornare "da leggere", non "illeggibile".
+IN_CORSO = {}
+
+
+def _riavvio_voluto(_segnale, _frame):
+    """SIGTERM: si toglie il segno di lettura al file in corso e si esce. Il
+    crash vero non passa di qui — quello lo marca il riavvio, ed e' giusto:
+    un file che fa morire il servizio non deve poterlo rifare all'infinito."""
+    if IN_CORSO:
+        try:
+            with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, connect_timeout=5) as c:
+                if IN_CORSO.get("stato"):      # c'era gia' una lettura buona: si rimette com'era
+                    c.execute("UPDATE documenti SET in_lettura = NULL, pagine_fatte = 0,"
+                              " pagine_totali = NULL, errore = NULL, stato = %s"
+                              " WHERE source_id = %s AND documento = %s",
+                              (IN_CORSO["stato"], IN_CORSO["fid"], IN_CORSO["rel"]))
+                else:                          # mai letto prima: la riga sparisce, si rilegge dopo
+                    c.execute("DELETE FROM documenti WHERE source_id = %s AND documento = %s",
+                              (IN_CORSO["fid"], IN_CORSO["rel"]))
+            print(f"riavvio richiesto: {IN_CORSO['fid']}/{IN_CORSO['rel']} torna da leggere", flush=True)
+        except Exception as e:
+            print(f"riavvio richiesto, ma non ho potuto liberare il file ({type(e).__name__}: {e})", flush=True)
+    sys.exit(0)
+
+
 # Colonne che parlano di soldi. Con \b davanti: "costo" si', "incostante" no.
 INTESTAZIONE_PREZZO = re.compile(r"\b(prezz\w*|listin\w*|cost[oi]\b|scont[oi]\b|nett[oi]\b|importi?\b|tariff\w*|"
                                  r"eur\b|euro\b|imponibil\w*)|€", re.I)
 RIGHE_ESAMINATE = 200
+# Prezzi dentro la descrizione di un'immagine. Di regola restano fuori: i
+# prezzi vengono dal gestionale (decisione 72), e un listino fotografato
+# rientrerebbe dalla finestra — successo davvero, una descrizione conteneva
+# "F0305 370 ml 12 EUR 2,15 F0405 500 ml..." (20/09/2026).
+# Ma su un catalogo FORNITORE quel prezzo puo' essere l'unico che esiste: nel
+# gestionale non c'e'. Percio' e' una scelta, non una regola muta:
+#   escludi (predefinito)  la descrizione con prezzi si scarta
+#   ammetti                entra, e l'assistente potra' rispondere a domande
+#                          come "dieci articoli sotto i 10 euro"
+# Vale per fonte (decisione D16): si ammette sui cataloghi fornitore, non sui
+# documenti dove il prezzo autorevole sta nel gestionale.
+PREZZI_DESCRIZIONI = os.environ.get("PREZZI_DESCRIZIONI", "escludi")   # escludi | ammetti
+# Prezzi dentro la descrizione di un'immagine: un listino fotografato rientra
+# dalla finestra che la decisione 72 ha chiuso (i prezzi vengono dal
+# gestionale). Successo davvero: una descrizione conteneva "F0305 370 ml 12
+# € 2,15 F0405 500 ml 12 € 2,85..." (20/09/2026).
+PREZZO_IN_DESCRIZIONE = re.compile(r"(€|\beur\b|\bprezz\w*|\bcost[oi]\b|\bprice\b|\bpreis\b)[\s:]*[\d.,]+"
+                                   r"|[\d.,]+\s*(€|\beur\b)", re.I)
 PERCORSO_VALIDO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._/-]*$")   # relativo: niente UNC, lettere di unita', '..'
 MIN_PEZZO, MAX_PEZZO = 300, 1800
 
@@ -126,20 +173,67 @@ def file_da_leggere(cartella: pathlib.Path):
     return out
 
 
+# Riga di una tabella di varianti: «DST2001 rot red», «GRA1040 weiss white».
+# Nei cataloghi il prodotto sta in cima alla pagina e le varianti in tabella
+# sotto: unendo le righe si perde il soggetto, e il vettore di venti colori
+# insieme significa «elenco di codici colore», non «pietra rossa». Misurato il
+# 20/09/2026: alla domanda «sassi rossi» il pezzo che conteneva davvero
+# «DST2001 rot red» risultava il MENO pertinente di tutta EUROSAND (0,5853),
+# dietro a un cesto di muschio (0,4802).
+CODICE_VARIANTE = re.compile(r"^[A-Z]{2,5}[-\s]?\d{3,}\b")
+MAX_VARIANTE = 80          # una riga di tabella e' corta; oltre e' prosa
+
+
+MAX_PAROLE_VARIANTE = 6    # codice + colore/misura, non una frase
+
+
+def _e_variante(testo):
+    """Riga di tabella: codice in testa, riga corta, POCHE parole. Il conteggio
+    delle parole evita di scambiare per tabella una frase che cita una norma
+    ("ISO 27001 richiede un riesame annuale della politica")."""
+    testo = testo.strip()
+    return (len(testo) <= MAX_VARIANTE and len(testo.split()) <= MAX_PAROLE_VARIANTE
+            and bool(CODICE_VARIANTE.match(testo)))
+
+
+def _contesto_di_pagina(pezzi_pagina):
+    """Il testo che dice DI COSA parla la pagina: il primo pezzo di prosa
+    abbastanza lungo (il titolo del prodotto, di solito con le misure)."""
+    for testo, _pagina in pezzi_pagina:
+        pulito = " ".join(testo.split())
+        if not _e_variante(pulito) and 15 <= len(pulito) <= 200:
+            return pulito
+    return ""
+
+
 def unisci(pezzi):
     """[(testo, pagina)] -> pezzi di dimensione utile per la ricerca.
+
     Docling spezza per elemento (un titolo, una riga di tabella): da soli non
     rispondono a nulla. Si uniscono i consecutivi della stessa pagina fino a
-    MAX_PEZZO; un pezzo troppo lungo si taglia ai capoversi."""
+    MAX_PEZZO; un pezzo troppo lungo si taglia ai capoversi.
+
+    ECCEZIONE: le righe di una tabella di varianti restano pezzi a se', ognuna
+    con l'intestazione della pagina davanti. Cosi' «DEKOSTEINE pietre
+    decorative 9-13 mm | DST2001 rot red» vale «pietra decorativa rossa» e una
+    domanda per colore, misura o codice la trova — in tutte le lingue del
+    catalogo, perche' il vettore ci arriva anche da «sassi rossi».
+    """
     out = []
-    for testo, pagina in pezzi:
-        testo = testo.strip()
-        if not testo:
-            continue
-        if out and out[-1][1] == pagina and len(out[-1][0]) < MIN_PEZZO and len(out[-1][0]) + len(testo) <= MAX_PEZZO:
-            out[-1] = (out[-1][0] + "\n" + testo, pagina)
-        else:
-            out.append((testo, pagina))
+    for pagina in _pagine(pezzi):
+        contesto = _contesto_di_pagina(pagina)
+        for testo, pag in pagina:
+            testo = " ".join(testo.split())
+            if not testo:
+                continue
+            if _e_variante(testo):
+                out.append((f"{contesto} | {testo}" if contesto else testo, pag))
+                continue
+            if (out and out[-1][1] == pag and not _e_variante(out[-1][0])
+                    and len(out[-1][0]) < MIN_PEZZO and len(out[-1][0]) + len(testo) <= MAX_PEZZO):
+                out[-1] = (out[-1][0] + "\n" + testo, pag)
+            else:
+                out.append((testo, pag))
     finali = []
     for testo, pagina in out:
         while len(testo) > MAX_PEZZO:
@@ -150,6 +244,19 @@ def unisci(pezzi):
         if testo.strip():
             finali.append((testo.strip(), pagina))
     return finali
+
+
+def _pagine(pezzi):
+    """I pezzi raggruppati per pagina, nell'ordine in cui arrivano."""
+    gruppo, pagina_corrente = [], object()
+    for testo, pagina in pezzi:
+        if pagina != pagina_corrente and gruppo:
+            yield gruppo
+            gruppo = []
+        pagina_corrente = pagina
+        gruppo.append((testo, pagina))
+    if gruppo:
+        yield gruppo
 
 
 def _numero(v):
@@ -226,10 +333,15 @@ def in_finestra(finestra=None, adesso=None):
     return a <= ora < b if a <= b else (ora >= a or ora < b)
 
 
-def rimanda(dimensione, finestra):
-    """Fuori finestra i file grossi aspettano: leggerli di giorno tiene occupata
-    la macchina (GPU o CPU) mentre qualcuno sta chattando."""
-    return not finestra and MB_MAX_DI_GIORNO > 0 and dimensione > MB_MAX_DI_GIORNO * 1024 * 1024
+def rimanda(dimensione, finestra, gpu=False):
+    """Un file grosso aspetta solo se andrebbe letto sul PROCESSORE fuori dalla
+    finestra: li' occupa la macchina per ore mentre qualcuno chatta. Se sulla
+    GPU c'e' posto si legge subito, a qualsiasi ora e di qualsiasi dimensione:
+    l'indicizzazione deve stare al passo con chi deposita i documenti, e in GPU
+    non disturba nessuno."""
+    if gpu or finestra or MB_MAX_DI_GIORNO <= 0:
+        return False
+    return dimensione > MB_MAX_DI_GIORNO * 1024 * 1024
 
 
 def vram_libera_mb():
@@ -306,7 +418,11 @@ def _opzioni_pdf(device="cpu"):
     # ritaglia dalla pagina (generate_table_images e' deprecato).
     opzioni.generate_picture_images = True
     opzioni.generate_page_images = True
-    opzioni.images_scale = 2.0          # 144 dpi: leggibile senza pesare come il 4x
+    # 3.0 = 216 dpi (un PDF nasce a 72): figure estratte piu' nitide ed
+    # etichette leggibili da chi le descrive. Il prezzo sono 2,25 volte i pixel
+    # da disegnare e da tenere in memoria per blocco: se il picco si avvicina al
+    # tetto del container, si abbassa PAGINE_PER_BLOCCO.
+    opzioni.images_scale = 3.0
     # Senza un VLM configurato non si chiede niente a nessuno: le immagini
     # entrano lo stesso, trovabili dal testo della loro pagina.
     if VLM_DESCRIZIONI != "api" or not VLM_MODELLO:
@@ -326,15 +442,24 @@ def _opzioni_pdf(device="cpu"):
         url=f"{VLM_URL.rstrip('/')}/chat/completions",
         headers={"Authorization": f"Bearer {chiave}"} if chiave else {},
         params={"model": VLM_MODELLO},
-        # Prima trascrivere, poi descrivere, e in inglese. Provato il 20/09/2026
-        # su cinque immagini del catalogo con glm-ocr: chiedendo una descrizione
-        # in italiano inventava ("profumo di arsenico"), con questo prompt
-        # trascrive nomi e quantita' dei prodotti — cio' che serve alla ricerca —
-        # e dove non c'e' testo dice una frase sola ("Two bottles of perfume
-        # with green labels"). L'embedding e' multilingue: una domanda in
-        # italiano trova lo stesso una descrizione in inglese.
-        prompt=("Transcribe all text visible in this image. If there is no text, describe in one "
-                "sentence what the image shows. Do not add anything else."),
+        # scale: il modello vede l'immagine ingrandita 3 volte e legge anche le
+        # etichette piccole. picture_area_threshold: si descrivono solo le
+        # figure che occupano almeno il 15% della pagina — fuori loghi e
+        # cornici, dentro le foto prodotto (a 0,05 erano 324 immagini su 41
+        # pagine, quasi tutte decorative).
+        scale=3.0, picture_area_threshold=0.15,
+        # Trascrizione E descrizione, in inglese. Chiedere la descrizione in
+        # italiano faceva inventare a glm-ocr ("profumo di arsenico"); chiedere
+        # SOLO la trascrizione lasciava fuori dall'indice gli attributi visivi,
+        # ed e' il difetto che ha fatto fallire "sto cercando dei sassi rossi":
+        # una foto di pietre rosse con l'etichetta "LAVA ROCKS 20-40 mm" entrava
+        # senza la parola "rosso" (provato il 20/09/2026). Colore e materiale
+        # sono spesso l'unica cosa che l'utente ricorda di un prodotto.
+        # L'embedding e' multilingue: una domanda in italiano trova lo stesso
+        # una descrizione in inglese.
+        prompt=("Transcribe all text visible in this image. Then add one short sentence describing "
+                "what is shown: objects, colours, materials, shapes. Do not invent details that are "
+                "not visible."),
         timeout=120, concurrency=1)
     return opzioni
 
@@ -356,6 +481,9 @@ def _converti(percorso, blocco, device="cpu"):
         InputFormat.PDF: PdfFormatOption(pipeline_options=opzioni),
         InputFormat.IMAGE: ImageFormatOption(pipeline_options=opzioni)})
     ris = conv.convert(percorso, page_range=blocco) if blocco else conv.convert(percorso)
+    tolte = togli_prezzi(ris.document)
+    if tolte:
+        print(f"    {tolte} descrizioni con prezzi scartate (decisione 72)", flush=True)
     return _chunk(ris.document), _immagini(ris.document)
 
 
@@ -385,19 +513,35 @@ def _immagini(documento):
     return out
 
 
-def _descrizioni(immagini):
-    """Le descrizioni VLM delle immagini entrano nel testo ricercabile, sulla
-    pagina dell'immagine: cosi' una domanda sul contenuto visivo trova il pezzo
-    giusto anche senza leggere i pixel."""
-    out = []
-    for (_img, pagina, descr) in immagini:
-        if descr:
-            out.append((f"Immagine: {descr}", pagina))
-    return out
+def togli_prezzi(documento):
+    """Cancella le descrizioni delle immagini che contengono prezzi, PRIMA che
+    il chunker le metta nel testo. I prezzi vengono dal gestionale (decisione
+    72): un listino trascritto da una foto del catalogo li farebbe rientrare
+    nell'indice senza che nessuno se ne accorga. Si scarta tutta la descrizione,
+    non solo il numero: meglio perdere una didascalia che indicizzare un prezzo
+    sbagliato. L'immagine resta, e resta mostrabile in chat."""
+    if PREZZI_DESCRIZIONI == "ammetti":
+        return 0
+    tolte = 0
+    for pic in getattr(documento, "pictures", []):
+        descrizione = getattr(getattr(pic, "meta", None), "description", None)
+        testo = getattr(descrizione, "text", None)
+        if testo and PREZZO_IN_DESCRIZIONE.search(testo):
+            pic.meta.description = None
+            tolte += 1
+    return tolte
 
 
 def _chunk(documento):
-    """DoclingDocument -> [(testo con i titoli, pagina)]."""
+    """DoclingDocument -> [(testo con i titoli, pagina)].
+
+    Le descrizioni delle immagini sono GIA' qui dentro: il chunker di Docling
+    include le annotazioni delle figure nel testo del pezzo, con il percorso dei
+    titoli attorno. Aggiungerle una seconda volta (come si faceva fino al
+    20/09/2026 con una funzione a parte) raddoppiava lo stesso contenuto
+    nell'indice: gli stessi pezzi venivano recuperati due volte e occupavano i
+    posti del testo vero — su "sto cercando dei sassi rossi" tutti e cinque i
+    risultati erano descrizioni di immagini."""
     from docling_core.transforms.chunker.hierarchical_chunker import HierarchicalChunker
     out = []
     for ch in HierarchicalChunker().chunk(documento):
@@ -449,6 +593,12 @@ def _in_processo(percorso, blocco, device):
         pool.join()
 
 
+class Rimandato(Exception):
+    """La GPU se l'e' presa qualcun altro mentre leggevamo un file grosso (fuori
+    finestra LM Studio carica il modello di chat appena arriva una domanda).
+    Non e' un errore del file: si lascia com'era e si riprende al giro utile."""
+
+
 class Lettore:
     """Legge un file e lo divide in pezzi. Docling gira in processi figli, uno
     per blocco di pagine: la memoria torna libera a ogni blocco, e se un file
@@ -476,8 +626,13 @@ class Lettore:
             print(f"modello di chat scaricato per fare spazio: {libera} MB liberi, "
                   f"ne servono {VRAM_MINIMA_MB}", flush=True)
 
-    def pezzi(self, p: pathlib.Path, progresso=None):
-        """progresso(fatte, totali) se c'e', chiamata ad ogni blocco completato."""
+    def pezzi(self, p: pathlib.Path, progresso=None, solo_gpu=False, dentro=None):
+        """progresso(fatte, totali) se c'e', chiamata ad ogni blocco completato.
+        solo_gpu: file che fuori dalla finestra si legge SOLO finche' la GPU e'
+        libera; se la perde a meta', si ferma e si riprende dopo (Rimandato).
+        dentro: cartella (relativa alla radice) dove scrivere le immagini man
+        mano che escono; si torna il METADATO, non l'immagine, cosi' la memoria
+        non cresce con le pagine."""
         if p.suffix.lower() in TESTO:
             testo = p.read_text(encoding="utf-8", errors="replace")
             return unisci([(x, None) for x in re.split(r"\n\s*\n", testo)]), []
@@ -496,14 +651,16 @@ class Lettore:
             for blocco in blocchi:
                 g, im = _converti_remoto(str(p), blocco)
                 grezzi += g
-                immagini += im
+                immagini += _scrivi_immagini(dentro, im, len(immagini)) if dentro else im
                 if len(blocchi) > 1:
                     print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]} (GPU)", flush=True)
                 if progresso and blocco:
                     progresso(blocco[1], blocchi[-1][1])
-            return unisci(grezzi + _descrizioni(immagini)), immagini
+            return unisci(grezzi), immagini
         for blocco in blocchi:
             device = dove_leggere()
+            if solo_gpu and device != "cuda":
+                raise Rimandato(f"GPU occupata dopo {blocco[0] - 1 if blocco else 0} pagine")
             try:
                 g, im = _in_processo(str(p), blocco, device)
             except Exception as e:
@@ -514,13 +671,14 @@ class Lettore:
                 device = "cpu"
                 g, im = _in_processo(str(p), blocco, "cpu")
             grezzi += g
-            immagini += im
+            immagini += _scrivi_immagini(dentro, im, len(immagini)) if dentro else im
+            del g, im
             if len(blocchi) > 1:
                 print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]}"
                       f"{' (GPU)' if device == 'cuda' else ''}", flush=True)
             if progresso and blocco:
                 progresso(blocco[1], blocchi[-1][1])
-        return unisci(grezzi + _descrizioni(immagini)), immagini
+        return unisci(grezzi), immagini
 
 
 # ------------------------------------------------------------------ vettori
@@ -610,7 +768,7 @@ def impronta_file(p):
     return h.hexdigest()
 
 
-MAX_LATO = 1024          # le immagini di catalogo sono enormi: si riducono una volta per tutte
+MAX_LATO = 1600          # le immagini di catalogo sono enormi: si riducono una volta per tutte
 
 
 def _riduci(img):
@@ -641,45 +799,65 @@ def _butta_immagini(percorso_fonte, rel):
     shutil.rmtree(RADICE / _cartella_immagini(percorso_fonte, rel), ignore_errors=True)
 
 
-def _salva_immagini(conn, fid, rel, immagini, percorso_fonte):
-    """Salva le immagini estratte NELLA CARTELLA DEI DOCUMENTI e le collega nel DB.
+def _scrivi_immagini(dentro, immagini, da_indice):
+    """Scrive su disco le immagini di UN blocco di pagine e torna i metadati
+    [(percorso, pagina, descrizione)]; il percorso e' relativo alla radice delle
+    cartelle, lo stesso valore che serve all'orchestratore.
 
-    Stanno in `<cartella della fonte>/_immagini/<hash del documento>/`: accanto
-    ai documenti da cui vengono, dove chi lavora le apre e le copia senza
-    passare da Docker. La cartella comincia con '_', quindi l'indicizzazione la
-    salta come _bozze e _archivio (file_da_leggere) e non rilegge le proprie
-    immagini. Il percorso salvato e' relativo alla radice delle cartelle:
-    lo stesso valore serve all'orchestratore, che monta la stessa radice.
-
-    Le immagini di un documento si cancellano e si riscrivono a ogni lettura
-    (come i chunk): un'immagine sparita dal PDF sparisce dall'indice.
+    Blocco per blocco, non a fine file: tenere le immagini in memoria fino
+    all'ultima pagina costava 3,3 GB dei 4 del container a meta' di un catalogo
+    da 107 pagine (misurato il 20/09/2026), e su un catalogo da 227 MB avrebbe
+    fatto morire il servizio.
 
     Se la condivisione e' in sola lettura (in produzione puo' esserlo) non si
-    fallisce il documento: entra senza immagini, con un avviso nel registro.
-    """
-    conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
-    _butta_immagini(percorso_fonte, rel)      # si riparte pulito: niente residui del giro prima
+    fallisce il documento: entra senza immagini, con un avviso nel registro."""
     if not immagini:
-        return 0
-    dentro = _cartella_immagini(percorso_fonte, rel)
+        return []
     radice = RADICE / dentro
-    salvate = 0
+    out = []
     try:
         radice.mkdir(parents=True, exist_ok=True)
-        for n, (img, pagina, _descr) in enumerate(immagini):
+        for n, (img, pagina, descr) in enumerate(immagini, start=da_indice):
             nome = f"{pagina or 0}_{n}.png"
             _riduci(img).save(radice / nome)
-            conn.execute(
-                "INSERT INTO immagini (source_id, documento, page, percorso)"
-                " VALUES (%s, %s, %s, %s)",
-                (fid, rel, pagina, f"{dentro}/{nome}"))
-            salvate += 1
+            out.append((f"{dentro}/{nome}", pagina, descr))
     except OSError as e:
-        conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
-        print(f"  immagini non salvate per {fid}/{rel} ({type(e).__name__}: {e}): "
+        print(f"  immagini non salvate in {dentro} ({type(e).__name__}: {e}): "
               f"la cartella e' scrivibile?", flush=True)
-        return 0
-    return salvate
+        return []
+    return out
+
+
+def _registra_immagini(conn, fid, rel, immagini):
+    """Collega nel DB le immagini gia' scritte su disco.
+
+    L'id di un'immagine NON cambia quando il documento si rilegge: le figure
+    citate in una conversazione passata restano raggiungibili. Prima si
+    cancellava tutto e si reinseriva, e ogni rilettura faceva morire gli URL
+    gia' consegnati agli utenti: in chat comparivano i riquadri vuoti
+    «immagine 1, immagine 2» e nei log una fila di 404 (visto il 20/09/2026).
+    Il percorso e' deterministico (`<pagina>_<n>.png`), quindi serve da chiave:
+    l'immagine che torna uguale tiene la sua riga, quella sparita esce."""
+    percorsi = [p for p, _pagina, _descr in immagini]
+    conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s"
+                 " AND NOT (percorso = ANY(%s))", (fid, rel, percorsi))
+    # La descrizione serve a SCEGLIERE quale figura mostrare, non solo a
+    # cercarla nel testo: il suo vettore vive nello stesso spazio dei pezzi
+    # (bge-m3), quindi "sassi rossi" puo' incontrare "dark red lava rocks".
+    # Se i vettori non si possono fare (host giu'), le immagini entrano lo
+    # stesso: si completano al giro dopo, come i pezzi senza vettore.
+    descrizioni = [d for _p, _pagina, d in immagini if d]
+    vettori_descr = vettori(descrizioni) if descrizioni else None
+    prossimo = iter(vettori_descr) if vettori_descr else None
+    for percorso, pagina, descr in immagini:
+        v = next(prossimo, None) if (descr and prossimo) else None
+        conn.execute("""INSERT INTO immagini (source_id, documento, page, percorso, descrizione, embedding)
+                        VALUES (%s, %s, %s, %s, %s, %s::vector)
+                        ON CONFLICT (source_id, percorso) DO UPDATE SET page = EXCLUDED.page,
+                          documento = EXCLUDED.documento,
+                          descrizione = EXCLUDED.descrizione, embedding = EXCLUDED.embedding""",
+                     (fid, rel, pagina, percorso, descr, vettore_sql(v) if v else None))
+    return len(immagini)
 
 
 def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False):
@@ -721,7 +899,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
     chiudi(conn, f"cartella-vuota:{fid}")
 
     for rel, p in presenti:
-        if solo and solo not in rel:
+        if solo and solo.lower() not in rel.lower():   # --solo non distingue maiuscole
             continue
         st = p.stat()
         quando = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).replace(microsecond=0)
@@ -733,11 +911,12 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         if not forza and vecchio and vecchio[2] == st.st_size and vecchio[3] == quando:
             conteggi["uguali"] += 1
             continue
-        if rimanda(st.st_size, lettore.finestra):
+        grosso = rimanda(st.st_size, lettore.finestra, gpu=False)   # grosso e fuori finestra
+        if grosso and dove_leggere() != "cuda":
             # Non si segna niente in documenti: il file resta "non ancora letto"
-            # e al primo giro dentro la finestra entra come qualsiasi altro.
+            # e al primo giro utile (GPU libera, o finestra) entra come gli altri.
             conteggi["rimandati"] = conteggi.get("rimandati", 0) + 1
-            print(f"  rimandato alla finestra: {fid}/{rel} ({st.st_size // (1024 * 1024)} MB)")
+            print(f"  rimandato: {fid}/{rel} ({st.st_size // (1024 * 1024)} MB, GPU occupata)")
             continue
         impronta = impronta_file(p)
         if not forza and vecchio and vecchio[1] == impronta:
@@ -777,8 +956,29 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
             """Il pannello fonti legge pagine_fatte/pagine_totali mentre il file gira."""
             conn.execute("UPDATE documenti SET pagine_fatte = %s, pagine_totali = %s"
                          " WHERE source_id = %s AND documento = %s", (fatte, totali, fid, rel))
+        # Grosso e fuori finestra: si legge finche' la GPU e' libera. Se la
+        # perde a meta' non si insiste in CPU (ore di macchina occupata mentre
+        # qualcuno chatta): si rimette il file come stava e si riprende dopo.
+        # Si riparte pulito: le immagini si scrivono blocco per blocco, quindi
+        # i residui della lettura precedente (o di una interrotta) vanno tolti
+        # PRIMA, non a fine file.
+        _butta_immagini(percorso, rel)
+        IN_CORSO.update(fid=fid, rel=rel, stato=vecchio[4] if vecchio else None)
         try:
-            pezzi, immagini = lettore.pezzi(p, _progresso)
+            pezzi, immagini = lettore.pezzi(p, _progresso, solo_gpu=grosso,
+                                            dentro=_cartella_immagini(percorso, rel))
+        except Rimandato as e:
+            if vecchio:
+                conn.execute("UPDATE documenti SET impronta = %s, dimensione = %s, modificato_il = %s,"
+                             " stato = %s, errore = NULL, in_lettura = NULL, pagine_fatte = 0,"
+                             " pagine_totali = NULL WHERE source_id = %s AND documento = %s",
+                             (vecchio[1], vecchio[2], vecchio[3], vecchio[4], fid, rel))
+            else:
+                conn.execute("DELETE FROM documenti WHERE source_id = %s AND documento = %s", (fid, rel))
+            conteggi["rimandati"] = conteggi.get("rimandati", 0) + 1
+            print(f"  rimandato: {fid}/{rel} ({e})")
+            IN_CORSO.clear()
+            continue
         except Exception as e:
             conteggi["errori"] += 1
             print(f"  ERRORE {fid}/{rel}: {type(e).__name__}: {e}")
@@ -791,6 +991,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
                                   stato = 'errore', errore = EXCLUDED.errore, pezzi = 0,
                                   in_lettura = NULL, indicizzato_il = now()""",
                              (fid, rel, impronta, st.st_size, quando, f"{type(e).__name__}: {e}"[:500]))
+                IN_CORSO.clear()
                 anomalia(conn, chiave, "attenzione", f"File non leggibile: {rel}",
                          "Aprire il file: se e' danneggiato o protetto da password, sostituirlo con una copia "
                          "leggibile o spostarlo in _archivio.", azienda, f"fonte:{fid}",
@@ -812,7 +1013,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
                                 ON CONFLICT (source_id, documento, page, content_hash) DO NOTHING""",
                              (fid, rel, pagina, testo, hashlib.sha256(testo.encode()).hexdigest(),
                               vettore_sql(vett[i]) if vett else None))
-            _salva_immagini(conn, fid, rel, immagini, percorso)
+            _registra_immagini(conn, fid, rel, immagini)
             conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi)
                             VALUES (%s,%s,%s,%s,%s,%s,NULL,%s)
                             ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
@@ -821,6 +1022,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
                               in_lettura = NULL, indicizzato_il = now()""",
                          (fid, rel, impronta, st.st_size, quando, "indicizzato" if pezzi else "vuoto", len(pezzi)))
             chiudi(conn, chiave)
+        IN_CORSO.clear()        # letto: da qui in poi un riavvio non lo riguarda
         conteggi["cambiati" if vecchio else "nuovi"] += 1
         print(f"  {'aggiornato' if vecchio else 'nuovo'}: {fid}/{rel} ({len(pezzi)} pezzi, {len(immagini)} immagini"
               f"{'' if vett else ', senza vettori'})")
@@ -924,6 +1126,7 @@ def giro(aspetta=False, forza=False, solo=None):
 
 
 def main():
+    signal.signal(signal.SIGTERM, _riavvio_voluto)
     una_volta = "--una-volta" in sys.argv or "--forza" in sys.argv
     forza = "--forza" in sys.argv
     solo = sys.argv[sys.argv.index("--solo") + 1] if "--solo" in sys.argv else None
@@ -945,7 +1148,14 @@ def main():
                 raise
         if una_volta:
             return
-        time.sleep(INTERVALLO)
+        # Se il giro ha fatto qualcosa si riparte SUBITO: con la GPU libera
+        # l'indicizzazione deve stare al passo di chi deposita i documenti, non
+        # leggere un file e poi dormire cinque minuti. Si aspetta solo quando
+        # non c'e' niente da fare — compresi i giri in cui l'unica cosa
+        # successa e' aver rimandato file grossi (la GPU e' occupata: insistere
+        # ogni secondo non la libera).
+        if not (cambi or completati):
+            time.sleep(INTERVALLO)
 
 
 if __name__ == "__main__":
