@@ -174,29 +174,90 @@ def motivo_prezzi(p: pathlib.Path):
     return None
 
 
+def _opzioni_pdf():
+    from docling.datamodel.accelerator_options import AcceleratorOptions
+    from docling.datamodel.pipeline_options import (PdfPipelineOptions, PictureDescriptionApiOptions,
+                                                   TesseractCliOcrOptions)
+    # OCR con Tesseract (pacchetto Debian, italiano e inglese): funziona senza
+    # rete, gli altri motori scaricano modelli da server esterni.
+    opzioni = PdfPipelineOptions(
+        do_ocr=True, do_table_structure=True,
+        ocr_options=TesseractCliOcrOptions(lang=["ita", "eng"]),
+        accelerator_options=AcceleratorOptions(num_threads=2),
+        artifacts_path=os.environ.get("DOCLING_MODELLI") or None)
+    # Descrizione delle immagini: Docling manda ogni immagine al nostro VLM
+    # (via LiteLLM, il qwen multimodale) e ne scrive una descrizione nel testo.
+    # Cosi' il RAG trova "divano rosso" anche se il colore sta solo nella foto.
+    url = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
+    chiave = os.environ.get("LITELLM_MASTER_KEY", "")
+    modello = os.environ.get("LLM_DESCRIZIONE_IMMAGINI", "ragionamento")
+    opzioni.do_picture_description = True
+    opzioni.enable_remote_services = True
+    opzioni.picture_description_options = PictureDescriptionApiOptions(
+        url=f"{url}/v1/chat/completions",
+        headers={"Authorization": f"Bearer {chiave}"} if chiave else {},
+        params={"model": modello},
+        prompt=("Descrivi in italiano questa immagine in 2-3 frasi, concentrandoti su cio' che mostra "
+                "di utile per un catalogo (prodotti, forme, colori, parti visibili, etichette). "
+                "Non inventare dati non visibili."),
+        timeout=120,
+        concurrency=1)
+    return opzioni
+
+
 def _converti(percorso, blocco):
     """Converte UN blocco di pagine (o un file intero) con Docling e restituisce
-    [(testo, pagina)]. Gira in un processo a parte che muore subito dopo:
-    Docling non restituisce la memoria fra un blocco e l'altro (misurato:
-    da 1,3 a oltre 6 GB, swap compreso, su un PDF di 266 pagine), e un
-    processo che finisce la restituisce tutta."""
-    from docling.datamodel.accelerator_options import AcceleratorOptions
+    [(testo, pagina)] e le immagini [(PIL.Image, pagina)]. Gira in un processo a
+    parte che muore subito dopo: Docling non restituisce la memoria fra un
+    blocco e l'altro (misurato: da 1,3 a oltre 6 GB, swap compreso, su un PDF di
+    266 pagine), e un processo che finisce la restituisce tutta."""
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliOcrOptions
     from docling.datamodel.settings import settings
     from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
     settings.perf.page_batch_size = 1          # una pagina alla volta in memoria
-    # OCR con Tesseract (pacchetto Debian, italiano e inglese): funziona senza
-    # rete, gli altri motori scaricano modelli da server esterni.
-    opzioni = PdfPipelineOptions(do_ocr=True, do_table_structure=True,
-                                 ocr_options=TesseractCliOcrOptions(lang=["ita", "eng"]),
-                                 accelerator_options=AcceleratorOptions(num_threads=2),
-                                 artifacts_path=os.environ.get("DOCLING_MODELLI") or None)
+    opzioni = _opzioni_pdf()
     conv = DocumentConverter(format_options={
         InputFormat.PDF: PdfFormatOption(pipeline_options=opzioni),
         InputFormat.IMAGE: ImageFormatOption(pipeline_options=opzioni)})
     ris = conv.convert(percorso, page_range=blocco) if blocco else conv.convert(percorso)
-    return _chunk(ris.document)
+    return _chunk(ris.document), _immagini(ris.document)
+
+
+def _immagini(documento):
+    """Le immagini (PictureItem) e le tabelle (TableItem, rese come immagine)
+    del documento, con la loro pagina e la descrizione generata dal VLM."""
+    out = []
+    for pic in documento.pictures:
+        try:
+            img = pic.get_image(documento)
+        except Exception:
+            continue
+        if img is None:
+            continue
+        pagina = pic.prov[0].page_no if pic.prov else None
+        descr = (pic.meta.description.text if pic.meta and pic.meta.description else None)
+        out.append((img, pagina, descr))
+    for tab in documento.tables:
+        try:
+            img = tab.get_image(documento)
+        except Exception:
+            continue
+        if img is None:
+            continue
+        pagina = tab.prov[0].page_no if tab.prov else None
+        out.append((img, pagina, None))
+    return out
+
+
+def _descrizioni(immagini):
+    """Le descrizioni VLM delle immagini entrano nel testo ricercabile, sulla
+    pagina dell'immagine: cosi' una domanda sul contenuto visivo trova il pezzo
+    giusto anche senza leggere i pixel."""
+    out = []
+    for (_img, pagina, descr) in immagini:
+        if descr:
+            out.append((f"Immagine: {descr}", pagina))
+    return out
 
 
 def _chunk(documento):
@@ -220,7 +281,7 @@ def _converti_remoto(percorso, blocco):
     from docling_core.types.doc import DoclingDocument
     token = os.environ.get("INFERENCE_TOKEN") or ""
     campi = {"to_formats": ["json"], "do_ocr": "true", "ocr_lang": ["it", "en"],
-             "table_mode": "accurate", "image_export_mode": "placeholder", "abort_on_error": "false"}
+             "table_mode": "accurate", "image_export_mode": "embedded", "abort_on_error": "false"}
     if blocco:
         campi["page_range"] = [str(blocco[0]), str(blocco[1])]
     with open(percorso, "rb") as f:
@@ -233,7 +294,8 @@ def _converti_remoto(percorso, blocco):
     ris = r.json()
     if ris.get("status") not in ("success", "partial_success"):
         raise RuntimeError(f"docling-serve: {ris.get('status')} {str(ris.get('errors'))[:300]}")
-    return _chunk(DoclingDocument.model_validate(ris["document"]["json_content"]))
+    doc = DoclingDocument.model_validate(ris["document"]["json_content"])
+    return _chunk(doc), _immagini(doc)
 
 
 class Lettore:
@@ -243,10 +305,11 @@ class Lettore:
     non leggibile; il servizio va avanti. ponytail: i modelli si ricaricano a ogni blocco (qualche secondo);
     pochi secondi contro un servizio che non si pianta."""
 
-    def pezzi(self, p: pathlib.Path):
+    def pezzi(self, p: pathlib.Path, progresso=None):
+        """progresso(fatte, totali) se c'e', chiamata ad ogni blocco completato."""
         if p.suffix.lower() in TESTO:
             testo = p.read_text(encoding="utf-8", errors="replace")
-            return unisci([(x, None) for x in re.split(r"\n\s*\n", testo)])
+            return unisci([(x, None) for x in re.split(r"\n\s*\n", testo)]), []
         blocchi = [None]
         if p.suffix.lower() == ".pdf":
             import pypdfium2
@@ -254,20 +317,28 @@ class Lettore:
             n = len(pdf)
             pdf.close()
             blocchi = [(a, min(a + PAGINE_PER_BLOCCO - 1, n)) for a in range(1, n + 1, PAGINE_PER_BLOCCO)] or [None]
-        grezzi = []
+            if progresso:
+                progresso(0, n)
+        grezzi, immagini = [], []
         if DOCLING_URL:
             for blocco in blocchi:
-                grezzi += _converti_remoto(str(p), blocco)
+                g, im = _converti_remoto(str(p), blocco)
+                grezzi += g
+                immagini += im
                 if len(blocchi) > 1:
                     print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]} (GPU)", flush=True)
-            return unisci(grezzi)
+                if progresso and blocco:
+                    progresso(blocco[1], blocchi[-1][1])
+            return unisci(grezzi + _descrizioni(immagini)), immagini
         import multiprocessing
         for blocco in blocchi:
             # Un processo per blocco, chiuso a forza se non finisce in tempo.
             pool = multiprocessing.get_context("spawn").Pool(1, maxtasksperchild=1)
             dove = f" (pagine {blocco[0]}-{blocco[1]})" if blocco else ""
             try:
-                grezzi += pool.apply_async(_converti, (str(p), blocco)).get(timeout=SECONDI_PER_BLOCCO)
+                g, im = pool.apply_async(_converti, (str(p), blocco)).get(timeout=SECONDI_PER_BLOCCO)
+                grezzi += g
+                immagini += im
             except multiprocessing.TimeoutError:
                 raise MemoryError(f"lettura troppo lenta{dove}: oltre {SECONDI_PER_BLOCCO} s, "
                                   f"probabile memoria esaurita") from None
@@ -276,7 +347,9 @@ class Lettore:
                 pool.join()
             if len(blocchi) > 1:
                 print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]}", flush=True)
-        return unisci(grezzi)
+            if progresso and blocco:
+                progresso(blocco[1], blocchi[-1][1])
+        return unisci(grezzi + _descrizioni(immagini)), immagini
 
 
 # ------------------------------------------------------------------ vettori
@@ -366,6 +439,49 @@ def impronta_file(p):
     return h.hexdigest()
 
 
+RADICE_IMMAGINI = pathlib.Path(os.environ.get("IMMAGINI", "/immagini"))
+MAX_LATO = 1024          # le immagini di catalogo sono enormi: si riducono una volta per tutte
+
+
+def _riduci(img):
+    """L'immagine ridotta al massimo a MAX_LATO px sul lato lungo, in proporzione.
+
+    Serve a tenere i file leggeri (serving) e i data URL piccoli (vision): una
+    foto da 4000 px in base64 sfonderebbe il contesto del modello senza aggiungere
+    informazione utile a una domanda.""" 
+    img = img.convert("RGB") if img.mode not in ("RGB", "L") else img
+    if max(img.size) > MAX_LATO:
+        img.thumbnail((MAX_LATO, MAX_LATO))
+    return img
+
+
+def _salva_immagini(conn, fid, rel, immagini):
+    """Salva le immagini estratte sul volume condiviso e le collega nel DB.
+
+    Le immagini di un documento si cancellano e si riscrivono a ogni lettura
+    (come i chunk): un'immagine sparita dal PDF sparisce dall'indice. Il
+    percorso e' `fid/<hash del documento>/<pagina>_<n>.png`, stabile e univoco.
+    """
+    conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
+    if not immagini:
+        return 0
+    radice = RADICE_IMMAGINI / fid / hashlib.sha256(rel.encode()).hexdigest()[:16]
+    radice.mkdir(parents=True, exist_ok=True)
+    # Le immagini vecchie che non torneranno (pagine rimosse) restano sul disco:
+    # si rigenerano con lo stesso nome solo se la pagina e l'ordine coincidono.
+    # ponytail: i file orfani pesano poco; si ripuliscono con una regola a parte se servira'.
+    salvate = 0
+    for n, (img, pagina, _descr) in enumerate(immagini):
+        nome = f"{pagina or 0}_{n}.png"
+        _riduci(img).save(radice / nome)
+        conn.execute(
+            "INSERT INTO immagini (source_id, documento, page, percorso)"
+            " VALUES (%s, %s, %s, %s)",
+            (fid, rel, pagina, f"{fid}/{radice.name}/{nome}"))
+        salvate += 1
+    return salvate
+
+
 def indicizza_fonte(conn, fonte, lettore, stato_vettori):
     fid, percorso, aziende = fonte
     azienda = aziende[0] if len(aziende) == 1 else None
@@ -416,6 +532,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori):
         if escluso:
             with conn.transaction():
                 conn.execute("DELETE FROM chunks WHERE source_id = %s AND documento = %s", (fid, rel))
+                conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
                 conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi)
                                 VALUES (%s,%s,%s,%s,%s,'escluso',%s,0)
                                 ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
@@ -426,14 +543,18 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori):
             conteggi["esclusi"] = conteggi.get("esclusi", 0) + 1
             print(f"  escluso: {fid}/{rel} ({escluso})")
             continue
-        conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi)
-                        VALUES (%s,%s,%s,%s,%s,'errore',%s,0)
+        conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi, in_lettura)
+                        VALUES (%s,%s,%s,%s,%s,'errore',%s,0,now())
                         ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
                           dimensione = EXCLUDED.dimensione, modificato_il = EXCLUDED.modificato_il,
-                          stato = 'errore', errore = EXCLUDED.errore, indicizzato_il = now()""",
+                          stato = 'errore', errore = EXCLUDED.errore, in_lettura = now(), indicizzato_il = now()""",
                      (fid, rel, impronta, st.st_size, quando, IN_LETTURA))
+        def _progresso(fatte, totali):
+            """Il pannello fonti legge pagine_fatte/pagine_totali mentre il file gira."""
+            conn.execute("UPDATE documenti SET pagine_fatte = %s, pagine_totali = %s"
+                         " WHERE source_id = %s AND documento = %s", (fatte, totali, fid, rel))
         try:
-            pezzi = lettore.pezzi(p)
+            pezzi, immagini = lettore.pezzi(p, _progresso)
         except Exception as e:
             conteggi["errori"] += 1
             print(f"  ERRORE {fid}/{rel}: {type(e).__name__}: {e}")
@@ -443,7 +564,8 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori):
                                 VALUES (%s,%s,%s,%s,%s,'errore',%s,0)
                                 ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
                                   dimensione = EXCLUDED.dimensione, modificato_il = EXCLUDED.modificato_il,
-                                  stato = 'errore', errore = EXCLUDED.errore, pezzi = 0, indicizzato_il = now()""",
+                                  stato = 'errore', errore = EXCLUDED.errore, pezzi = 0,
+                                  in_lettura = NULL, indicizzato_il = now()""",
                              (fid, rel, impronta, st.st_size, quando, f"{type(e).__name__}: {e}"[:500]))
                 anomalia(conn, chiave, "attenzione", f"File non leggibile: {rel}",
                          "Aprire il file: se e' danneggiato o protetto da password, sostituirlo con una copia "
@@ -466,20 +588,24 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori):
                                 ON CONFLICT (source_id, documento, page, content_hash) DO NOTHING""",
                              (fid, rel, pagina, testo, hashlib.sha256(testo.encode()).hexdigest(),
                               vettore_sql(vett[i]) if vett else None))
+            _salva_immagini(conn, fid, rel, immagini)
             conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi)
                             VALUES (%s,%s,%s,%s,%s,%s,NULL,%s)
                             ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
                               dimensione = EXCLUDED.dimensione, modificato_il = EXCLUDED.modificato_il,
-                              stato = EXCLUDED.stato, errore = NULL, pezzi = EXCLUDED.pezzi, indicizzato_il = now()""",
+                              stato = EXCLUDED.stato, errore = NULL, pezzi = EXCLUDED.pezzi,
+                              in_lettura = NULL, indicizzato_il = now()""",
                          (fid, rel, impronta, st.st_size, quando, "indicizzato" if pezzi else "vuoto", len(pezzi)))
             chiudi(conn, chiave)
         conteggi["cambiati" if vecchio else "nuovi"] += 1
-        print(f"  {'aggiornato' if vecchio else 'nuovo'}: {fid}/{rel} ({len(pezzi)} pezzi{'' if vett else ', senza vettori'})")
+        print(f"  {'aggiornato' if vecchio else 'nuovo'}: {fid}/{rel} ({len(pezzi)} pezzi, {len(immagini)} immagini"
+              f"{'' if vett else ', senza vettori'})")
 
     # Cancellati dalla cartella: via dall'indice.
     for rel in set(noti) - {r for r, _ in presenti}:
         with conn.transaction():
             conn.execute("DELETE FROM chunks WHERE source_id = %s AND documento = %s", (fid, rel))
+            conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
             conn.execute("DELETE FROM documenti WHERE source_id = %s AND documento = %s", (fid, rel))
             chiudi(conn, f"illeggibile:{fid}:{rel}")
         conteggi["tolti"] += 1
@@ -543,6 +669,11 @@ def giro(aspetta=False):
             conn.execute("SELECT pg_advisory_lock(%s)", (BLOCCO,))
         elif not conn.execute("SELECT pg_try_advisory_lock(%s)", (BLOCCO,)).fetchone()[0]:
             return None, 0
+        # Residui di un giro morto a meta': un file segnato "in lettura" che non
+        # e' piu' in lettura. Uno solo girerebbe senza azzerarli (il processo
+        # che li ha scritti se n'e' andato): alla prossima lettura valida.
+        conn.execute("UPDATE documenti SET in_lettura = NULL, pagine_fatte = 0, pagine_totali = NULL"
+                     " WHERE in_lettura IS NOT NULL")
         fonti = [f for f in conn.execute(
             """SELECT id, percorso, aziende FROM sources
                 WHERE provenienza = 'cartella' AND stato IN ('attiva', 'attesa') ORDER BY id""").fetchall()

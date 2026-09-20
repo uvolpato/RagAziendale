@@ -395,7 +395,8 @@
       '<div class="table-box"><table class="tbl"><thead><tr>' +
       '<th scope="col" class="sortable" data-k="descrizione">Nome' + freccia(FS, 'descrizione') + '</th><th scope="col">Tipo</th><th scope="col">Provenienza</th><th scope="col">Chi può vederla</th><th scope="col">Aziende</th><th scope="col">Uso di servizi esterni</th><th scope="col">Responsabile</th><th scope="col" class="sortable" data-k="aggiornata">Aggiornata' + freccia(FS, 'aggiornata') + '</th><th scope="col" class="sortable" data-k="stato">Stato' + freccia(FS, 'stato') + '</th></tr></thead><tbody>' +
       pag.map(function (f) {
-        return '<tr data-apri="' + esc(f.id) + '"><td class="prim">' + esc(f.descrizione) + '</td><td>' + (f.tipo === 'documenti' ? 'Documenti' : 'Dati gestionali') + '</td>' +
+        return '<tr data-apri="' + esc(f.id) + '"><td class="prim">' + esc(f.descrizione) +
+          (f.in_lettura ? ' ' + badge(['info', 'In importazione…', 'b-stato-info']) : '') + '</td><td>' + (f.tipo === 'documenti' ? 'Documenti' : 'Dati gestionali') + '</td>' +
           '<td style="color:var(--testo-tenue)">' + esc(PROVENIENZA[f.provenienza] || f.provenienza) + '<span class="sub">' + esc(f.percorso) + '</span></td>' +
           '<td>' + esc(f.acl_groups.join(', ')) + '</td><td>' + chipAz(f.aziende) + '</td><td>' + resBadge(f.residency) + '</td>' +
           '<td>' + (f.owner && f.owner !== 'da-assegnare' ? esc(f.owner) : '<span style="color:var(--stato-attenzione)">' + ic('warn') + ' Nessuno</span>') + '</td>' +
@@ -484,8 +485,8 @@
       var l = d.documenti;
       if (d.provenienza !== 'cartella') { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Questa fonte non è una cartella: i suoi contenuti arrivano da ' + esc(PROVENIENZA[d.provenienza] || d.provenienza) + ', non file per file.</span></div>'; return; }
       if (!l.length) { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Nessun documento ancora. La cartella si legge ogni pochi minuti: se resta vuota, controlla il percorso e le anomalie.</span></div>'; return; }
-      var n = { indicizzato: 0, errore: 0, vuoto: 0, escluso: 0 }, doppi = 0, senza = 0, pezzi = 0;
-      l.forEach(function (x) { n[x.stato] = (n[x.stato] || 0) + 1; if (x.doppione) doppi++; if (x.senza_vettori) senza++; pezzi += x.pezzi; });
+      var n = { indicizzato: 0, errore: 0, vuoto: 0, escluso: 0 }, doppi = 0, senza = 0, pezzi = 0, inLettura = 0;
+      l.forEach(function (x) { n[x.stato] = (n[x.stato] || 0) + 1; if (x.doppione) doppi++; if (x.senza_vettori) senza++; pezzi += x.pezzi; if (x.in_lettura) inLettura++; });
       p.innerHTML =
         '<p style="font-size:13.5px;margin-top:0">' + l.length + (l.length === 1 ? ' file' : ' file') + ', ' + pezzi + ' pezzi di testo. ' +
           (n.indicizzato ? badge(['ok', n.indicizzato + ' indicizzati', 'b-stato-ok']) + ' ' : '') +
@@ -493,18 +494,38 @@
           (n.vuoto ? badge(['neut', n.vuoto + ' senza testo', 'b-stato-neutro']) + ' ' : '') +
           (n.escluso ? badge(['neut', n.escluso + ' esclusi', 'b-stato-neutro']) + ' ' : '') +
           (doppi ? badge(['warn', doppi + ' doppioni', 'b-stato-attenzione']) + ' ' : '') +
-          (senza ? badge(['warn', senza + ' senza vettori', 'b-stato-attenzione']) : '') + '</p>' +
+          (senza ? badge(['warn', senza + ' senza vettori', 'b-stato-attenzione']) + ' ' : '') +
+          (inLettura ? badge(['info', 'In elaborazione…', 'b-stato-info']) : '') + '</p>' +
         '<p class="ro-note">' + ic('info') + 'Non compaiono, di proposito, le sottocartelle <span class="mono">_bozze</span> e <span class="mono">_archivio</span>. I fogli di calcolo con i prezzi restano fuori («Escluso», con il motivo): i prezzi vengono dal gestionale.' +
           (senza ? ' «Senza vettori»: il servizio dei modelli non rispondeva; si completano da soli al giro dopo, intanto la ricerca testuale li trova.' : '') + '</p>' +
-        '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">File</th><th scope="col">Stato</th><th scope="col" class="num-col">Pezzi</th><th scope="col">Modificato</th><th scope="col">Letto</th></tr></thead><tbody>' +
+        '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">File</th><th scope="col">Stato</th><th scope="col" class="num-col">Pezzi</th><th scope="col">Modificato</th><th scope="col">Letto</th>' +
+        (can('fonti') ? '<th scope="col"></th>' : '') + '</tr></thead><tbody>' +
         l.map(function (x) {
+          var el = '';
+          if (x.in_lettura) {
+            el = badge(['info', 'In elaborazione', 'b-stato-info']);
+            if (x.pagine_totali) {
+              var pc = Math.round(100 * x.pagine_fatte / x.pagine_totali);
+              el += '<div style="margin-top:5px;width:120px;height:6px;background:var(--campo);border-radius:3px;overflow:hidden"><div style="width:' + pc + '%;height:100%;background:var(--marchio)"></div></div>' +
+                    '<span class="sub" style="margin-top:2px">' + pc + '% · pagina ' + x.pagine_fatte + ' di ' + x.pagine_totali + '</span>';
+            }
+          }
           return '<tr><td class="mono" style="word-break:break-all">' + esc(x.documento) + '<span class="sub">' + peso(x.dimensione) + '</span>' +
             (x.errore ? '<span class="sub"' + (x.stato === 'errore' ? ' style="color:var(--stato-critico)"' : '') + '>' + esc(x.errore) + '</span>' : '') + '</td>' +
-            '<td>' + badge(STATO_DOC[x.stato]) + (x.doppione ? ' ' + badge(['warn', 'Doppione', 'b-stato-attenzione']) : '') +
-              (x.senza_vettori ? ' ' + badge(['warn', 'Senza vettori', 'b-stato-attenzione']) : '') + '</td>' +
-            '<td class="num-col">' + x.pezzi + '</td><td>' + esc(dataOra(x.modificato_il)) + '</td><td>' + quando(x.indicizzato_il) + '</td></tr>';
+            '<td>' + (el || badge(STATO_DOC[x.stato]) + (x.doppione ? ' ' + badge(['warn', 'Doppione', 'b-stato-attenzione']) : '') +
+              (x.senza_vettori ? ' ' + badge(['warn', 'Senza vettori', 'b-stato-attenzione']) : '')) + '</td>' +
+            '<td class="num-col">' + x.pezzi + '</td><td>' + esc(dataOra(x.modificato_il)) + '</td><td>' + quando(x.indicizzato_il) + '</td>' +
+            (can('fonti') ? '<td><button class="btn btn-secondary btn-sm btn-rielabora" data-doc="' + esc(x.documento) + '"' +
+              (x.in_lettura ? ' disabled' : '') + '>Rielabora</button></td>' : '') + '</tr>';
         }).join('') + '</tbody></table></div>';
+      $$('#f-panel .btn-rielabora').forEach(function (b) { b.onclick = function () { rielaboraDocumento(f, this.dataset.doc, p); }; });
+      if (inLettura) setTimeout(function () { if (document.body.contains(p)) documentiFonte(f, p); }, 4000);
     }).catch(function (e) { p.innerHTML = '<div class="notice notice-crit">' + ic('err') + '<span>' + esc(e.message) + '</span></div>'; });
+  }
+  function rielaboraDocumento(f, documento, p) {
+    api('POST', '/fonti/' + encodeURIComponent(f.id) + '/documenti/rielabora', { documento: documento })
+      .then(function () { toast('Da rielaborare al prossimo giro.'); documentiFonte(f, p); })
+      .catch(function (e) { toast(e.message, 'err'); });
   }
   function apriFonte(id) {
     var mostra = function (f) {

@@ -78,7 +78,9 @@ services:
   ingestion:
     environment:
       # Lettura sulla GPU del container docling qui sopra. Vuoto = CPU locale.
-      DOCLING_URL: ${DOCLING_URL:-http://docling:5001}
+      # `${VAR-...}` (senza `:`) rispetta un DOCLING_URL esplicitamente vuoto:
+      # cosi' una macchina senza GPU Docker lascia vuoto in .env e va su CPU.
+      DOCLING_URL: ${DOCLING_URL-http://docling:5001}
 
   orchestratore:
     volumes:

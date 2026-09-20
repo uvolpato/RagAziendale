@@ -23,15 +23,17 @@ import time
 import psycopg
 from psycopg.rows import dict_row
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from orchestratore import egress, gate, identita, prompt, recupero
+from orchestratore import egress, gate, identita, immagini, prompt, recupero
 
 app = FastAPI()
 
 MODEL_NAME = "assistente-v1"
 LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
 MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
+APP_HOST = os.environ.get("APP_HOST", "assistente.localhost")
+MAX_IMMAGINI = 4          # quante immagini citare in fondo alla risposta: oltre appesantisce
 
 
 @app.on_event("startup")
@@ -52,10 +54,25 @@ def _domanda(messages) -> str:
     return ""
 
 
+def _immagini_del_turno(righe):
+    """Le immagini dei chunk recuperati, senza doppioni, fino a MAX_IMMAGINI.
+
+    Le descrizioni VLM stanno gia' nel testo dei chunk (le produce Docling in
+    ingestion): qui si cita solo l'URL firmato, in fondo alla risposta, cosi'
+    l'utente vede le figure a cui il testo si riferisce."""
+    ids = []
+    for r in righe:
+        for iid in (r.get("immagini") or []):
+            if iid not in ids:
+                ids.append(iid)
+    return ids[:MAX_IMMAGINI]
+
+
 def _stream_litellm(messages, rotta, uso):
     """Chiama LiteLLM in streaming e cede i chunk OpenAI-compatible cosi come
     arrivano, riscrivendo solo il nome del modello (assistente-v1). `uso` e' un
-    dict da riempire con token_in/token_out letti dall'ultimo chunk."""
+    dict da riempire con token_in/token_out letti dall'ultimo chunk. Il [DONE]
+    lo emette il chiamante: qui si cede solo il flusso del modello."""
     testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
     corpo = {
         "model": rotta,
@@ -86,7 +103,6 @@ def _stream_litellm(messages, rotta, uso):
                     if pezzo.get("model"):
                         pezzo["model"] = MODEL_NAME
                     yield f"data: {json.dumps(pezzo)}\n\n"
-        yield "data: [DONE]\n\n"
 
 
 def _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
@@ -140,15 +156,30 @@ async def chat(request: Request):
             {"error": {"message": str(e), "type": "risposta_rifiutata"}}, status_code=403)
 
     # 5. Prompt: system + contesto + la cronologia dei messaggi.
+    ids_immagini = _immagini_del_turno(righe)
+    url_per_pos = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}")
+                   for i, iid in enumerate(ids_immagini)}
     messaggi = [{"role": "system", "content": prompt.SYSTEM + "\n" + prompt.contesto(righe)}]
-    messaggi += [m for m in corpo.get("messages", [])
-                 if isinstance(m.get("content"), str) and m.get("role") in ("user", "assistant")]
+    storico = [m for m in corpo.get("messages", [])
+               if isinstance(m.get("content"), str) and m.get("role") in ("user", "assistant")]
+    messaggi += storico
+
+    def _immagini_finali():
+        """Il blocco markdown con le figure citate, in coda alla risposta."""
+        if not url_per_pos:
+            return ""
+        return ("\n\n" + "\n".join(f"![immagine {n}]({u})"
+                                    for n, u in url_per_pos.items()))
 
     def gen():
         uso = {}
         try:
             for pezzo in _stream_litellm(messaggi, decisione["rotta"], uso):
                 yield pezzo
+            finale = _immagini_finali()
+            if finale:
+                yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': finale}, 'index': 0}]})}\n\n"
+            yield "data: [DONE]\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': {'message': str(e), 'type': 'upstream_error'}})}\n\n"
             yield "data: [DONE]\n\n"
@@ -159,6 +190,25 @@ async def chat(request: Request):
             conn.close()
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/immagini/{img_id}")
+def servizio_immagine(img_id: int, scade: str = "", firma: str = ""):
+    """Serve un'immagine SOLO con URL firmato valido: la firma viene emessa dal
+    gate quando ha ammesso il chunk. Niente id libero = niente IDOR sulle
+    immagini altrui."""
+    if not immagini.valida(img_id, scade, firma):
+        return JSONResponse({"error": "url non valido o scaduto"}, status_code=403)
+    conn = _conn()
+    try:
+        dati = immagini.leggi(conn, img_id)
+    finally:
+        conn.close()
+    if not dati:
+        return JSONResponse({"error": "immagine non trovata"}, status_code=404)
+    b, tipo = dati
+    return Response(content=b, media_type=tipo,
+                    headers={"Cache-Control": "private, max-age=300"})
 
 
 @app.get("/health")

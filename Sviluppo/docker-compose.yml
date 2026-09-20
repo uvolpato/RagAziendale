@@ -180,6 +180,8 @@ services:
       OIDC_ISSUER: https://${SSO_HOST}/realms/${REALM}
       OIDC_AUDIENCE: orchestratore
       ORCHESTRATOR_KEY: ${ORCHESTRATOR_KEY}
+      # Host pubblico per firmare gli URL delle immagini servite in chat.
+      APP_HOST: ${APP_HOST}
       # --- I modelli si raggiungono SOLO attraverso il proxy, per nome logico.
       # L'orchestratore non sa quale modello gira ne di quale provider sia:
       # la scelta vive in litellm-config.yaml. Nessuna chiave di provider qui.
@@ -195,6 +197,10 @@ services:
       # richiesta verso un host non dichiarato e un errore, non un warning.
       EGRESS_INTERNAL: ${EGRESS_INTERNAL}
       EGRESS_EXTERNAL: ${EGRESS_EXTERNAL}
+      # Radice delle immagini estratte: qui in SOLA LETTURA, le serve su /immagini.
+      IMMAGINI: /immagini
+    volumes:
+      - immagini-data:/immagini:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -422,6 +428,9 @@ services:
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       LLM_EMBEDDING: embedding
+      # Il modello (nome logico LiteLLM) che descrive le immagini estratte dai
+      # cataloghi. Deve essere multimodale: e' il qwen (ragionamento).
+      LLM_DESCRIZIONE_IMMAGINI: ${LLM_DESCRIZIONE_IMMAGINI:-ragionamento}
       # Dove si leggono i documenti (layout, tabelle, OCR): docling-serve su
       # una GPU. Vuoto = sul posto, su CPU (lento ma funziona). In sviluppo lo
       # imposta docker-compose.override.yml; in produzione e' il server GPU,
@@ -432,10 +441,15 @@ services:
       DOCLING_CA: ${DOCLING_CA:-}
       INFERENCE_TOKEN: ${INFERENCE_TOKEN}
       INTERVALLO: ${INTERVALLO_INDICIZZAZIONE:-300}
+      # Radice dove salvare le immagini estratte dai documenti (cataloghi):
+      # si scrive qui, l'orchestratore le serve in sola lettura.
+      IMMAGINI: /immagini
     volumes:
       # Radice delle cartelle: in produzione la condivisione di rete montata
       # sull'host. Il percorso di ogni fonte e' relativo a questa radice.
       - ${CARTELLE_PATH:-./cartelle}:/cartelle:ro
+      # Le immagini estratte: qui in scrittura, in orchestratore in sola lettura.
+      - immagini-data:/immagini
     depends_on:
       postgres:
         condition: service_healthy
@@ -489,3 +503,4 @@ volumes:
   caddy-data:
   dagster-data:
   uptime-kuma-data:
+  immagini-data:

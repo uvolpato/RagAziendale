@@ -209,10 +209,10 @@ def _destinazione(s, request):
 
 @app.get(f"{BASE}/dopo-login")
 def dopo_login(request: Request):
-    """Dove Caddy manda il callback della chat. Nessuna pagina: solo 302."""
-    s = _sessione(request)
-    if s:
-        return RedirectResponse(_destinazione(s, request), 302)
+    """Dove Caddy manda il callback della chat. Nessuna pagina: solo 302.
+    Riautentica SEMPRE: il cookie amm_sessione può riferirsi a un login SSO
+    precedente (utente cambiato). Con SSO ancora attivo Keycloak risponde
+    subito, senza schermata."""
     return _vai_al_login("dopo-login")
 
 
@@ -255,6 +255,19 @@ def pagina(request: Request):
     if not s["ruoli"]:
         return RedirectResponse(CHAT, 302)
     return FileResponse(QUI / "static" / "index.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get(f"{BASE}/scelta")
+def vai_alla_scelta(request: Request):
+    """Il link «Torna alla scelta» dalla chat: mostra la scelta ANCHE se
+    l'utente ha ricordato «chat» (amm_scelta). La preferenza ricordata vale
+    solo al login normale, non quando si chiede esplicitamente la scelta."""
+    s = _sessione(request)
+    if not s:
+        return _vai_al_login("scelta")
+    if not s["ruoli"]:
+        return RedirectResponse(CHAT, 302)        # operatore: nessuna scelta
+    return RedirectResponse(f"{BASE}/#/scelta", 302)
 
 
 @app.get(f"{BASE}/tema.css")
@@ -339,7 +352,8 @@ def _fonti(conn, s):
         SELECT s.*,
                (SELECT count(DISTINCT documento) FROM chunks c WHERE c.source_id = s.id) AS documenti,
                (SELECT count(DISTINCT (documento, page)) FROM chunks c WHERE c.source_id = s.id) AS pagine,
-               (SELECT max(updated_at) FROM chunks c WHERE c.source_id = s.id) AS aggiornata
+               (SELECT max(updated_at) FROM chunks c WHERE c.source_id = s.id) AS aggiornata,
+               (SELECT count(*) FROM documenti d WHERE d.source_id = s.id AND d.in_lettura IS NOT NULL) AS in_lettura
           FROM sources s
          WHERE s.aziende && %s::text[] OR s.aziende = '{}'
          ORDER BY s.descrizione""", (s["aziende"],)).fetchall()
@@ -370,6 +384,7 @@ def documenti_fonte(fid: str, s=Depends(utente)):
             raise HTTPException(403, "la fonte riguarda aziende a cui non sei abilitato")
         righe = conn.execute("""
             SELECT d.documento, d.stato, d.errore, d.pezzi, d.dimensione, d.modificato_il, d.indicizzato_il,
+                   d.in_lettura, d.pagine_fatte, d.pagine_totali,
                    (SELECT count(*) FROM chunks c WHERE c.source_id = d.source_id AND c.documento = d.documento
                      AND c.embedding IS NULL) AS senza_vettori
               FROM documenti d WHERE d.source_id = %s ORDER BY d.documento""", (fid,)).fetchall()
@@ -379,6 +394,34 @@ def documenti_fonte(fid: str, s=Depends(utente)):
     for r in righe:
         r["doppione"] = r["documento"] in doppi
     return {"provenienza": f["provenienza"], "documenti": righe}
+
+
+@app.post(f"{BASE}/api/fonti/{{fid}}/documenti/rielabora")
+async def rielabora_documento(fid: str, request: Request, s=Depends(utente)):
+    """Rileggere un documento DA SUBITO: la riga sparisce da `documenti` e il
+    prossimo giro di ingestion lo tratta come nuovo (prima non si rileggeva se
+    impronta e data non cambiavano). Si registra nel registro delle modifiche."""
+    serve(s, "fonti", "M")
+    corpo = await request.json()
+    documento = (corpo.get("documento") or "").strip()
+    if not documento:
+        raise HTTPException(422, "documento mancante")
+    with db() as conn:
+        f = conn.execute("SELECT aziende FROM sources WHERE id = %s", (fid,)).fetchone()
+        if not f:
+            raise HTTPException(404, "fonte inesistente")
+        if f["aziende"] and not set(f["aziende"]) & set(s["aziende"]):
+            raise HTTPException(403, "la fonte riguarda aziende a cui non sei abilitato")
+        with conn.transaction():
+            conn.execute("DELETE FROM chunks WHERE source_id = %s AND documento = %s", (fid, documento))
+            conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, documento))
+            cur = conn.execute("DELETE FROM documenti WHERE source_id = %s AND documento = %s RETURNING documento",
+                               (fid, documento))
+            if not cur.fetchone():
+                raise HTTPException(404, "documento inesistente")
+        registra(conn, s, "fonti", "rielabora documento", oggetto=documento,
+                 azienda=f["aziende"][0] if len(f["aziende"]) == 1 else None)
+    return {"ok": True}
 
 
 @app.post(f"{BASE}/api/fonti/{{fid}}/residenza")

@@ -62,7 +62,10 @@ fusi AS (
     ) x GROUP BY id
 )
 SELECT c.id, c.source_id, c.documento, c.page, c.content,
-       s.residency, f.punteggio
+       s.residency, f.punteggio,
+       (SELECT array_agg(i.id ORDER BY i.id) FROM immagini i
+         WHERE i.source_id = c.source_id AND i.documento = c.documento
+           AND i.page IS NOT DISTINCT FROM c.page) AS immagini
 FROM fusi f
 JOIN chunks c  ON c.id = f.id
 JOIN consentite s ON s.id = c.source_id
@@ -80,7 +83,10 @@ WITH consentite AS (
 )
 SELECT c.id, c.source_id, c.documento, c.page, c.content,
        s.residency,
-       ts_rank_cd(to_tsvector('italian', c.content), q) AS punteggio
+       ts_rank_cd(to_tsvector('italian', c.content), q) AS punteggio,
+       (SELECT array_agg(i.id ORDER BY i.id) FROM immagini i
+         WHERE i.source_id = c.source_id AND i.documento = c.documento
+           AND i.page IS NOT DISTINCT FROM c.page) AS immagini
 -- Attenzione all'ordine: una virgola dopo `chunks c` legherebbe il JOIN
 -- successivo a plainto_tsquery invece che a chunks, e Postgres risponde
 -- "invalid reference to FROM-clause entry". CROSS JOIN esplicito, sempre.

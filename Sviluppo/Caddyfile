@@ -75,6 +75,12 @@
 		reverse_proxy amministrazione:8000
 	}
 
+	# Immagini dei documenti (cataloghi): servite dall'orchestratore, che le
+	# concede solo con URL firmato a scadenza (il gate ha gia' ammesso il chunk).
+	handle /immagini* {
+		reverse_proxy orchestratore:8000
+	}
+
 	# ------------------------------------------------------------------
 	# Caricamento file in chat BLOCCATO qui, non solo in librechat.yaml
 	# (decisione 63). fileConfig.disabled nasconde il pulsante, ma non e'
