@@ -193,14 +193,20 @@ services:
       # Fase 1b: i dati 'interno' rispondono solo su questa rotta (gate). In
       # sviluppo punta allo stesso modello locale (GUIDA-MODELLI.md §4).
       LLM_RAGIONAMENTO_INTERNO: ragionamento_interno
+      # Coda del prompt di sistema per le stranezze del modello scelto. Con
+      # Qwen3 serve "/no_think": ragiona a voce alta e la risposta arriverebbe
+      # vuota (il pensiero viaggia in reasoning_content, che LibreChat ignora).
+      SUFFISSO_SISTEMA: ${SUFFISSO_SISTEMA-}
       # --- Allowlist di egress: il gate consente SOLO questi host. Qualsiasi
       # richiesta verso un host non dichiarato e un errore, non un warning.
       EGRESS_INTERNAL: ${EGRESS_INTERNAL}
       EGRESS_EXTERNAL: ${EGRESS_EXTERNAL}
-      # Radice delle immagini estratte: qui in SOLA LETTURA, le serve su /immagini.
-      IMMAGINI: /immagini
+      # Le immagini estratte stanno dentro le cartelle dei documenti
+      # (<fonte>/_immagini/...): qui la radice si monta in SOLA LETTURA, il
+      # percorso esatto lo dice la tabella immagini e l'URL e' firmato.
+      IMMAGINI: /cartelle
     volumes:
-      - immagini-data:/immagini:ro
+      - ${CARTELLE_PATH:-./cartelle}:/cartelle:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -428,9 +434,8 @@ services:
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       LLM_EMBEDDING: embedding
-      # Il modello (nome logico LiteLLM) che descrive le immagini estratte dai
-      # cataloghi. Deve essere multimodale: e' il qwen (ragionamento).
-      LLM_DESCRIZIONE_IMMAGINI: ${LLM_DESCRIZIONE_IMMAGINI:-ragionamento}
+      # Le immagini dei cataloghi le descrive Docling con il suo VLM locale
+      # (SmolVLM, dentro l'immagine): nessun modello esterno da chiamare.
       # Dove si leggono i documenti (layout, tabelle, OCR): docling-serve su
       # una GPU. Vuoto = sul posto, su CPU (lento ma funziona). In sviluppo lo
       # imposta docker-compose.override.yml; in produzione e' il server GPU,
@@ -441,15 +446,15 @@ services:
       DOCLING_CA: ${DOCLING_CA:-}
       INFERENCE_TOKEN: ${INFERENCE_TOKEN}
       INTERVALLO: ${INTERVALLO_INDICIZZAZIONE:-300}
-      # Radice dove salvare le immagini estratte dai documenti (cataloghi):
-      # si scrive qui, l'orchestratore le serve in sola lettura.
-      IMMAGINI: /immagini
     volumes:
       # Radice delle cartelle: in produzione la condivisione di rete montata
       # sull'host. Il percorso di ogni fonte e' relativo a questa radice.
-      - ${CARTELLE_PATH:-./cartelle}:/cartelle:ro
-      # Le immagini estratte: qui in scrittura, in orchestratore in sola lettura.
-      - immagini-data:/immagini
+      # IN SCRITTURA, e solo per questo: le immagini estratte dai documenti si
+      # salvano accanto ai documenti stessi, in <cartella fonte>/_immagini/,
+      # dove chi lavora le apre senza passare da Docker (il prefisso '_' le
+      # tiene fuori dall'indicizzazione). Il servizio non scrive altrove: se la
+      # condivisione e' in sola lettura, i documenti entrano senza immagini.
+      - ${CARTELLE_PATH:-./cartelle}:/cartelle
     depends_on:
       postgres:
         condition: service_healthy
@@ -503,4 +508,3 @@ volumes:
   caddy-data:
   dagster-data:
   uptime-kuma-data:
-  immagini-data:

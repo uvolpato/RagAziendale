@@ -55,9 +55,15 @@ services:
       BAN_VIOLATIONS: "false"
 
   docling:
-    # Lettura dei documenti (layout, tabelle, OCR) sulla GPU di sviluppo.
-    # In produzione sta sul server GPU (docker-compose.inference.yml) e
-    # ingestion lo raggiunge con DOCLING_URL. Solo rete interna: nessuna porta.
+    # Lettura dei documenti su GPU come SERVIZIO a parte. In sviluppo NON si
+    # avvia (profilo): tiene i modelli in VRAM sempre, ~3 GB, e su questa
+    # macchina la stessa scheda serve a LM Studio per il modello di chat.
+    # Qui la GPU la usa direttamente ingestion, nel processo figlio che legge
+    # un blocco di pagine e poi muore: la VRAM torna libera fra un blocco e
+    # l'altro. Questa forma resta quella di PRODUZIONE, dove la GPU e'
+    # dedicata: ingestion la raggiunge con DOCLING_URL.
+    #   docker compose --profile docling-serve up -d docling    per provarla
+    profiles: ["docling-serve"]
     # ponytail: tag pinnato; aggiornare insieme a docling in ingestion/.
     image: quay.io/docling-project/docling-serve-cu128:v1.34.0
     restart: unless-stopped
@@ -77,10 +83,33 @@ services:
 
   ingestion:
     environment:
-      # Lettura sulla GPU del container docling qui sopra. Vuoto = CPU locale.
-      # `${VAR-...}` (senza `:`) rispetta un DOCLING_URL esplicitamente vuoto:
-      # cosi' una macchina senza GPU Docker lascia vuoto in .env e va su CPU.
-      DOCLING_URL: ${DOCLING_URL-http://docling:5001}
+      # Vuoto: si legge QUI, con la GPU della macchina (vedi deploy sotto).
+      # Valorizzato: si manda tutto a docling-serve, che e' la forma di
+      # produzione. `${VAR-...}` (senza `:`) rispetta un valore vuoto esplicito.
+      DOCLING_URL: ${DOCLING_URL-}
+      # La finestra e' in ora locale: senza TZ il container ragiona in UTC e
+      # d'estate si aprirebbe alle 20.
+      TZ: Europe/Rome
+      GPU: ${GPU-auto}
+      VRAM_MINIMA_MB: ${VRAM_MINIMA_MB-3500}
+      FINESTRA_NOTTE: ${FINESTRA_NOTTE-}
+      MB_MAX_DI_GIORNO: ${MB_MAX_DI_GIORNO-0}
+      # LM Studio sta fuori da Docker, sulla macchina: da qui si raggiunge
+      # con host.docker.internal, come per i vettori.
+      LMSTUDIO_HOST: ${LMSTUDIO_HOST-host.docker.internal:1234}
+      # Chi descrive le immagini: un VLM su LM Studio (glm-ocr, 2,3 GB, che
+      # trascrive nomi e quantita' dei prodotti), oppure off. Dentro il
+      # servizio non ne gira piu' nessuno: pesava 3,3 GB e descriveva appena.
+      VLM_DESCRIZIONI: ${VLM_DESCRIZIONI-api}
+      VLM_URL: ${VLM_URL-http://host.docker.internal:1234/v1}
+      VLM_MODELLO: ${VLM_MODELLO-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   orchestratore:
     volumes:

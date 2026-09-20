@@ -6,7 +6,9 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from indicizza import MAX_PEZZO, PERCORSO_VALIDO, file_da_leggere, motivo_prezzi, unisci  # noqa: E402
+import indicizza  # noqa: E402
+from indicizza import (MAX_PEZZO, PERCORSO_VALIDO, _gpu_piena, file_da_leggere,  # noqa: E402
+                       in_finestra, motivo_prezzi, rimanda, unisci)
 
 
 def test_file_da_leggere_salta_bozze_archivio_fogli_e_temporanei(tmp_path):
@@ -65,6 +67,61 @@ def test_registro_senza_prezzi_entra(tmp_path):
     csv = tmp_path / "trattamenti.csv"
     csv.write_text("trattamento,finalita,base giuridica,conservazione anni\npaghe,stipendi,contratto,10\n", encoding="utf-8")
     assert motivo_prezzi(csv) is None
+
+
+def _alle(ore, minuti=0):
+    from datetime import datetime
+    return datetime(2026, 9, 20, ore, minuti)
+
+
+def test_finestra_a_cavallo_di_mezzanotte():
+    notte = "22:00-06:00"
+    assert in_finestra(notte, adesso=_alle(23)) and in_finestra(notte, adesso=_alle(2))
+    assert in_finestra(notte, adesso=_alle(22)) and not in_finestra(notte, adesso=_alle(6))
+    assert not in_finestra(notte, adesso=_alle(15)) and not in_finestra(notte, adesso=_alle(21, 59))
+
+
+def test_finestra_dentro_la_giornata_e_casi_storti():
+    assert in_finestra("13:00-14:00", adesso=_alle(13, 30))
+    assert not in_finestra("13:00-14:00", adesso=_alle(14, 1))
+    assert not in_finestra("", adesso=_alle(3))                  # nessuna finestra configurata
+    assert not in_finestra("dalle 22 alle 6", adesso=_alle(3))   # scritta male: non si indovina
+
+
+def test_i_file_grossi_aspettano_solo_fuori_finestra():
+    indicizza.MB_MAX_DI_GIORNO = 5
+    grosso, piccolo = 6 * 1024 * 1024, 4 * 1024 * 1024
+    assert rimanda(grosso, finestra=False) and not rimanda(piccolo, finestra=False)
+    assert not rimanda(grosso, finestra=True)        # di notte (o --forza) passa tutto
+    indicizza.MB_MAX_DI_GIORNO = 0                   # default: nessun limite, come prima
+    assert not rimanda(grosso, finestra=False)
+
+
+def test_le_immagini_di_un_documento_hanno_una_cartella_sola(tmp_path):
+    from indicizza import _butta_immagini, _cartella_immagini
+    a = _cartella_immagini("decobrands/acquisti", "catalogo.pdf")
+    assert a.startswith("decobrands/acquisti/_immagini/")          # dentro la cartella della fonte
+    assert a == _cartella_immagini("decobrands/acquisti", "catalogo.pdf")   # stabile fra un giro e l'altro
+    assert a != _cartella_immagini("decobrands/acquisti", "listino.pdf")    # un documento, una cartella
+    # '_' iniziale: file_da_leggere non ci rientra, l'indice non rilegge se stesso.
+    (tmp_path / "decobrands/acquisti/_immagini").mkdir(parents=True)
+    (tmp_path / "decobrands/acquisti/catalogo.pdf").write_bytes(b"x")
+    (tmp_path / "decobrands/acquisti/_immagini/1_0.png").write_bytes(b"x")
+    assert [r for r, _ in file_da_leggere(tmp_path)] == ["decobrands/acquisti/catalogo.pdf"]
+    # E la cartella di un documento si butta via intera, residui compresi.
+    indicizza.RADICE = tmp_path
+    vecchia = tmp_path / _cartella_immagini("decobrands/acquisti", "catalogo.pdf")
+    vecchia.mkdir(parents=True)
+    (vecchia / "9_99.png").write_bytes(b"residuo")
+    _butta_immagini("decobrands/acquisti", "catalogo.pdf")
+    assert not vecchia.exists()
+
+
+def test_errori_della_gpu_riconosciuti_per_ripiegare_in_cpu():
+    assert _gpu_piena(RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB"))
+    assert _gpu_piena(RuntimeError("CUDA error: no kernel image is available for execution"))
+    assert not _gpu_piena(MemoryError("lettura troppo lenta (pagine 1-6): oltre 600 s"))
+    assert not _gpu_piena(ValueError("file non valido"))
 
 
 def test_percorsi_ammessi_solo_relativi():

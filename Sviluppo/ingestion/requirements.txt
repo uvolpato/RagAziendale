@@ -1,3 +1,7 @@
 docling>=2.40,<3
 psycopg[binary]>=3.2,<4
 httpx>=0.27,<1
+# Solo per scaricare il modello di chat da LM Studio nella finestra notturna
+# (l'API REST non ha una rotta per farlo). In produzione non serve: il modello
+# stara' su un server di inferenza.
+lmstudio>=1.5,<2

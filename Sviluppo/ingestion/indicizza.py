@@ -2,6 +2,10 @@
 
     python indicizza.py              # un giro ogni INTERVALLO secondi, per sempre
     python indicizza.py --una-volta  # un giro solo (prove, verifiche)
+    python indicizza.py --forza [--solo manuale.pdf]
+        # un giro solo che ignora i limiti del giorno: legge anche i file grossi
+        # e, se sulla GPU non c'e' posto, scarica il modello di chat da LM Studio.
+        # Mentre dura, l'assistente risponde che sta aggiornando l'indice.
 
 Per ogni fonte con provenienza 'cartella' (attiva o in attesa: si indicizza
 prima di attivare, cosi' chi approva vede cosa entra) legge la cartella
@@ -32,6 +36,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -58,6 +63,36 @@ NON_LEGGIBILI = {".xls": "formato Excel 97-2003: salvarlo come .xlsx", ".ods": "
 # su CPU, in processi figli (piu' lento, ma senza dipendere da nessuno).
 DOCLING_URL = os.environ.get("DOCLING_URL", "").rstrip("/")
 PAGINE_PER_BLOCCO = int(os.environ.get("PAGINE_PER_BLOCCO", "30" if DOCLING_URL else "6"))
+# GPU: in sviluppo e' la STESSA scheda dove LM Studio tiene il modello di chat
+# (16 GB: Qwen 27B ne occupa 13, Docling ne vuole ~3). Regola, decisa con
+# l'azienda: di giorno si legge in GPU solo se c'e' posto con LLM ed embedding
+# caricati; il modello di chi sta chattando non si tocca MAI da soli. Nella
+# finestra notturna (o con --forza) si scarica l'LLM e si legge tutto.
+GPU = os.environ.get("GPU", "auto")                         # auto | off
+# Quanta VRAM libera serve per leggere in GPU invece che su CPU. 3500 = il
+# picco di Docling misurato il 20/09/2026 sul catalogo IPURO (2,1-2,7 GB fra
+# layout, tabelle e immagini di pagina) piu' un terzo di margine. Il VLM delle
+# descrizioni NON e' in questo conto: sta su LM Studio e la sua VRAM (2,3 GB per
+# glm-ocr) risulta gia' occupata quando si guarda quanto e' libero.
+VRAM_MINIMA_MB = int(os.environ.get("VRAM_MINIMA_MB", "3500"))
+FINESTRA_NOTTE = os.environ.get("FINESTRA_NOTTE", "")       # "22:00-06:00"; vuoto = nessuna finestra
+# Fuori finestra i file oltre questa soglia aspettano la notte: leggerli di
+# giorno tiene occupata la macchina mentre qualcuno chatta. 0 = nessun limite.
+MB_MAX_DI_GIORNO = int(os.environ.get("MB_MAX_DI_GIORNO", "0"))
+# Chi tiene il modello di chat, per poterlo scaricare nella finestra:
+# sviluppo LM Studio (SDK sulla stessa porta dell'API). In produzione ci sara'
+# il server di inferenza: vLLM prealloca la VRAM e si libera con /sleep.
+LMSTUDIO_HOST = os.environ.get("LMSTUDIO_HOST", "")         # "host.docker.internal:1234"
+# Chi descrive le immagini dei cataloghi (le rende ricercabili per nome):
+#   api  un VLM servito altrove (sviluppo: glm-ocr su LM Studio, 2,3 GB;
+#        produzione: il server di inferenza). Se non risponde, Docling registra
+#        l'errore e va avanti: il documento entra lo stesso, senza descrizioni.
+#   off  niente descrizioni; le immagini si estraggono e si salvano comunque.
+# Un VLM dentro questa immagine e' stato provato e scartato: SmolVLM 256M
+# pesava 3,3 GB e descriveva appena ("a few bottles").
+VLM_DESCRIZIONI = os.environ.get("VLM_DESCRIZIONI", "api")       # api | off
+VLM_URL = os.environ.get("VLM_URL", "")                     # "http://host.docker.internal:1234/v1"
+VLM_MODELLO = os.environ.get("VLM_MODELLO", "")             # identificatore del modello su quell'host
 # Un blocco che non finisce entro questo tempo si chiude: vicino al tetto di
 # memoria il processo non muore, si blocca (CPU all'1%, visto il 19/09/2026).
 SECONDI_PER_BLOCCO = int(os.environ.get("SECONDI_PER_BLOCCO", "600"))
@@ -174,48 +209,149 @@ def motivo_prezzi(p: pathlib.Path):
     return None
 
 
-def _opzioni_pdf():
+# ------------------------------------------------- GPU, finestra, modelli
+def in_finestra(finestra=None, adesso=None):
+    """True dentro FINESTRA_NOTTE ("22:00-06:00", anche a cavallo di mezzanotte).
+    L'ora e' quella LOCALE del container: senza TZ sarebbe UTC e d'estate la
+    finestra si aprirebbe due ore prima."""
+    finestra = FINESTRA_NOTTE if finestra is None else finestra
+    if not finestra:
+        return False
+    try:
+        a, b = [datetime.strptime(x.strip(), "%H:%M").time() for x in finestra.split("-")]
+    except ValueError:
+        print(f"FINESTRA_NOTTE non valida ({finestra!r}): serve 'HH:MM-HH:MM'", flush=True)
+        return False
+    ora = (adesso or datetime.now()).time()
+    return a <= ora < b if a <= b else (ora >= a or ora < b)
+
+
+def rimanda(dimensione, finestra):
+    """Fuori finestra i file grossi aspettano: leggerli di giorno tiene occupata
+    la macchina (GPU o CPU) mentre qualcuno sta chattando."""
+    return not finestra and MB_MAX_DI_GIORNO > 0 and dimensione > MB_MAX_DI_GIORNO * 1024 * 1024
+
+
+def vram_libera_mb():
+    """MB liberi sulla GPU, None se qui GPU non ce n'e'. Si chiede a nvidia-smi
+    (lo inietta il runtime NVIDIA) e non a torch: torch aprirebbe un contesto
+    CUDA in QUESTO processo, che poi tiene VRAM per tutto il giro senza usarla."""
+    if GPU == "off":
+        return None
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=15)
+        return int(out.stdout.strip().splitlines()[0])
+    except Exception:
+        return None
+
+
+def dove_leggere():
+    """'cuda' se in questo momento c'e' posto, 'cpu' altrimenti. Si guarda a
+    ogni blocco di pagine: LM Studio carica il modello quando gli arriva una
+    domanda (justInTimeModelLoading), anche a meta' file."""
+    libera = vram_libera_mb()
+    return "cuda" if libera is not None and libera >= VRAM_MINIMA_MB else "cpu"
+
+
+def _gpu_piena(e):
+    """L'errore viene dalla GPU: quel blocco si rifa' in CPU invece di perdere
+    il file. Qualunque errore CUDA, non solo la memoria finita: la lettura non
+    deve mai fallire per colpa dell'acceleratore."""
+    return "cuda" in f"{type(e).__name__}: {e}".lower()
+
+
+def scarica_llm():
+    """Scarica da LM Studio i modelli di CHAT e lascia l'embedding: quello serve
+    a questo giro per fare i vettori. True se ha scaricato qualcosa. Non alza
+    mai: se LM Studio non risponde si legge lo stesso, in CPU.
+    Ricaricarlo non tocca a noi: al primo messaggio lo rifa' LM Studio (JIT) con
+    la configurazione salvata li', invece che con parametri indovinati da qui.
+    ponytail: in produzione il modello sta su vLLM, che prealloca la VRAM e si
+    libera con /sleep; quando il server GPU esistera' e' un ramo in piu' qui."""
+    if not LMSTUDIO_HOST:
+        return False
+    try:
+        import lmstudio
+        # Il VLM che descrive le immagini NON si scarica: serve a questo giro,
+        # come l'embedding. Si toglie solo chi tiene la VRAM per la chat.
+        tieni = {VLM_MODELLO} if VLM_DESCRIZIONI == "api" and VLM_MODELLO else set()
+        with lmstudio.Client(LMSTUDIO_HOST) as c:
+            scaricati = [m for m in c.llm.list_loaded() if m.identifier not in tieni]
+            for m in scaricati:
+                m.unload()
+        return bool(scaricati)
+    except Exception as e:
+        print(f"LM Studio non ha scaricato il modello ({type(e).__name__}: {e}): si legge con quel che c'e'",
+              flush=True)
+        return False
+
+
+def _opzioni_pdf(device="cpu"):
     from docling.datamodel.accelerator_options import AcceleratorOptions
-    from docling.datamodel.pipeline_options import (PdfPipelineOptions, PictureDescriptionApiOptions,
-                                                   TesseractCliOcrOptions)
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliOcrOptions
     # OCR con Tesseract (pacchetto Debian, italiano e inglese): funziona senza
     # rete, gli altri motori scaricano modelli da server esterni.
     opzioni = PdfPipelineOptions(
         do_ocr=True, do_table_structure=True,
         ocr_options=TesseractCliOcrOptions(lang=["ita", "eng"]),
-        accelerator_options=AcceleratorOptions(num_threads=2),
+        # L'OCR resta a Tesseract (CPU) in ogni caso: in GPU vanno layout e
+        # tabelle, che sono il grosso del tempo.
+        accelerator_options=AcceleratorOptions(num_threads=2, device=device),
         artifacts_path=os.environ.get("DOCLING_MODELLI") or None)
-    # Descrizione delle immagini: Docling manda ogni immagine al nostro VLM
-    # (via LiteLLM, il qwen multimodale) e ne scrive una descrizione nel testo.
-    # Cosi' il RAG trova "divano rosso" anche se il colore sta solo nella foto.
-    url = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
-    chiave = os.environ.get("LITELLM_MASTER_KEY", "")
-    modello = os.environ.get("LLM_DESCRIZIONE_IMMAGINI", "ragionamento")
+    # Senza queste tre righe Docling NON conserva le immagini: get_image()
+    # torna vuoto, la tabella immagini resta a zero e la descrizione non parte
+    # mai (verificato il 20/09/2026 sul catalogo IPURO: 0 immagini su 41 pagine).
+    # generate_page_images serve anche alle tabelle: TableItem.get_image()
+    # ritaglia dalla pagina (generate_table_images e' deprecato).
+    opzioni.generate_picture_images = True
+    opzioni.generate_page_images = True
+    opzioni.images_scale = 2.0          # 144 dpi: leggibile senza pesare come il 4x
+    # Senza un VLM configurato non si chiede niente a nessuno: le immagini
+    # entrano lo stesso, trovabili dal testo della loro pagina.
+    if VLM_DESCRIZIONI != "api" or not VLM_MODELLO:
+        opzioni.do_picture_description = False
+        return opzioni
+    # Il VLM sta altrove (sviluppo: glm-ocr su LM Studio; produzione: il server
+    # di inferenza): un modello dentro questo servizio si contenderebbe la VRAM
+    # con Docling, e quello piccolo abbastanza da starci descrive troppo male.
+    # enable_remote_services riguarda host INTERNI dichiarati (egress), non
+    # internet. Se l'host non risponde, Docling lo registra e prosegue senza
+    # descrizioni (provato staccando la porta): il documento entra lo stesso.
+    from docling.datamodel.pipeline_options import PictureDescriptionApiOptions
+    chiave = os.environ.get("INFERENCE_TOKEN") or os.environ.get("LITELLM_MASTER_KEY") or ""
     opzioni.do_picture_description = True
     opzioni.enable_remote_services = True
     opzioni.picture_description_options = PictureDescriptionApiOptions(
-        url=f"{url}/v1/chat/completions",
+        url=f"{VLM_URL.rstrip('/')}/chat/completions",
         headers={"Authorization": f"Bearer {chiave}"} if chiave else {},
-        params={"model": modello},
-        prompt=("Descrivi in italiano questa immagine in 2-3 frasi, concentrandoti su cio' che mostra "
-                "di utile per un catalogo (prodotti, forme, colori, parti visibili, etichette). "
-                "Non inventare dati non visibili."),
-        timeout=120,
-        concurrency=1)
+        params={"model": VLM_MODELLO},
+        # Prima trascrivere, poi descrivere, e in inglese. Provato il 20/09/2026
+        # su cinque immagini del catalogo con glm-ocr: chiedendo una descrizione
+        # in italiano inventava ("profumo di arsenico"), con questo prompt
+        # trascrive nomi e quantita' dei prodotti — cio' che serve alla ricerca —
+        # e dove non c'e' testo dice una frase sola ("Two bottles of perfume
+        # with green labels"). L'embedding e' multilingue: una domanda in
+        # italiano trova lo stesso una descrizione in inglese.
+        prompt=("Transcribe all text visible in this image. If there is no text, describe in one "
+                "sentence what the image shows. Do not add anything else."),
+        timeout=120, concurrency=1)
     return opzioni
 
 
-def _converti(percorso, blocco):
+def _converti(percorso, blocco, device="cpu"):
     """Converte UN blocco di pagine (o un file intero) con Docling e restituisce
     [(testo, pagina)] e le immagini [(PIL.Image, pagina)]. Gira in un processo a
     parte che muore subito dopo: Docling non restituisce la memoria fra un
     blocco e l'altro (misurato: da 1,3 a oltre 6 GB, swap compreso, su un PDF di
-    266 pagine), e un processo che finisce la restituisce tutta."""
+    266 pagine), e un processo che finisce la restituisce tutta. Vale anche per
+    la VRAM: il contesto CUDA se ne va con il processo, quindi fra un blocco e
+    l'altro la GPU torna libera per chi sta chattando."""
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.settings import settings
     from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
     settings.perf.page_batch_size = 1          # una pagina alla volta in memoria
-    opzioni = _opzioni_pdf()
+    opzioni = _opzioni_pdf(device)
     conv = DocumentConverter(format_options={
         InputFormat.PDF: PdfFormatOption(pipeline_options=opzioni),
         InputFormat.IMAGE: ImageFormatOption(pipeline_options=opzioni)})
@@ -298,6 +434,21 @@ def _converti_remoto(percorso, blocco):
     return _chunk(doc), _immagini(doc)
 
 
+def _in_processo(percorso, blocco, device):
+    """_converti in un processo figlio, chiuso a forza se non finisce in tempo."""
+    import multiprocessing
+    pool = multiprocessing.get_context("spawn").Pool(1, maxtasksperchild=1)
+    dove = f" (pagine {blocco[0]}-{blocco[1]})" if blocco else ""
+    try:
+        return pool.apply_async(_converti, (percorso, blocco, device)).get(timeout=SECONDI_PER_BLOCCO)
+    except multiprocessing.TimeoutError:
+        raise MemoryError(f"lettura troppo lenta{dove}: oltre {SECONDI_PER_BLOCCO} s, "
+                          f"probabile memoria esaurita") from None
+    finally:
+        pool.terminate()
+        pool.join()
+
+
 class Lettore:
     """Legge un file e lo divide in pezzi. Docling gira in processi figli, uno
     per blocco di pagine: la memoria torna libera a ogni blocco, e se un file
@@ -305,11 +456,32 @@ class Lettore:
     non leggibile; il servizio va avanti. ponytail: i modelli si ricaricano a ogni blocco (qualche secondo);
     pochi secondi contro un servizio che non si pianta."""
 
+    def __init__(self, conn=None, finestra=False):
+        self.conn, self.finestra, self.spazio_fatto = conn, finestra, False
+
+    def _fai_spazio(self):
+        """Nella finestra notturna (o con --forza) si scarica il modello di chat,
+        ma solo quando c'e' davvero un file da leggere, e una volta sola per giro.
+        Finche' il lock BLOCCO_LLM e' preso, l'orchestratore risponde che sta
+        aggiornando l'indice invece di far ricaricare il modello a LM Studio."""
+        if self.spazio_fatto or not self.finestra:
+            return
+        self.spazio_fatto = True
+        libera = vram_libera_mb()
+        if libera is None or libera >= VRAM_MINIMA_MB:
+            return                       # c'e' gia' posto: non si disturba nessuno
+        if scarica_llm():
+            if self.conn is not None:
+                self.conn.execute("SELECT pg_advisory_lock(%s)", (BLOCCO_LLM,))
+            print(f"modello di chat scaricato per fare spazio: {libera} MB liberi, "
+                  f"ne servono {VRAM_MINIMA_MB}", flush=True)
+
     def pezzi(self, p: pathlib.Path, progresso=None):
         """progresso(fatte, totali) se c'e', chiamata ad ogni blocco completato."""
         if p.suffix.lower() in TESTO:
             testo = p.read_text(encoding="utf-8", errors="replace")
             return unisci([(x, None) for x in re.split(r"\n\s*\n", testo)]), []
+        self._fai_spazio()
         blocchi = [None]
         if p.suffix.lower() == ".pdf":
             import pypdfium2
@@ -330,23 +502,22 @@ class Lettore:
                 if progresso and blocco:
                     progresso(blocco[1], blocchi[-1][1])
             return unisci(grezzi + _descrizioni(immagini)), immagini
-        import multiprocessing
         for blocco in blocchi:
-            # Un processo per blocco, chiuso a forza se non finisce in tempo.
-            pool = multiprocessing.get_context("spawn").Pool(1, maxtasksperchild=1)
-            dove = f" (pagine {blocco[0]}-{blocco[1]})" if blocco else ""
+            device = dove_leggere()
             try:
-                g, im = pool.apply_async(_converti, (str(p), blocco)).get(timeout=SECONDI_PER_BLOCCO)
-                grezzi += g
-                immagini += im
-            except multiprocessing.TimeoutError:
-                raise MemoryError(f"lettura troppo lenta{dove}: oltre {SECONDI_PER_BLOCCO} s, "
-                                  f"probabile memoria esaurita") from None
-            finally:
-                pool.terminate()
-                pool.join()
+                g, im = _in_processo(str(p), blocco, device)
+            except Exception as e:
+                if not _gpu_piena(e):
+                    raise
+                print(f"    {p.name}: la GPU non ce l'ha fatta ({type(e).__name__}), questo blocco in CPU",
+                      flush=True)
+                device = "cpu"
+                g, im = _in_processo(str(p), blocco, "cpu")
+            grezzi += g
+            immagini += im
             if len(blocchi) > 1:
-                print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]}", flush=True)
+                print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]}"
+                      f"{' (GPU)' if device == 'cuda' else ''}", flush=True)
             if progresso and blocco:
                 progresso(blocco[1], blocchi[-1][1])
         return unisci(grezzi + _descrizioni(immagini)), immagini
@@ -439,7 +610,6 @@ def impronta_file(p):
     return h.hexdigest()
 
 
-RADICE_IMMAGINI = pathlib.Path(os.environ.get("IMMAGINI", "/immagini"))
 MAX_LATO = 1024          # le immagini di catalogo sono enormi: si riducono una volta per tutte
 
 
@@ -455,34 +625,64 @@ def _riduci(img):
     return img
 
 
-def _salva_immagini(conn, fid, rel, immagini):
-    """Salva le immagini estratte sul volume condiviso e le collega nel DB.
+def _cartella_immagini(percorso_fonte, rel):
+    """Dove stanno le immagini di UN documento, relativo alla radice delle
+    cartelle: `<fonte>/_immagini/<hash del documento>`. Un solo posto che lo
+    decide, perche' lo usano sia chi scrive sia chi ripulisce."""
+    return f"{percorso_fonte}/_immagini/{hashlib.sha256(rel.encode()).hexdigest()[:16]}"
+
+
+def _butta_immagini(percorso_fonte, rel):
+    """Via la cartella delle immagini di un documento. Si chiama prima di
+    riscriverle e quando il documento esce dall'indice: i nomi dipendono da
+    pagina e ordine, quindi un PDF con meno immagini di prima lascerebbe file
+    orfani — e ora che stanno nelle cartelle di lavoro si vedono."""
+    import shutil
+    shutil.rmtree(RADICE / _cartella_immagini(percorso_fonte, rel), ignore_errors=True)
+
+
+def _salva_immagini(conn, fid, rel, immagini, percorso_fonte):
+    """Salva le immagini estratte NELLA CARTELLA DEI DOCUMENTI e le collega nel DB.
+
+    Stanno in `<cartella della fonte>/_immagini/<hash del documento>/`: accanto
+    ai documenti da cui vengono, dove chi lavora le apre e le copia senza
+    passare da Docker. La cartella comincia con '_', quindi l'indicizzazione la
+    salta come _bozze e _archivio (file_da_leggere) e non rilegge le proprie
+    immagini. Il percorso salvato e' relativo alla radice delle cartelle:
+    lo stesso valore serve all'orchestratore, che monta la stessa radice.
 
     Le immagini di un documento si cancellano e si riscrivono a ogni lettura
-    (come i chunk): un'immagine sparita dal PDF sparisce dall'indice. Il
-    percorso e' `fid/<hash del documento>/<pagina>_<n>.png`, stabile e univoco.
+    (come i chunk): un'immagine sparita dal PDF sparisce dall'indice.
+
+    Se la condivisione e' in sola lettura (in produzione puo' esserlo) non si
+    fallisce il documento: entra senza immagini, con un avviso nel registro.
     """
     conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
+    _butta_immagini(percorso_fonte, rel)      # si riparte pulito: niente residui del giro prima
     if not immagini:
         return 0
-    radice = RADICE_IMMAGINI / fid / hashlib.sha256(rel.encode()).hexdigest()[:16]
-    radice.mkdir(parents=True, exist_ok=True)
-    # Le immagini vecchie che non torneranno (pagine rimosse) restano sul disco:
-    # si rigenerano con lo stesso nome solo se la pagina e l'ordine coincidono.
-    # ponytail: i file orfani pesano poco; si ripuliscono con una regola a parte se servira'.
+    dentro = _cartella_immagini(percorso_fonte, rel)
+    radice = RADICE / dentro
     salvate = 0
-    for n, (img, pagina, _descr) in enumerate(immagini):
-        nome = f"{pagina or 0}_{n}.png"
-        _riduci(img).save(radice / nome)
-        conn.execute(
-            "INSERT INTO immagini (source_id, documento, page, percorso)"
-            " VALUES (%s, %s, %s, %s)",
-            (fid, rel, pagina, f"{fid}/{radice.name}/{nome}"))
-        salvate += 1
+    try:
+        radice.mkdir(parents=True, exist_ok=True)
+        for n, (img, pagina, _descr) in enumerate(immagini):
+            nome = f"{pagina or 0}_{n}.png"
+            _riduci(img).save(radice / nome)
+            conn.execute(
+                "INSERT INTO immagini (source_id, documento, page, percorso)"
+                " VALUES (%s, %s, %s, %s)",
+                (fid, rel, pagina, f"{dentro}/{nome}"))
+            salvate += 1
+    except OSError as e:
+        conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
+        print(f"  immagini non salvate per {fid}/{rel} ({type(e).__name__}: {e}): "
+              f"la cartella e' scrivibile?", flush=True)
+        return 0
     return salvate
 
 
-def indicizza_fonte(conn, fonte, lettore, stato_vettori):
+def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False):
     fid, percorso, aziende = fonte
     azienda = aziende[0] if len(aziende) == 1 else None
     cartella = RADICE / percorso
@@ -505,18 +705,42 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori):
         "SELECT documento, impronta, dimensione, modificato_il, stato FROM documenti WHERE source_id = %s", (fid,))}
     presenti = file_da_leggere(cartella)
     conteggi = {"fonte": fid, "nuovi": 0, "cambiati": 0, "uguali": 0, "tolti": 0, "errori": 0}
+    # Cartella che si presenta VUOTA dove prima c'erano documenti: quasi sempre
+    # e' la condivisione di rete montata male (il percorso esiste, il contenuto
+    # no). Cancellare sarebbe corretto per la regola "il file sparito esce
+    # dall'indice", ma svuoterebbe la fonte e l'assistente direbbe a tutti "non
+    # trovo documenti". Meglio fermarsi e dirlo: se i file sono stati tolti
+    # davvero, si risolve l'anomalia e al giro dopo si allinea.
+    if noti and not presenti and not forza:
+        anomalia(conn, f"cartella-vuota:{fid}", "errore", f"Cartella vuota ma l'indice ha {len(noti)} documenti: {percorso}",
+                 "Controllare che la condivisione sia montata e leggibile. Se i documenti sono stati "
+                 "tolti davvero, svuotare l'indice della fonte con: "
+                 "docker compose run --rm ingestion python indicizza.py --forza",
+                 azienda, f"fonte:{fid}")
+        return {"fonte": fid, "errore": f"cartella vuota, {len(noti)} documenti non toccati"}
+    chiudi(conn, f"cartella-vuota:{fid}")
 
     for rel, p in presenti:
+        if solo and solo not in rel:
+            continue
         st = p.stat()
         quando = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).replace(microsecond=0)
         vecchio = noti.get(rel)
         # Stesso file di prima: non si rilegge, nemmeno se era illeggibile (si
         # riprova quando cambia: riprovarlo a ogni giro non lo aggiusta).
-        if vecchio and vecchio[2] == st.st_size and vecchio[3] == quando:
+        # Con --forza si rilegge lo stesso: chi lo chiede vuole proprio quello,
+        # di solito su un file che era andato in errore o rimandato.
+        if not forza and vecchio and vecchio[2] == st.st_size and vecchio[3] == quando:
             conteggi["uguali"] += 1
             continue
+        if rimanda(st.st_size, lettore.finestra):
+            # Non si segna niente in documenti: il file resta "non ancora letto"
+            # e al primo giro dentro la finestra entra come qualsiasi altro.
+            conteggi["rimandati"] = conteggi.get("rimandati", 0) + 1
+            print(f"  rimandato alla finestra: {fid}/{rel} ({st.st_size // (1024 * 1024)} MB)")
+            continue
         impronta = impronta_file(p)
-        if vecchio and vecchio[1] == impronta:
+        if not forza and vecchio and vecchio[1] == impronta:
             conn.execute("UPDATE documenti SET modificato_il = %s WHERE source_id = %s AND documento = %s",
                          (quando, fid, rel))
             conteggi["uguali"] += 1
@@ -588,7 +812,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori):
                                 ON CONFLICT (source_id, documento, page, content_hash) DO NOTHING""",
                              (fid, rel, pagina, testo, hashlib.sha256(testo.encode()).hexdigest(),
                               vettore_sql(vett[i]) if vett else None))
-            _salva_immagini(conn, fid, rel, immagini)
+            _salva_immagini(conn, fid, rel, immagini, percorso)
             conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi)
                             VALUES (%s,%s,%s,%s,%s,%s,NULL,%s)
                             ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
@@ -608,6 +832,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori):
             conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
             conn.execute("DELETE FROM documenti WHERE source_id = %s AND documento = %s", (fid, rel))
             chiudi(conn, f"illeggibile:{fid}:{rel}")
+        _butta_immagini(percorso, rel)        # anche le sue immagini: il documento non c'e' piu'
         conteggi["tolti"] += 1
         print(f"  tolto: {fid}/{rel}")
 
@@ -655,16 +880,28 @@ def completa_vettori(conn, stato_vettori):
 
 
 BLOCCO = 7_310_061      # pg_advisory_lock: un giro alla volta, in tutto il database
+# Preso SOLO finche' il modello di chat e' scaricato per fare spazio a Docling.
+# L'orchestratore lo legge in pg_locks e risponde "sto aggiornando l'indice":
+# senza, la prima domanda farebbe ricaricare i 13 GB a meta' lettura. Il lock e'
+# della connessione, quindi se questo servizio muore si libera da solo e
+# l'assistente riparte: nessun flag appeso in una tabella.
+BLOCCO_LLM = 7_310_062
 
 
-def giro(aspetta=False):
+def giro(aspetta=False, forza=False, solo=None):
     """Un giro su tutte le cartelle. Uno solo alla volta (servizio e giri a
     mano insieme leggerebbero due volte gli stessi file): il servizio salta il
     giro se un altro e' in corso, il giro a mano (aspetta=True) lo attende.
-    Il blocco si libera da solo se il processo muore (e' della connessione)."""
-    lettore = Lettore()
+    Il blocco si libera da solo se il processo muore (e' della connessione).
+
+    forza=True (--forza): si comporta come se fosse dentro la finestra notturna
+    anche alle tre del pomeriggio — legge i file grossi e, se serve, scarica il
+    modello di chat. Lo chiede una persona, non lo decide il servizio.
+    solo: legge i file il cui percorso contiene questa stringa."""
     stato_vettori = {"ok": True, "verificato": False}
+    finestra = forza or in_finestra()
     with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as conn:
+        lettore = Lettore(conn, finestra)
         if aspetta:
             conn.execute("SELECT pg_advisory_lock(%s)", (BLOCCO,))
         elif not conn.execute("SELECT pg_try_advisory_lock(%s)", (BLOCCO,)).fetchone()[0]:
@@ -679,7 +916,7 @@ def giro(aspetta=False):
                 WHERE provenienza = 'cartella' AND stato IN ('attiva', 'attesa') ORDER BY id""").fetchall()
                  # Le fonti di esempio hanno percorsi \\server\...: non sono cartelle montate qui.
                  if PERCORSO_VALIDO.match(f[1]) and ".." not in f[1]]
-        esiti = [indicizza_fonte(conn, f, lettore, stato_vettori) for f in fonti]
+        esiti = [indicizza_fonte(conn, f, lettore, stato_vettori, solo, forza) for f in fonti]
         completati = completa_vettori(conn, stato_vettori)
     del lettore
     gc.collect()
@@ -687,11 +924,13 @@ def giro(aspetta=False):
 
 
 def main():
-    una_volta = "--una-volta" in sys.argv
+    una_volta = "--una-volta" in sys.argv or "--forza" in sys.argv
+    forza = "--forza" in sys.argv
+    solo = sys.argv[sys.argv.index("--solo") + 1] if "--solo" in sys.argv else None
     while True:
         inizio = time.time()
         try:
-            esiti, completati = giro(aspetta=una_volta)
+            esiti, completati = giro(aspetta=una_volta, forza=forza, solo=solo)
             if esiti is None:
                 print("un altro giro e' in corso: si salta questo", flush=True)
                 esiti = []

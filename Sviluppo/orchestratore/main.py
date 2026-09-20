@@ -34,6 +34,13 @@ LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
 MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 APP_HOST = os.environ.get("APP_HOST", "assistente.localhost")
 MAX_IMMAGINI = 4          # quante immagini citare in fondo alla risposta: oltre appesantisce
+# Coda del prompt di sistema, per le stranezze del modello del momento: sta in
+# configurazione perche' cambia col modello, e cambiare modello non deve voler
+# dire toccare il codice. Oggi serve per Qwen3, che ragiona a voce alta: senza
+# "/no_think" LM Studio manda il ragionamento in reasoning_content e LibreChat
+# riceve una risposta VUOTA (provato il 20/09/2026). Per il RAG il ragionamento
+# non serve: la risposta deve stare nei documenti recuperati.
+SUFFISSO_SISTEMA = os.environ.get("SUFFISSO_SISTEMA", "")
 
 
 @app.on_event("startup")
@@ -44,6 +51,36 @@ def _autocontrollo():
 
 def _conn():
     return psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
+
+
+# Lock preso dall'indicizzazione mentre il modello di chat e' scaricato per
+# fare spazio a Docling sulla GPU (ingestion/indicizza.py, BLOCCO_LLM).
+BLOCCO_LLM = 7_310_062
+# Messaggio GENERICO di proposito: lo legge chiunque, e i nomi dei file o il
+# loro numero direbbero cosa sta entrando nelle aree di altri.
+INDICE_IN_AGGIORNAMENTO = ("Sto aggiornando l'indice dei documenti e in questo momento non posso rispondere. "
+                           "Riprova fra qualche minuto.")
+
+
+def _indice_in_aggiornamento(conn) -> bool:
+    """True se l'indicizzazione ha scaricato il modello. Senza questo controllo
+    la prima domanda lo farebbe ricaricare a meta' lettura (LM Studio carica su
+    richiesta), e i due si toglierebbero la VRAM a vicenda. Il lock e' della
+    connessione dell'indicizzazione: se quel servizio muore, sparisce."""
+    with conn.cursor() as cur:
+        cur.execute("""SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory'
+                                       AND classid = 0 AND objid = %s AND objsubid = 1 AND granted) AS bloccato""",
+                    (BLOCCO_LLM,))
+        return bool(cur.fetchone()["bloccato"])
+
+
+def _risposta_unica(testo: str):
+    """Una risposta finta ma ben formata: LibreChat si aspetta lo stream SSE."""
+    def gen():
+        yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': testo}, 'index': 0}], 'model': MODEL_NAME})}\n\n"
+        yield f"data: {json.dumps({'choices': [{'delta': {}, 'index': 0, 'finish_reason': 'stop'}], 'model': MODEL_NAME})}\n\n"
+        yield "data: [DONE]\n\n"
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 def _domanda(messages) -> str:
@@ -141,6 +178,12 @@ async def chat(request: Request):
     domanda = _domanda(corpo.get("messages", []))
     conn = _conn()
 
+    # 1-bis. Indicizzazione che ha scaricato il modello: si risponde e basta,
+    # senza toccare LiteLLM. Nessuna traccia: non c'e' stato nessun turno.
+    if _indice_in_aggiornamento(conn):
+        conn.close()
+        return _risposta_unica(INDICE_IN_AGGIORNAMENTO)
+
     # 2. Embedding della domanda (puo degradare a full-text).
     qvec = recupero.embedding(domanda)
 
@@ -159,7 +202,8 @@ async def chat(request: Request):
     ids_immagini = _immagini_del_turno(righe)
     url_per_pos = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}")
                    for i, iid in enumerate(ids_immagini)}
-    messaggi = [{"role": "system", "content": prompt.SYSTEM + "\n" + prompt.contesto(righe)}]
+    messaggi = [{"role": "system",
+                 "content": prompt.SYSTEM + "\n" + prompt.contesto(righe) + SUFFISSO_SISTEMA}]
     storico = [m for m in corpo.get("messages", [])
                if isinstance(m.get("content"), str) and m.get("role") in ("user", "assistant")]
     messaggi += storico

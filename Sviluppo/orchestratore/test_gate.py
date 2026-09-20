@@ -291,6 +291,27 @@ def main():
         assert len(righe) >= 1, "il full-text non ha trovato nulla"
         assert righe[0]["source_id"] == "t-manuali"
 
+    print("\n--- Indicizzazione che scarica il modello " + "-" * 27)
+
+    @prova("T1.18", "mentre l'indicizzazione tiene il lock, la chat risponde senza chiamare il modello")
+    def _():
+        from orchestratore import main as orch
+        import psycopg.rows
+        letto = psycopg.connect(os.environ["DATABASE_URL"], row_factory=psycopg.rows.dict_row)
+        indicizzazione = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True)
+        try:
+            assert not orch._indice_in_aggiornamento(letto), "il lock risulta preso senza che nessuno lo abbia preso"
+            indicizzazione.execute("SELECT pg_advisory_lock(%s)", (orch.BLOCCO_LLM,))
+            assert orch._indice_in_aggiornamento(letto), "il lock preso non viene visto: la chat ricaricherebbe il modello"
+            # Il messaggio non deve dire QUALI documenti: lo legge chiunque.
+            testo = orch.INDICE_IN_AGGIORNAMENTO
+            assert "indice" in testo.lower() and not any(c in testo for c in (".pdf", "/", "pagina")), testo
+            indicizzazione.close()                 # il lock e' della connessione: muore con lei
+            assert not orch._indice_in_aggiornamento(letto), "il lock resta preso dopo la chiusura: chat muta per sempre"
+        finally:
+            indicizzazione.close()
+            letto.close()
+
     pulisci(conn)
     conn.close()
 
