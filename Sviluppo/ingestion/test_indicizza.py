@@ -162,24 +162,34 @@ def test_i_file_grossi_aspettano_solo_se_la_gpu_e_occupata():
     assert not rimanda(grosso, finestra=False, gpu=False)
 
 
-def test_le_immagini_di_un_documento_hanno_una_cartella_sola(tmp_path):
-    from indicizza import _butta_immagini, _cartella_immagini
-    a = _cartella_immagini("decobrands/acquisti", "catalogo.pdf")
-    assert a.startswith("decobrands/acquisti/_immagini/")          # dentro la cartella della fonte
-    assert a == _cartella_immagini("decobrands/acquisti", "catalogo.pdf")   # stabile fra un giro e l'altro
-    assert a != _cartella_immagini("decobrands/acquisti", "listino.pdf")    # un documento, una cartella
+def test_il_lavorato_di_un_documento_sta_in_una_cartella_sola(tmp_path):
+    from indicizza import _butta_sorgenti, _cartella_sorgenti
+    a = _cartella_sorgenti("decobrands/acquisti", "catalogo.pdf")
+    assert a.startswith("decobrands/acquisti/_sorgenti/")          # dentro la cartella della fonte
+    assert a == _cartella_sorgenti("decobrands/acquisti", "catalogo.pdf")   # stabile fra un giro e l'altro
+    assert a != _cartella_sorgenti("decobrands/acquisti", "listino.pdf")    # un documento, una cartella
     # '_' iniziale: file_da_leggere non ci rientra, l'indice non rilegge se stesso.
-    (tmp_path / "decobrands/acquisti/_immagini").mkdir(parents=True)
+    (tmp_path / "decobrands/acquisti/_sorgenti").mkdir(parents=True)
     (tmp_path / "decobrands/acquisti/catalogo.pdf").write_bytes(b"x")
-    (tmp_path / "decobrands/acquisti/_immagini/1_0.png").write_bytes(b"x")
+    (tmp_path / "decobrands/acquisti/_sorgenti/1_0.png").write_bytes(b"x")
     assert [r for r, _ in file_da_leggere(tmp_path)] == ["decobrands/acquisti/catalogo.pdf"]
-    # E la cartella di un documento si butta via intera, residui compresi.
+
     indicizza.RADICE = tmp_path
-    vecchia = tmp_path / _cartella_immagini("decobrands/acquisti", "catalogo.pdf")
-    vecchia.mkdir(parents=True)
-    (vecchia / "9_99.png").write_bytes(b"residuo")
-    _butta_immagini("decobrands/acquisti", "catalogo.pdf")
-    assert not vecchia.exists()
+    base = tmp_path / a
+    (base / "immagini").mkdir(parents=True)
+    (base / "markdown").mkdir(parents=True)
+    (base / "immagini/9_99.png").write_bytes(b"residuo")
+    (base / "markdown/0007.md").write_text("# DEKOSTEINE", encoding="utf-8")
+
+    # Rispezzare senza rileggere: le immagini si rifanno, il Markdown resta.
+    # Trenta minuti di VLM per catalogo contro pochi secondi.
+    _butta_sorgenti("decobrands/acquisti", "catalogo.pdf", tieni_markdown=True)
+    assert not (base / "immagini").exists()
+    assert (base / "markdown/0007.md").is_file()
+
+    # Il documento esce dall'indice: via tutto.
+    _butta_sorgenti("decobrands/acquisti", "catalogo.pdf")
+    assert not base.exists()
 
 
 def test_errori_della_gpu_riconosciuti_per_ripiegare_in_cpu():
@@ -193,6 +203,91 @@ def test_percorsi_ammessi_solo_relativi():
     assert PERCORSO_VALIDO.match("luis/sicurezza")
     for no in ("\\\\server\\qualita", "C:\\dati", "/etc", ".."):
         assert not PERCORSO_VALIDO.match(no) or ".." in no
+
+
+# ---- lettura della PAGINA col VLM (percorso alternativo a Docling) ----------
+
+PAGINA_VERA = """```markdown
+# DEKOSTEINE
+deco rocks | pierres decoratives | pierre decorative
+9 - 13 mm
+
+| E2500 | E5000 |
+| :--- | :--- |
+| 2,5 l<br>6<br>EUR 8,00 | 5 l<br>6<br>EUR 12,20 |
+| E3500 | E5500 |
+| 3,5 l<br>6<br>EUR 11,05 | 5,5 l<br>6<br>EUR 13,80 |
+
+---
+
+**Colore:**
+
+- DST2040 weiss
+- DST2058 olive
+- DST2001 rot
+```"""
+
+
+def test_ogni_articolo_dell_elenco_porta_con_se_il_prodotto():
+    """Il difetto di tutta la giornata del 21/09/2026, risolto dalla struttura
+    invece che da un'espressione regolare: «DST2001 rot» da solo non dice che
+    e' una pietra. Qui il titolo arriva dall'intestazione Markdown che il VLM
+    ha messo guardando la pagina."""
+    from indicizza import _pezzi_da_markdown
+    pezzi = [t for t, _ in _pezzi_da_markdown(PAGINA_VERA, 7)]
+    rosso = [x for x in pezzi if "DST2001" in x]
+    assert len(rosso) == 1, f"un pezzo per articolo: {rosso}"
+    assert "DEKOSTEINE" in rosso[0] and "decorative" in rosso[0].lower(), rosso[0]
+    assert "9 - 13 mm" in rosso[0], "le misure fanno parte del prodotto"
+    # Il controllo e' su «decorative» e non su «pietre» di proposito. Il
+    # catalogo ha le tre lingue — «deco rocks | pierres decoratives | pietre
+    # decorative» — ma la TRASCRIZIONE varia fra una lettura e l'altra: il
+    # 21/09/2026 la stessa pagina e' uscita una volta «pietre» e una volta
+    # «pierre». Una lettera, e la ricerca esatta non combacia piu'.
+    # Un test che pretendesse la grafia esatta fallirebbe a giorni alterni per
+    # un difetto che sta altrove: questo verifica che il prodotto arrivi
+    # insieme all'articolo, che e' quello che deve garantire.
+    # Gli altri colori restano pezzi separati: venti colori in un vettore solo
+    # non significano nessun colore.
+    assert len([x for x in pezzi if "DST20" in x]) == 3
+
+
+def test_la_tabella_dei_formati_resta_intera_se_ci_sta():
+    """«Quali formati offrite?» vuole vedere tutti i formati insieme: una
+    tabella corta non si spezza. Le domande 1, 2 e 4 dell'azienda chiedono
+    esattamente questo, ed erano 0 su 5."""
+    from indicizza import _pezzi_da_markdown
+    pezzi = [t for t, _ in _pezzi_da_markdown(PAGINA_VERA, 7)]
+    formati = [x for x in pezzi if "E5500" in x]
+    assert len(formati) == 1, formati
+    assert "E2500" in formati[0] and "5,5 l" in formati[0] and "EUR 13,80" in formati[0]
+    assert "DEKOSTEINE" in formati[0], "anche la tabella porta con se' il prodotto"
+
+
+def test_una_tabella_lunga_si_spezza_per_riga():
+    from indicizza import MAX_PEZZO, _pezzi_da_markdown
+    righe = "\n".join(f"| ART{i:04d} | descrizione lunga numero {i} " + "x" * 60 + " |"
+                      for i in range(60))
+    md = f"# VASI\n\n| codice | descrizione |\n| --- | --- |\n{righe}\n"
+    pezzi = [t for t, _ in _pezzi_da_markdown(md, 3)]
+    assert len(pezzi) > 10, "una tabella lunga non resta un pezzo solo"
+    uno = [x for x in pezzi if "ART0042" in x]
+    assert len(uno) == 1 and "VASI" in uno[0] and "codice" in uno[0], uno
+    assert all(len(t) <= MAX_PEZZO * 2 for t in pezzi)
+
+
+def test_la_prosa_resta_prosa_e_i_recinti_spariscono():
+    from indicizza import _pezzi_da_markdown
+    md = "```markdown\n# NOTE\n\nQuesta pagina descrive la lavorazione.\nSecondo capoverso.\n```"
+    pezzi = [t for t, _ in _pezzi_da_markdown(md, 1)]
+    assert len(pezzi) == 1, pezzi
+    assert "```" not in pezzi[0] and "NOTE" in pezzi[0] and "lavorazione" in pezzi[0]
+
+
+def test_pagina_vuota_non_produce_pezzi():
+    from indicizza import _pezzi_da_markdown
+    assert _pezzi_da_markdown("", 5) == []
+    assert _pezzi_da_markdown("```\n\n---\n\n```", 5) == []
 
 
 if __name__ == "__main__":

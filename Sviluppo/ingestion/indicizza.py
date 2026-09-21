@@ -662,6 +662,49 @@ class Lettore:
             testo = p.read_text(encoding="utf-8", errors="replace")
             return unisci([(x, None) for x in re.split(r"\n\s*\n", testo)]), []
         self._fai_spazio()
+        if LETTURA == "pagina" and p.suffix.lower() == ".pdf":
+            # Il TESTO lo legge il VLM guardando la pagina; le IMMAGINI continua
+            # a estrarle Docling, che su quelle e' affidabile e serve per
+            # mostrarle in chat. Due letture della stessa pagina, ognuna per
+            # quello che sa fare.
+            testi = self._pagine_col_vlm(p, progresso, dentro)
+            _, immagini = self._con_docling(p, None, solo_gpu, dentro)
+            return testi, immagini
+        return self._con_docling(p, progresso, solo_gpu, dentro)
+
+    def _pagine_col_vlm(self, p, progresso=None, dentro=None):
+        """[(testo, pagina)] dal VLM che LEGGE la pagina, una alla volta.
+
+        Una pagina per volta e non un blocco: il Markdown di ognuna si salva
+        appena pronto, quindi un giro interrotto riprende da dove era invece di
+        ricominciare (30 minuti a catalogo)."""
+        import pypdfium2
+        pdf = pypdfium2.PdfDocument(str(p))
+        n = len(pdf)
+        pdf.close()
+        if progresso:
+            progresso(0, n)
+        fuori = []
+        for pagina in range(1, n + 1):
+            try:
+                md = _markdown_pagina(p, pagina, dentro)
+            except Exception as e:
+                # Una pagina illeggibile non fa fallire il documento: entra
+                # senza quella, con l'avviso nel registro.
+                print(f"    {p.name}: pagina {pagina} non letta ({type(e).__name__}: {e})", flush=True)
+                md = ""
+            fuori += _pezzi_da_markdown(md, pagina)
+            if progresso:
+                progresso(pagina, n)
+            if pagina % 6 == 0 or pagina == n:
+                print(f"    {p.name}: pagina {pagina} di {n} (VLM)", flush=True)
+        return fuori
+
+    def _con_docling(self, p, progresso=None, solo_gpu=False, dentro=None):
+        """La lettura storica: Docling a blocchi di pagine, in un processo
+        figlio che muore subito dopo. Resta il percorso predefinito e l'unico
+        per i documenti di PROSA, dove funziona bene (nelle 24 domande vere le
+        categorie «Specifiche tecniche» e «Certificazioni» fanno 4/4 e 2/3)."""
         blocchi = [None]
         if p.suffix.lower() == ".pdf":
             import pypdfium2
@@ -808,20 +851,35 @@ def _riduci(img):
     return img
 
 
-def _cartella_immagini(percorso_fonte, rel):
-    """Dove stanno le immagini di UN documento, relativo alla radice delle
-    cartelle: `<fonte>/_immagini/<hash del documento>`. Un solo posto che lo
-    decide, perche' lo usano sia chi scrive sia chi ripulisce."""
-    return f"{percorso_fonte}/_immagini/{hashlib.sha256(rel.encode()).hexdigest()[:16]}"
+def _cartella_sorgenti(percorso_fonte, rel):
+    """Dove sta il LAVORATO di UN documento, relativo alla radice delle
+    cartelle: `<fonte>/_sorgenti/<hash del documento>`, con dentro
+
+        immagini/    le figure estratte, che l'orchestratore serve in chat
+        markdown/    una pagina per file, come l'ha letta il VLM
+
+    Un solo posto che lo decide, perche' lo usano sia chi scrive sia chi
+    ripulisce. Il prefisso `_` tiene la cartella fuori dall'indicizzazione.
+    Prima del 21/09/2026 era `_immagini/<hash>` con i PNG dentro: i percorsi
+    in banca dati cambiano, e si sistemano rileggendo."""
+    return f"{percorso_fonte}/_sorgenti/{hashlib.sha256(rel.encode()).hexdigest()[:16]}"
 
 
-def _butta_immagini(percorso_fonte, rel):
-    """Via la cartella delle immagini di un documento. Si chiama prima di
-    riscriverle e quando il documento esce dall'indice: i nomi dipendono da
-    pagina e ordine, quindi un PDF con meno immagini di prima lascerebbe file
-    orfani — e ora che stanno nelle cartelle di lavoro si vedono."""
+def _butta_sorgenti(percorso_fonte, rel, tieni_markdown=False):
+    """Via il lavorato di un documento. Si chiama prima di rifarlo e quando il
+    documento esce dall'indice: i nomi delle immagini dipendono da pagina e
+    ordine, quindi un PDF con meno figure di prima lascerebbe file orfani — e
+    ora che stanno nelle cartelle di lavoro si vedono.
+
+    `tieni_markdown`: si rifanno i pezzi SENZA richiamare il VLM. Trenta minuti
+    di lettura per catalogo, contro pochi secondi per rispezzare quello che
+    c'e' gia'."""
     import shutil
-    shutil.rmtree(RADICE / _cartella_immagini(percorso_fonte, rel), ignore_errors=True)
+    base = RADICE / _cartella_sorgenti(percorso_fonte, rel)
+    if tieni_markdown:
+        shutil.rmtree(base / "immagini", ignore_errors=True)
+        return
+    shutil.rmtree(base, ignore_errors=True)
 
 
 def _scrivi_immagini(dentro, immagini, da_indice):
@@ -838,14 +896,14 @@ def _scrivi_immagini(dentro, immagini, da_indice):
     fallisce il documento: entra senza immagini, con un avviso nel registro."""
     if not immagini:
         return []
-    radice = RADICE / dentro
+    radice = RADICE / dentro / "immagini"
     out = []
     try:
         radice.mkdir(parents=True, exist_ok=True)
         for n, (img, pagina, descr) in enumerate(immagini, start=da_indice):
             nome = f"{pagina or 0}_{n}.png"
             _riduci(img).save(radice / nome)
-            out.append((f"{dentro}/{nome}", pagina, descr))
+            out.append((f"{dentro}/immagini/{nome}", pagina, descr))
     except OSError as e:
         print(f"  immagini non salvate in {dentro} ({type(e).__name__}: {e}): "
               f"la cartella e' scrivibile?", flush=True)
@@ -987,11 +1045,11 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         # Si riparte pulito: le immagini si scrivono blocco per blocco, quindi
         # i residui della lettura precedente (o di una interrotta) vanno tolti
         # PRIMA, non a fine file.
-        _butta_immagini(percorso, rel)
+        _butta_sorgenti(percorso, rel, tieni_markdown=TIENI_MARKDOWN)
         IN_CORSO.update(fid=fid, rel=rel, stato=vecchio[4] if vecchio else None)
         try:
             pezzi, immagini = lettore.pezzi(p, _progresso, solo_gpu=grosso,
-                                            dentro=_cartella_immagini(percorso, rel))
+                                            dentro=_cartella_sorgenti(percorso, rel))
         except Rimandato as e:
             if vecchio:
                 conn.execute("UPDATE documenti SET impronta = %s, dimensione = %s, modificato_il = %s,"
@@ -1059,7 +1117,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
             conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
             conn.execute("DELETE FROM documenti WHERE source_id = %s AND documento = %s", (fid, rel))
             chiudi(conn, f"illeggibile:{fid}:{rel}")
-        _butta_immagini(percorso, rel)        # anche le sue immagini: il documento non c'e' piu'
+        _butta_sorgenti(percorso, rel)        # tutto: il documento non c'e' piu'
         conteggi["tolti"] += 1
         print(f"  tolto: {fid}/{rel}")
 
@@ -1181,6 +1239,162 @@ def main():
         # ogni secondo non la libera).
         if not (cambi or completati):
             time.sleep(INTERVALLO)
+
+
+# ====================================================================== pagina intera
+#
+# Percorso alternativo alla lettura di Docling, per i documenti a GRIGLIA
+# (cataloghi, listini). Misurato il 21/09/2026 su EUROSAND, pagine 7 e 76:
+# Docling trova ZERO tabelle e i titoli o mancano (pagina 7) o sono invertiti
+# — il codice articolo diventa titolo e il valore contenuto (pagina 76). La
+# griglia di un catalogo e' visiva, non una tabella con le righe disegnate, e
+# il modello di layout non la vede.
+#
+# Qui la pagina si rende a immagine e la legge il VLM, che restituisce Markdown
+# con i titoli veri e gli articoli uno per riga. Nessuna euristica sul testo:
+# la struttura la dichiara il modello guardando la pagina, come farebbe una
+# persona. Sulla pagina 7 escono nello stesso colpo il titolo «DEKOSTEINE
+# 9-13 mm», i formati «E5500 5,5 l € 13,80» e i colori «DST2001 rot» — le tre
+# cose che mancavano alle domande vere.
+
+LETTURA = os.environ.get("LETTURA", "docling")     # docling | pagina
+DPI_PAGINA = int(os.environ.get("DPI_PAGINA", "150"))
+# Rileggere le pagine col VLM costa ~30 minuti a catalogo; rispezzare il
+# Markdown gia' salvato costa secondi. Con TIENI_MARKDOWN=1 un --forza rifa'
+# solo i pezzi: serve quando si cambia come si spezza, non cosa si legge.
+TIENI_MARKDOWN = os.environ.get("TIENI_MARKDOWN", "") == "1"
+
+ISTRUZIONI_PAGINA = (
+    "Leggi questa pagina di catalogo e riportala in Markdown.\n"
+    "1. Il nome del prodotto come intestazione `#`, con le sue misure.\n"
+    "2. Le griglie di articoli come TABELLA NORMALIZZATA: una riga per ogni articolo, "
+    "con le colonne che trovi (codice, descrizione o colore, misura, confezione, prezzo). "
+    "Se la pagina mostra i valori impilati o affiancati, riorganizzali: ogni articolo una riga.\n"
+    "3. Trascrivi i testi come sono, in tutte le lingue. Non tradurre, non riassumere, "
+    "non inventare articoli che non vedi."
+)
+
+
+def _immagine_pagina(percorso, n):
+    """La pagina n come PNG in base64. 150 dpi: sotto, i codici articolo
+    piccoli si perdono; sopra, l'immagine supera il contesto del VLM."""
+    import base64
+    import io
+    import pypdfium2
+    pdf = pypdfium2.PdfDocument(str(percorso))
+    try:
+        img = pdf[n - 1].render(scale=DPI_PAGINA / 72).to_pil()
+    finally:
+        pdf.close()
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def _markdown_pagina(percorso, n, dentro):
+    """Il Markdown della pagina n, dal VLM. Si SALVA su disco
+    (`<sorgenti>/markdown/NNN.md`) e al giro dopo si rilegge da li'.
+
+    Salvarlo non e' cautela: e' il risultato costoso. Trenta minuti di VLM per
+    catalogo. Se cambia il modo di spezzare i pezzi — ed e' cambiato tre volte
+    il 21/09/2026 — si riscrive l'indice senza rileggere le pagine. Ed e'
+    leggibile da una persona: quando un prezzo sara' sbagliato si apre il file
+    invece di dedurlo."""
+    import json
+    import urllib.request
+    fuori = RADICE / dentro / "markdown" / f"{n:04d}.md"
+    if fuori.is_file():
+        return fuori.read_text(encoding="utf-8")
+    corpo = json.dumps({
+        "model": VLM_MODELLO, "max_tokens": 3000, "temperature": 0,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": ISTRUZIONI_PAGINA},
+            {"type": "image_url",
+             "image_url": {"url": "data:image/png;base64," + _immagine_pagina(percorso, n)}}]}],
+    }).encode()
+    req = urllib.request.Request(f"{VLM_URL.rstrip('/')}/chat/completions", data=corpo,
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=SECONDI_PER_BLOCCO) as r:
+        md = json.load(r)["choices"][0]["message"]["content"]
+    try:
+        fuori.parent.mkdir(parents=True, exist_ok=True)
+        fuori.write_text(md, encoding="utf-8")
+    except OSError as e:      # sola lettura: si legge lo stesso, senza cache
+        print(f"  markdown non salvato ({type(e).__name__}: {e})", flush=True)
+    return md
+
+
+def _righe_di_tabella(righe, titolo, pagina):
+    """Una tabella Markdown -> pezzi. Se sta in un pezzo solo resta intera:
+    «quali formati offrite» vuole vedere tutti i formati insieme. Se e' lunga
+    si spezza per RIGA, ognuna con il titolo e l'intestazione davanti —
+    altrimenti il vettore di venti articoli non significa nessun articolo."""
+    intero = "\n".join(righe)
+    if len(intero) <= MAX_PEZZO:
+        return [(f"{titolo}\n{intero}" if titolo else intero, pagina)]
+    intestazione = righe[0] if righe else ""
+    out = []
+    for r in righe[1:]:
+        if set(r.replace("|", "").strip()) <= set("-: "):     # riga di separazione
+            continue
+        davanti = " | ".join(x for x in (titolo, intestazione) if x)
+        out.append((f"{davanti} | {r}" if davanti else r, pagina))
+    return out
+
+
+def _pezzi_da_markdown(md, pagina):
+    """Markdown -> [(testo, pagina)], seguendo la STRUTTURA invece di
+    indovinarla: le intestazioni fanno da contesto, le voci di elenco e le
+    righe di tabella diventano pezzi distinti con quel contesto davanti.
+
+    E' la versione generica di quello che prima faceva un'espressione regolare
+    sul codice articolo — che funzionava su un catalogo e si rompeva sul
+    successivo (21/09/2026: i codici a una lettera dei formati non li vedeva)."""
+    fuori, blocco, titolo = [], [], ""
+
+    def chiudi():
+        testo = "\n".join(blocco).strip()
+        blocco.clear()
+        if testo:
+            fuori.append((f"{titolo}\n{testo}" if titolo else testo, pagina))
+
+    righe = md.splitlines()
+    i = 0
+    while i < len(righe):
+        r = righe[i].rstrip()
+        nuda = r.strip()
+        if nuda.startswith("```") or nuda in ("---", "***", "___"):
+            i += 1
+            continue
+        if nuda.startswith("#"):
+            chiudi()
+            titolo = nuda.lstrip("#").strip()
+            i += 1
+            # Le righe attaccate sotto il titolo ne fanno parte: le traduzioni
+            # del nome e le misure ("deco rocks | pierres decoratives", "9-13 mm").
+            while i < len(righe) and righe[i].strip() and not righe[i].lstrip().startswith(("#", "|", "-", "*")):
+                titolo += " " + righe[i].strip()
+                i += 1
+            continue
+        if nuda.startswith("|"):
+            chiudi()
+            tabella = []
+            while i < len(righe) and righe[i].lstrip().startswith("|"):
+                tabella.append(righe[i].strip())
+                i += 1
+            fuori.extend(_righe_di_tabella(tabella, titolo, pagina))
+            continue
+        if nuda.startswith(("- ", "* ")):
+            chiudi()
+            voce = nuda[2:].strip()
+            if voce:
+                fuori.append((f"{titolo} | {voce}" if titolo else voce, pagina))
+            i += 1
+            continue
+        blocco.append(r)
+        i += 1
+    chiudi()
+    return fuori
 
 
 if __name__ == "__main__":

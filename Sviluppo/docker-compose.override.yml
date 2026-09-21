@@ -107,6 +107,17 @@ services:
       VLM_DESCRIZIONI: ${VLM_DESCRIZIONI-api}
       VLM_URL: ${VLM_URL-http://host.docker.internal:1235/v1}
       VLM_MODELLO: ${VLM_MODELLO-}
+      # Come si legge il TESTO dei PDF:
+      #   docling  (predefinito) layout + OCR. Buono sulla prosa.
+      #   pagina   il VLM guarda la PAGINA e produce Markdown. Per i cataloghi
+      #            a griglia, dove Docling non vede le tabelle: su EUROSAND
+      #            pagina 7 trovava zero tabelle e nessun titolo (21/09/2026).
+      # Le IMMAGINI le estrae Docling in entrambi i casi.
+      LETTURA: ${LETTURA-docling}
+      DPI_PAGINA: ${DPI_PAGINA-150}
+      # 1 = rispezza il Markdown gia' letto invece di richiamare il VLM.
+      # Secondi invece di mezz'ora, quando si cambia come si spezza.
+      TIENI_MARKDOWN: ${TIENI_MARKDOWN-}
       # Prezzi trascritti dalle immagini: fuori dall'indice di regola (i prezzi
       # vengono dal gestionale, decisione 72), ammessi sui cataloghi fornitore
       # dove sono l'unico prezzo esistente.

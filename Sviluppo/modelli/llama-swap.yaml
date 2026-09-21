@@ -44,16 +44,26 @@ macros:
 
 models:
   # ---- chat ------------------------------------------------------------
-  # Contesto e parallelismo come li aveva LM Studio: 4 richieste insieme,
-  # perche' l'applicazione e' multiutente (4-5 persone).
+  # ATTENZIONE: --ctx-size e' il contesto TOTALE, diviso fra gli slot. Con
+  # --parallel 4 ogni conversazione ne aveva 2.816 (verificato su /props), e
+  # per il RAG e' troppo poco: una domanda di elenco recupera 20 pezzi
+  # (PEZZI_ELENCO), che fanno 5.000 token abbondanti, piu' il prompt di sistema
+  # e la cronologia. Il contesto veniva TRONCATO in silenzio, e il modello
+  # rispondeva su meta' delle fonti senza che si vedesse (21/09/2026).
+  #
+  # Qui gli utenti sono al massimo due, uno in sviluppo: due slot bastano, e
+  # ridurli NON costa VRAM — la cache KV dipende dal contesto totale, non dal
+  # numero di slot. 16.384 in due = 8.192 a conversazione.
+  # Se un giorno gli utenti in parallelo diventano cinque, si alza --parallel E
+  # --ctx-size insieme, altrimenti si torna a troncare.
   "qwen3-8b-gsq":
     name: "Chat (Qwen3 8B GSQ)"
     cmd: |
       ${llama}
       --model ${modelli}/ISTA-DASLab/Qwen3-8B-GGUF-GSQ/qwen3-8b-Q3_K_M.gguf
       --port ${PORT}
-      --ctx-size 10496
-      --parallel 4
+      --ctx-size 16384
+      --parallel 2
       ${gpu}
     ttl: 0
 
@@ -101,8 +111,13 @@ models:
       --model ${modelli}/lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q4_K_M.gguf
       --mmproj ${modelli}/lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/mmproj-Qwen3-VL-4B-Instruct-F16.gguf
       --port ${PORT}
-      --ctx-size 8192
-      --parallel 4
+      # UN solo slot, e tutto il contesto a lui: un'immagine piu' il prompt
+      # supera i 4.096 token, e con --parallel 2 la lettura falliva con
+      # «request (4096 tokens) exceeds the available context size» — errore
+      # introdotto e visto il 21/09/2026. L'indicizzazione manda una pagina
+      # alla volta, quindi due slot non servono a niente.
+      --ctx-size 16384
+      --parallel 1
       ${gpu}
     ttl: 0
 
