@@ -23,6 +23,15 @@ from psycopg.rows import dict_row
 K_RRF = 60          # costante standard della Reciprocal Rank Fusion
 CANDIDATI = 30      # quanti per ramo prima della fusione
 
+CANDIDATI_RERANK = int(os.environ.get("CANDIDATI_RERANK", "150"))
+RERANK_URL = os.environ.get("RERANK_URL", "")
+RERANK_MODELLO = os.environ.get("RERANK_MODELLO", "text-embedding-bge-reranker-v2-m3")
+# Quanto testo di ogni pezzo si manda a riordinare. Tutto il pezzo sarebbe
+# piu' fedele ma 150 pezzi interi superano il contesto del reranker.
+RERANK_CARATTERI = int(os.environ.get("RERANK_CARATTERI", "900"))
+
+
+
 
 SQL_IBRIDA = """
 WITH consentite AS (
@@ -119,13 +128,21 @@ def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8):
 
     degradato = qvec is None
     sql = SQL_SOLO_TESTO if degradato else SQL_IBRIDA
-    par = {"gruppi": gruppi, "aziende": aziende, "domanda": domanda, "limite": limite}
+    # Con il rerank si pesca largo e si sceglie dopo: la fusione decide un
+    # ordine, il cross-encoder lo corregge guardando domanda e pezzo insieme.
+    # Senza rerank configurato si prendono gli stessi di prima, altrimenti si
+    # manderebbero al modello 150 pezzi invece di 8.
+    largo = bool(RERANK_URL) and not degradato
+    par = {"gruppi": gruppi, "aziende": aziende, "domanda": domanda,
+           "limite": max(limite, CANDIDATI_RERANK) if largo else limite}
     if not degradato:
-        par |= {"qvec": qvec, "cand": CANDIDATI, "k": K_RRF}
+        par |= {"qvec": qvec, "cand": max(CANDIDATI, CANDIDATI_RERANK) if largo else CANDIDATI,
+                "k": K_RRF}
 
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(sql, par)
-        return cur.fetchall(), degradato
+        righe = cur.fetchall()
+    return (riordina(domanda, righe, limite) if largo else righe), degradato
 
 
 def contiene_interno(righe) -> str | None:
@@ -321,3 +338,53 @@ def documenti_visibili(conn, gruppi: list[str]):
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(SQL_DOCUMENTI, par)
         return cur.fetchall()
+
+
+# ------------------------------------------------------------------ rerank
+#
+# La ricerca a somiglianza confronta domanda e documento SEPARATAMENTE: ognuno
+# diventa 1024 numeri, e il confronto avviene dopo che il contesto e' stato
+# buttato via. Un cross-encoder li guarda INSIEME, e discrimina molto meglio:
+# misurato il 21/09/2026, +5,54 per una corrispondenza vera contro -11,04 per
+# una frase fuori tema, 2,6 s su 40 brani.
+#
+# Serve perche' il 22/09/2026, con i due sguardi sulla stessa pagina, i pezzi
+# sono passati da 361 a 786 mentre il budget restava 8: le risposte delle
+# domande 1, 5 e 6 stavano in posizione 21, 27 e 45 — dentro l'indice, fuori
+# dalla finestra. Allargare i candidati senza riordinarli non basta, perche' e'
+# la FUSIONE a scegliere gli 8 finali.
+#
+# Se il reranker non risponde non si fallisce: si tiene l'ordine della fusione,
+# cioe' il comportamento di prima.
+
+def riordina(domanda: str, righe: list, limite: int) -> list:
+    """Le righe riordinate dal cross-encoder, le prime `limite`.
+
+    Non tocca i PERMESSI: arrivano gia' filtrate dalla query SQL, e qui si
+    cambia solo l'ordine. Un pezzo che non era consentito non puo' comparire,
+    qualunque cosa dica il modello."""
+    if not RERANK_URL or len(righe) <= limite:
+        return righe[:limite]
+    import httpx
+    documenti = [(r.get("content") or "")[:RERANK_CARATTERI] for r in righe]
+    try:
+        r = httpx.post(f"{RERANK_URL.rstrip('/')}/rerank",
+                       json={"model": RERANK_MODELLO, "query": domanda, "documents": documenti},
+                       timeout=float(os.environ.get("RERANK_TIMEOUT", "60")))
+        r.raise_for_status()
+        ordine = [x["index"] for x in r.json()["results"]]
+    except Exception as e:
+        print(f"rerank non disponibile ({type(e).__name__}: {e}): si tiene l'ordine della fusione",
+              flush=True)
+        return righe[:limite]
+    # Indici fuori intervallo o mancanti: si ignorano invece di far saltare il
+    # turno. Poi si completa con l'ordine della fusione, se il modello ne ha
+    # restituiti meno del dovuto.
+    scelti = [righe[i] for i in ordine if 0 <= i < len(righe)][:limite]
+    visti = {id(x) for x in scelti}
+    for x in righe:
+        if len(scelti) >= limite:
+            break
+        if id(x) not in visti:
+            scelti.append(x)
+    return scelti

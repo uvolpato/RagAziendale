@@ -25,7 +25,7 @@ sys.path.insert(0, "/app")
 from orchestratore import recupero      # noqa: E402
 
 QUI = pathlib.Path(__file__).parent
-FALLITE = [1, 2, 3, 4, 5, 6, 8, 16, 20]
+FALLITE = [1, 4, 5, 6, 8, 16, 18, 7, 12]
 
 
 def piatto(s):

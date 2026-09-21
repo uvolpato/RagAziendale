@@ -107,3 +107,61 @@ I due interventi con la posizione misurata:
   già fra la posizione 26 e la 59.
 
 Sono previsioni anche queste. Il numero vero lo dà la rimisura.
+
+---
+
+## 22/09/2026 — due sguardi sulla pagina + rerank
+
+**Indice**: EUROSAND letto in DUE modi e indicizzato con entrambi —
+`LETTURA=pagina` (il VLM guarda la pagina e produce Markdown strutturato) piu'
+Docling (frammenti con le descrizioni delle figure). 786 pezzi contro i 361 di
+prima. **Rerank** attivo: 150 candidati riordinati dal cross-encoder, poi 8 al
+modello.
+
+| | Trovate nei primi 8 |
+|---|---|
+| Riferimento del 21/09 (solo Docling) | 10/20 — 50% |
+| Solo VLM, senza rerank | 5/20 — 25% |
+| Due sguardi, senza rerank | 11/20 — 55% |
+| **Due sguardi + rerank** | **17/20 — 85%** |
+| Due sguardi + rerank, domanda riscritta | 15/20 — 75% |
+
+Per categoria, tutte piene tranne tre domande:
+
+| Categoria | Prima | Adesso |
+|---|---|---|
+| Logistica, Volumi e Packaging | **0/5** | **4/5** |
+| Ricerca Materiali e Alternative | 3/5 | 4/5 |
+| Specifiche Tecniche e Granulometrie | 4/4 | 4/4 |
+| Certificazioni, Normative | 2/3 | 2/3 |
+| Assortimenti e Campionature | 1/3 | **3/3** |
+
+Mai trovate: **5** (sfere inox sfuse), **8** (neon), **16** (amfori).
+
+### Cosa ha fatto la differenza
+
+**Non i due sguardi da soli** (11/20), **non il rerank da solo**: insieme.
+I due sguardi mettono nell'indice il materiale che mancava — le tabelle di
+formati e prezzi che Docling non vedeva — ma raddoppiano i pezzi e si fanno
+concorrenza per gli stessi 8 posti. Misurato prima del rerank: le risposte
+delle domande 1, 5 e 6 stavano in posizione 27, 45 e 21, cioe' **dentro
+l'indice e fuori dalla finestra**. Il rerank e' quello che le tira dentro.
+
+### La riscrittura della domanda fa PEGGIO
+
+15/20 contro 17/20: perde le domande 7 e 9. E' la seconda misura che la boccia
+(il 21/09 dava guadagno zero). **Resta spenta.**
+
+### Costo
+
+~2 s per domanda in piu' (150 pezzi riordinati dal cross-encoder), sulla GPU
+dove il modello e' gia' residente.
+
+### Le tre che restano
+
+- **16 (amfori)**: la dichiarazione e' un LOGO, non testo. Nessuna ricerca la
+  trova perche' nell'indice non c'e'. E' un problema di lettura.
+- **8 (neon)**: la risposta era in posizione 322 prima del rerank, cioe' fuori
+  anche da 150 candidati.
+- **5 (sfere inox sfuse)**: era in posizione 45, dovrebbe rientrare: va
+  guardata a mano, probabilmente il `riscontro` e' scritto male.

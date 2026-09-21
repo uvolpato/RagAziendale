@@ -177,15 +177,15 @@ def test_il_lavorato_di_un_documento_sta_in_una_cartella_sola(tmp_path):
     indicizza.RADICE = tmp_path
     base = tmp_path / a
     (base / "immagini").mkdir(parents=True)
-    (base / "markdown").mkdir(parents=True)
+    (base / f"markdown-{indicizza.IMPRONTA_PROMPT}").mkdir(parents=True)
     (base / "immagini/9_99.png").write_bytes(b"residuo")
-    (base / "markdown/0007.md").write_text("# DEKOSTEINE", encoding="utf-8")
+    (base / f"markdown-{indicizza.IMPRONTA_PROMPT}/0007.md").write_text("# DEKOSTEINE", encoding="utf-8")
 
     # Rispezzare senza rileggere: le immagini si rifanno, il Markdown resta.
     # Trenta minuti di VLM per catalogo contro pochi secondi.
     _butta_sorgenti("decobrands/acquisti", "catalogo.pdf", tieni_markdown=True)
     assert not (base / "immagini").exists()
-    assert (base / "markdown/0007.md").is_file()
+    assert (base / f"markdown-{indicizza.IMPRONTA_PROMPT}/0007.md").is_file()
 
     # Il documento esce dall'indice: via tutto.
     _butta_sorgenti("decobrands/acquisti", "catalogo.pdf")
@@ -288,6 +288,32 @@ def test_pagina_vuota_non_produce_pezzi():
     from indicizza import _pezzi_da_markdown
     assert _pezzi_da_markdown("", 5) == []
     assert _pezzi_da_markdown("```\n\n---\n\n```", 5) == []
+
+
+
+def test_si_riconosce_quando_il_modello_non_rispetta_la_forma():
+    """Il VLM non e' coerente: sulla STESSA pagina, a temperatura zero, il
+    21/09/2026 ha prodotto una tabella in una chiamata e righe nude con `<br>`
+    nella successiva. Righe nude significano ventisei articoli in un pezzo
+    solo, cioe' il difetto di partenza.
+
+    Non si indovina cosa intendeva: si controlla il CONTRATTO, che e'
+    oggettivo (`<br>` e' vietato dalle istruzioni) e non dipende dal
+    contenuto della pagina ne' da soglie."""
+    from indicizza import rispetta_la_forma
+    buona = "# DEKOSTEINE\n\n| codice | colore |\n| --- | --- |\n| DST2001 | rot / red |"
+    assert rispetta_la_forma(buona)
+    cattiva = "# DEKOSTEINE\n\nDST2001 rot<br>red\nDST2050 gruen<br>green"
+    assert not rispetta_la_forma(cattiva)
+    assert rispetta_la_forma("")      # pagina vuota: niente da richiedere
+
+
+def test_il_markdown_salvato_dipende_dalle_istruzioni():
+    """Cambiando il prompt cambia la FORMA del Markdown: rileggere i file
+    vecchi darebbe pezzi incoerenti con i nuovi. L'impronta delle istruzioni
+    sta nel nome della cartella, cosi' un prompt diverso rilegge da solo."""
+    from indicizza import IMPRONTA_PROMPT
+    assert len(IMPRONTA_PROMPT) == 8 and IMPRONTA_PROMPT.isalnum()
 
 
 if __name__ == "__main__":

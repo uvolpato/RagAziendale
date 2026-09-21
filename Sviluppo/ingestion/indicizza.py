@@ -667,9 +667,31 @@ class Lettore:
             # a estrarle Docling, che su quelle e' affidabile e serve per
             # mostrarle in chat. Due letture della stessa pagina, ognuna per
             # quello che sa fare.
-            testi = self._pagine_col_vlm(p, progresso, dentro)
-            _, immagini = self._con_docling(p, None, solo_gpu, dentro)
-            return testi, immagini
+            # I DUE testi, non uno al posto dell'altro. Misurato il 21/09/2026
+            # sulle 24 domande vere: il solo VLM fa 5/20 contro i 10/20 di
+            # Docling, ma recupera le domande su formati e assortimenti che
+            # Docling sbagliava tutte (categoria «Logistica» 0 su 5). Sono due
+            # sguardi sulla stessa pagina e trovano cose diverse:
+            #   Docling   frammenti CON le descrizioni delle figure — prosa,
+            #             che risponde alle domande descrittive
+            #   VLM       tabelle pulite con codici, misure e prezzi — che
+            #             rispondono alle domande strutturate
+            # Con il solo VLM i pezzi erano tabelle al 98% e ZERO contenevano
+            # una descrizione: il vettore non aveva piu' niente da mordere.
+            # Il testo di Docling si paga comunque, perche' e' la stessa
+            # chiamata che estrae le immagini: buttarlo era spreco.
+            # La barra si divide fra le due passate: il VLM la porta a meta',
+            # Docling dalla meta' alla fine. Senza, il pannello segna «finito»
+            # mentre c'e' ancora la seconda passata da fare — e chi guarda
+            # pensa che sia bloccato (visto il 22/09/2026).
+            def meta(offset):
+                if not progresso:
+                    return None
+                return lambda fatte, totali: progresso(round(offset * totali + fatte / 2), totali)
+
+            testi = self._pagine_col_vlm(p, meta(0), dentro)
+            altri, immagini = self._con_docling(p, meta(0.5), solo_gpu, dentro)
+            return testi + altri, immagini
         return self._con_docling(p, progresso, solo_gpu, dentro)
 
     def _pagine_col_vlm(self, p, progresso=None, dentro=None):
@@ -1045,7 +1067,18 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         # Si riparte pulito: le immagini si scrivono blocco per blocco, quindi
         # i residui della lettura precedente (o di una interrotta) vanno tolti
         # PRIMA, non a fine file.
-        _butta_sorgenti(percorso, rel, tieni_markdown=TIENI_MARKDOWN)
+        # Il Markdown del VLM si butta quando cambia il DOCUMENTO, non quando
+        # si rilegge: e' il risultato costoso (~20 minuti a catalogo) e se il
+        # PDF e' lo stesso vale ancora. Le immagini invece si rifanno sempre,
+        # che costano poco e hanno nomi dipendenti dall'ordine.
+        #
+        # Prima dipendeva da TIENI_MARKDOWN, cioe' da una variabile da
+        # ricordarsi: il 22/09/2026 un --forza ha ributtato tutte e 105 le
+        # pagine gia' lette e le ha richieste al modello da capo. Il
+        # comportamento giusto non si chiede a chi lancia il comando, si deduce
+        # dall'impronta.
+        stesso_documento = bool(vecchio) and vecchio[1] == impronta
+        _butta_sorgenti(percorso, rel, tieni_markdown=stesso_documento and not TIENI_MARKDOWN_NO)
         IN_CORSO.update(fid=fid, rel=rel, stato=vecchio[4] if vecchio else None)
         try:
             pezzi, immagini = lettore.pezzi(p, _progresso, solo_gpu=grosso,
@@ -1259,20 +1292,52 @@ def main():
 
 LETTURA = os.environ.get("LETTURA", "docling")     # docling | pagina
 DPI_PAGINA = int(os.environ.get("DPI_PAGINA", "150"))
-# Rileggere le pagine col VLM costa ~30 minuti a catalogo; rispezzare il
-# Markdown gia' salvato costa secondi. Con TIENI_MARKDOWN=1 un --forza rifa'
-# solo i pezzi: serve quando si cambia come si spezza, non cosa si legge.
-TIENI_MARKDOWN = os.environ.get("TIENI_MARKDOWN", "") == "1"
+# Il Markdown del VLM si tiene finche' il documento e' lo stesso: e' il
+# risultato costoso (~20 minuti a catalogo) e non dipende da come spezziamo i
+# pezzi. Si butta da solo quando cambia il PDF (impronta diversa) o quando
+# cambiano le istruzioni al modello (l'impronta del prompt e' nel nome della
+# cartella). Questa variabile serve solo a forzarne la rilettura a mano, per
+# esempio se si sospetta che il modello abbia letto male.
+TIENI_MARKDOWN_NO = os.environ.get("RILEGGI_MARKDOWN", "") == "1"
 
 ISTRUZIONI_PAGINA = (
     "Leggi questa pagina di catalogo e riportala in Markdown.\n"
+    "\n"
     "1. Il nome del prodotto come intestazione `#`, con le sue misure.\n"
-    "2. Le griglie di articoli come TABELLA NORMALIZZATA: una riga per ogni articolo, "
-    "con le colonne che trovi (codice, descrizione o colore, misura, confezione, prezzo). "
-    "Se la pagina mostra i valori impilati o affiancati, riorganizzali: ogni articolo una riga.\n"
-    "3. Trascrivi i testi come sono, in tutte le lingue. Non tradurre, non riassumere, "
-    "non inventare articoli che non vedi."
+    "2. OGNI articolo va su una riga di TABELLA Markdown, una riga per articolo, "
+    "anche quando sulla pagina gli articoli sono affiancati o impilati in una griglia. "
+    "Prima riga di intestazione con i nomi delle colonne che servono fra: "
+    "codice, descrizione, colore, misura, confezione, prezzo.\n"
+    "3. MAI `<br>` dentro una cella: se una casella della pagina contiene piu' valori "
+    "(per esempio misura, confezione e due prezzi), ognuno va in una COLONNA sua.\n"
+    "4. Trascrivi i testi come sono, in tutte le lingue presenti. Non tradurre, non "
+    "riassumere, non inventare articoli che non vedi.\n"
+    "\n"
+    "Esempio della forma attesa:\n"
+    "# NOME PRODOTTO\n"
+    "traduzioni del nome | misure\n"
+    "\n"
+    "| codice | colore | misura | confezione | prezzo |\n"
+    "| --- | --- | --- | --- | --- |\n"
+    "| ABC123 | rosso / red | 5 l | 6 | 12,20 |\n"
 )
+# Il Markdown salvato dipende da QUESTE istruzioni: se cambiano, i file
+# vecchi sono di un'altra forma e rileggerli darebbe pezzi incoerenti con i
+# nuovi. L'impronta entra nel nome della cartella, cosi' un prompt diverso
+# rilegge da solo e i file vecchi restano li' per il confronto.
+IMPRONTA_PROMPT = hashlib.sha256(ISTRUZIONI_PAGINA.encode()).hexdigest()[:8]
+
+
+def rispetta_la_forma(md: str) -> bool:
+    """Il modello ha seguito le istruzioni? Non si giudica il CONTENUTO — non
+    sapremmo — si controlla il CONTRATTO, che e' oggettivo: `<br>` dentro la
+    risposta e' vietato esplicitamente, perche' significa piu' valori schiacciati
+    in una casella invece che in colonne separate.
+
+    Serve perche' il modello non e' coerente: sulla stessa pagina, a temperatura
+    zero, il 21/09/2026 ha prodotto una tabella in una chiamata e righe nude con
+    `<br>` nella successiva."""
+    return "<br>" not in (md or "")
 
 
 def _immagine_pagina(percorso, n):
@@ -1302,20 +1367,35 @@ def _markdown_pagina(percorso, n, dentro):
     invece di dedurlo."""
     import json
     import urllib.request
-    fuori = RADICE / dentro / "markdown" / f"{n:04d}.md"
+    fuori = RADICE / dentro / f"markdown-{IMPRONTA_PROMPT}" / f"{n:04d}.md"
     if fuori.is_file():
         return fuori.read_text(encoding="utf-8")
-    corpo = json.dumps({
-        "model": VLM_MODELLO, "max_tokens": 3000, "temperature": 0,
-        "messages": [{"role": "user", "content": [
-            {"type": "text", "text": ISTRUZIONI_PAGINA},
-            {"type": "image_url",
-             "image_url": {"url": "data:image/png;base64," + _immagine_pagina(percorso, n)}}]}],
-    }).encode()
-    req = urllib.request.Request(f"{VLM_URL.rstrip('/')}/chat/completions", data=corpo,
-                                 headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=SECONDI_PER_BLOCCO) as r:
-        md = json.load(r)["choices"][0]["message"]["content"]
+    b64 = _immagine_pagina(percorso, n)
+
+    def chiedi(istruzioni):
+        corpo = json.dumps({
+            "model": VLM_MODELLO, "max_tokens": 3000, "temperature": 0,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": istruzioni},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}}]}],
+        }).encode()
+        req = urllib.request.Request(f"{VLM_URL.rstrip('/')}/chat/completions", data=corpo,
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=SECONDI_PER_BLOCCO) as r:
+            return json.load(r)["choices"][0]["message"]["content"]
+
+    md = chiedi(ISTRUZIONI_PAGINA)
+    if not rispetta_la_forma(md):
+        # Il modello non e' coerente fra una chiamata e l'altra: sulla STESSA
+        # pagina 7 ha prodotto una volta una tabella e una volta righe nude con
+        # `<br>` dentro (21/09/2026). Righe nude vuol dire ventisei articoli in
+        # un pezzo solo, cioe' il difetto da cui siamo partiti.
+        # Non si indovina cosa intendeva: si richiede la forma. La violazione e'
+        # oggettiva — `<br>` e' vietato dalle istruzioni — quindi non serve
+        # nessuna soglia ne' ipotesi sul contenuto.
+        print(f"    pagina {n}: forma non rispettata, richiedo", flush=True)
+        md = chiedi(ISTRUZIONI_PAGINA + "\nATTENZIONE: la risposta precedente conteneva `<br>`. "
+                                        "Ogni valore in una COLONNA sua, un articolo per riga.")
     try:
         fuori.parent.mkdir(parents=True, exist_ok=True)
         fuori.write_text(md, encoding="utf-8")

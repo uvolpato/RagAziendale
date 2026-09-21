@@ -79,6 +79,15 @@ models:
       --model ${modelli}/Forrint/bge-m3-embeddings-Q4_K_M-GGUF/bge-m3-embeddings-q4_k_m.gguf
       --port ${PORT}
       --embeddings
+      # --batch-size/--ubatch-size: un modello di embedding (e di rerank) deve
+      # elaborare la sequenza INTERA in un colpo, e il valore predefinito di
+      # llama.cpp e' 512 token. I pezzi che vengono dalle tabelle dei cataloghi
+      # lo superano, e il server risponde 500 «input (522 tokens) is too large
+      # to process» — con l'effetto che l'indicizzazione scrive i pezzi SENZA
+      # vettori e la ricerca non li trova (visto il 21/09/2026, 376 pezzi
+      # ciechi). 8192 e' il massimo che bge-m3 regge per sequenza.
+      --batch-size 8192
+      --ubatch-size 8192
       --ctx-size 8192
       ${gpu}
     ttl: 0
@@ -94,6 +103,15 @@ models:
       --model ${modelli}/gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf
       --port ${PORT}
       --rerank
+      # --batch-size/--ubatch-size: un modello di embedding (e di rerank) deve
+      # elaborare la sequenza INTERA in un colpo, e il valore predefinito di
+      # llama.cpp e' 512 token. I pezzi che vengono dalle tabelle dei cataloghi
+      # lo superano, e il server risponde 500 «input (522 tokens) is too large
+      # to process» — con l'effetto che l'indicizzazione scrive i pezzi SENZA
+      # vettori e la ricerca non li trova (visto il 21/09/2026, 376 pezzi
+      # ciechi). 8192 e' il massimo che bge-m3 regge per sequenza.
+      --batch-size 8192
+      --ubatch-size 8192
       --pooling rank
       --ctx-size 8192
       ${gpu}
