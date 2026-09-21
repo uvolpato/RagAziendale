@@ -92,6 +92,10 @@ services:
       TZ: Europe/Rome
       GPU: ${GPU-auto}
       VRAM_MINIMA_MB: ${VRAM_MINIMA_MB-3500}
+      # Scaricare il modello di chat per far posto a Docling: serviva quando i
+      # modelli non stavano tutti in VRAM. Ora ci stanno (11,1 GB su 16,3) e
+      # scaricarlo faceva pagare 34 s di ricarica a ogni messaggio in chat.
+      SCARICA_CHAT: ${SCARICA_CHAT-si}
       FINESTRA_NOTTE: ${FINESTRA_NOTTE-}
       MB_MAX_DI_GIORNO: ${MB_MAX_DI_GIORNO-0}
       # Il server dei modelli sta FUORI da Docker, sulla macchina: da qui si
@@ -114,6 +118,12 @@ services:
       #            pagina 7 trovava zero tabelle e nessun titolo (21/09/2026).
       # Le IMMAGINI le estrae Docling in entrambi i casi.
       LETTURA: ${LETTURA-docling}
+      # Le fonti a GRIGLIA (cataloghi), che si leggono a pagina col VLM.
+      # Non e' globale: sui documenti di prosa Docling da solo fa gia' 4/4,
+      # e il prompt «catalogo» li' imporrebbe una griglia che non c'e'.
+      # E' la D16 in piccolo: quando ci sara' l'impostazione per fonte nel
+      # pannello, questa variabile sparisce.
+      LETTURA_PAGINA: ${LETTURA_PAGINA-}
       DPI_PAGINA: ${DPI_PAGINA-150}
       # Il Markdown del VLM si tiene da solo finche' il PDF e' lo stesso: un
       # --forza rispezza senza richiamare il modello (secondi invece di venti

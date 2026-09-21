@@ -30,7 +30,10 @@
 # solo», non «non si puo' scaricare».
 
 healthCheckTimeout: 500
-logLevel: info
+logLevel: debug
+logToStdout: "both"
+# «both» mostra anche l'output dei modelli, non solo del proxy: senza, un
+# processo che muore lascia soltanto un 499 nel registro e non si sa perche'.
 
 macros:
   # Binari ufficiali di llama.cpp (build CUDA per Windows), non quelli interni
@@ -139,25 +142,57 @@ models:
       ${gpu}
     ttl: 0
 
+  # ---- confronto: modello grande -------------------------------------
+  # Serve a rispondere a UNA domanda con i numeri invece che con le opinioni:
+  # «se il limite e' il modello, cambiamo il modello». Il 22/09/2026 il modello
+  # da 8B, con «DEKOSTEINE ... 9 - 13 mm» davanti, ha risposto che il documento
+  # non forniva le dimensioni. Qui si da' lo STESSO contesto a un modello
+  # grande e si guarda se lo legge.
+  #
+  # Sta in un gruppo suo ESCLUSIVO: 12 GB non convivono con chat e VLM su una
+  # scheda da 16. Caricarlo scarica gli altri, ed e' voluto.
+  "qwen3.8-27b-gsq-rco":
+    name: "Confronto (Qwen3.8 27B)"
+    cmd: |
+      ${llama}
+      --model ${modelli}/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF/Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf
+      --port ${PORT}
+      --ctx-size 16384
+      --parallel 1
+      ${gpu}
+    ttl: 1800
+
 routing:
   router:
     use: group
     settings:
       groups:
-        # Tutti e quattro insieme: 8,7 GB misurati su 16,3 della scheda, che
-        # lasciano spazio a Docling (picco misurato 6,1 GB). Stretto ma ci sta,
-        # e la valvola di sfogo esiste gia': durante la finestra notturna
-        # l'indicizzazione scarica il modello di chat da sola (BLOCCO_LLM in
-        # ingestion/indicizza.py).
-        #
-        # Se la VRAM non dovesse bastare, la modifica e' UNA riga: swap: true
-        # fa in modo che chat e VLM non stiano mai caricati insieme. Costa una
-        # ricarica ogni volta che si passa dall'uno all'altro.
-        "tutti":
+        # I PICCOLI non escono mai. Embedding e rerank pesano 0,33 e 0,46 GB e
+        # servono a ogni domanda: scaricarli per far posto a un modello grande
+        # sarebbe un pessimo affare. `persistent` vuol dire che nessun altro
+        # gruppo puo' buttarli fuori, nemmeno uno esclusivo.
+        "piccoli":
+          persistent: true
+          swap: false
+          exclusive: false
+          members:
+            - "text-embedding-bge-m3-embeddings"
+            - "text-embedding-bge-reranker-v2-m3"
+
+        # I GRANDI convivono: chat 5,5 GB + VLM 4,3 = 9,8, piu' i piccoli fa
+        # 10,6 su 16,3, e a Docling resta lo spazio per leggere.
+        "grandi":
           swap: false
           exclusive: false
           members:
             - "qwen3-8b-gsq"
-            - "text-embedding-bge-m3-embeddings"
-            - "text-embedding-bge-reranker-v2-m3"
             - "qwen/qwen3-vl-4b"
+
+        # Il 27B da solo: 12 GB non convivono con chat e VLM. Caricarlo
+        # scarica il gruppo «grandi» — ma NON i piccoli, che restano.
+        # 12 + 0,8 = 12,8 su 16,3.
+        "confronto":
+          swap: true
+          exclusive: true
+          members:
+            - "qwen3.8-27b-gsq-rco"

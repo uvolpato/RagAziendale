@@ -194,12 +194,19 @@ SELECT i.id, i.documento, i.page, i.descrizione,
  WHERE i.source_id IN (SELECT id FROM consentite)
    AND i.embedding IS NOT NULL
    AND (%(documenti)s::text[] IS NULL OR i.documento = ANY(%(documenti)s::text[]))
+   -- Solo le PAGINE che hanno risposto, non tutto il documento. Restringere
+   -- al documento non restringe niente quando la risposta viene da un
+   -- catalogo solo: il 22/09/2026 alla domanda «sassi rossi» sono uscite
+   -- sfere di acciaio (pagina 31), ciottoli di fiume (63) e stelline
+   -- natalizie (92), mentre il testo citava le pagine 4, 6 e 7 — e la frase
+   -- sopra le immagini diceva «le figure delle pagine citate».
+   AND (%(pagine)s::int[] IS NULL OR i.page = ANY(%(pagine)s::int[]))
  ORDER BY i.embedding <=> %(qvec)s::vector
  LIMIT %(limite)s;
 """
 
 
-def immagini_pertinenti(conn, qvec, gruppi, documenti=None, limite: int = 4):
+def immagini_pertinenti(conn, qvec, gruppi, documenti=None, limite: int = 4, pagine=None):
     """Le figure che RISPONDONO alla domanda, non quelle che stanno vicino al
     testo che ha risposto.
 
@@ -208,9 +215,11 @@ def immagini_pertinenti(conn, qvec, gruppi, documenti=None, limite: int = 4):
     cerca fra le descrizioni prodotte dal modello visivo, nello stesso spazio
     vettoriale dei pezzi: «sassi rossi» puo' incontrare «dark red lava rocks».
 
-    `documenti`: se valorizzato, si resta nei documenti che hanno risposto —
-    la figura deve appartenere alla stessa fonte della risposta, altrimenti si
-    mostrano prodotti di un catalogo mentre il testo parla di un altro.
+    `documenti` e `pagine`: si resta dove il testo ha risposto. Il documento da
+    solo non basta — con una risposta che viene da un catalogo solo, «stesso
+    documento» lascia candidate tutte le sue pagine, e il 22/09/2026 alla
+    domanda «sassi rossi» sono uscite sfere di acciaio dalla pagina 31 mentre
+    la risposta citava le pagine 4, 6 e 7.
     """
     if qvec is None:
         return []
@@ -219,7 +228,7 @@ def immagini_pertinenti(conn, qvec, gruppi, documenti=None, limite: int = 4):
     if not gruppi or not aziende:
         return []
     par = {"gruppi": gruppi, "aziende": aziende, "qvec": qvec,
-           "documenti": documenti or None, "limite": limite}
+           "documenti": documenti or None, "pagine": pagine or None, "limite": limite}
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(SQL_IMMAGINI, par)
         return cur.fetchall()

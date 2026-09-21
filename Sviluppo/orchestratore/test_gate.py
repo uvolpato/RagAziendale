@@ -460,6 +460,38 @@ def main():
         assert "[4] CATALOGO IPURO 2025.pdf, pagina 6" in elenco, elenco
 
 
+    @prova("T1.27", "le figure vengono dalle pagine che hanno risposto, non da tutto il documento")
+    def _():
+        """Restringere al DOCUMENTO non restringe niente quando la risposta
+        viene da un catalogo solo. Il 22/09/2026 alla domanda «sassi rossi»,
+        con il testo che citava le pagine 4, 6 e 7, sono uscite sfere di
+        acciaio (pagina 31), ciottoli di fiume (63) e stelline natalizie (92)
+        — sotto la frase «le figure delle pagine citate»."""
+        import psycopg.rows
+        c = psycopg.connect(os.environ["DATABASE_URL"], row_factory=psycopg.rows.dict_row)
+        try:
+            with c.cursor() as cur:
+                cur.execute("""INSERT INTO immagini (source_id, documento, page, percorso, descrizione, embedding)
+                               VALUES ('t-manuali', 'manuale.pdf', 12, 't-p/giusta.png',
+                                       'la figura della pagina che ha risposto', %s),
+                                      ('t-manuali', 'manuale.pdf', 99, 't-p/lontana.png',
+                                       'una figura di un altra pagina dello stesso documento', %s)
+                               ON CONFLICT (source_id, percorso) DO UPDATE
+                                 SET page = EXCLUDED.page, embedding = EXCLUDED.embedding""",
+                            ([0.1] * 1024, [0.1] * 1024))
+            c.commit()
+            gruppi = ["tutti", "azienda-luis"]
+            qvec = [0.1] * 1024
+            tutte = recupero.immagini_pertinenti(c, qvec, gruppi, ["manuale.pdf"], 10)
+            assert {r["page"] for r in tutte} >= {12, 99}, "senza filtro si vede tutto il documento"
+            solo12 = recupero.immagini_pertinenti(c, qvec, gruppi, ["manuale.pdf"], 10, pagine=[12])
+            assert {r["page"] for r in solo12} == {12},                 f"la figura di un altra pagina non deve uscire: {[r['page'] for r in solo12]}"
+        finally:
+            with c.cursor() as cur:
+                cur.execute("DELETE FROM immagini WHERE percorso LIKE 't-p/%%'")
+            c.commit()
+            c.close()
+
     print("\n--- Indicizzazione che scarica il modello " + "-" * 27)
 
     @prova("T1.18", "mentre l'indicizzazione tiene il lock, la chat risponde senza chiamare il modello")

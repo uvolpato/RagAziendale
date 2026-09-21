@@ -76,6 +76,13 @@ GPU = os.environ.get("GPU", "auto")                         # auto | off
 # descrizioni NON e' in questo conto: sta su LM Studio e la sua VRAM (2,3 GB per
 # glm-ocr) risulta gia' occupata quando si guarda quanto e' libero.
 VRAM_MINIMA_MB = int(os.environ.get("VRAM_MINIMA_MB", "3500"))
+# Scaricare il modello di chat per far posto a Docling: serviva quando i
+# modelli non stavano tutti in VRAM. Da quando il server e' llama-swap ci
+# stanno (11,1 GB su 16,3, misurato il 22/09/2026), e scaricarlo faceva
+# pagare 34 secondi di ricarica a ogni messaggio in chat. `no` lo
+# disattiva: la lettura si arrangia con lo spazio che avanza, e se non
+# basta un blocco si rifa' sul processore.
+SCARICA_CHAT = os.environ.get("SCARICA_CHAT", "si") != "no"
 FINESTRA_NOTTE = os.environ.get("FINESTRA_NOTTE", "")       # "22:00-06:00"; vuoto = nessuna finestra
 # Fuori finestra i file oltre questa soglia aspettano la notte: leggerli di
 # giorno tiene occupata la macchina mentre qualcuno chatta. 0 = nessun limite.
@@ -638,8 +645,19 @@ class Lettore:
         """Nella finestra notturna (o con --forza) si scarica il modello di chat,
         ma solo quando c'e' davvero un file da leggere, e una volta sola per giro.
         Finche' il lock BLOCCO_LLM e' preso, l'orchestratore risponde che sta
-        aggiornando l'indice invece di far ricaricare il modello a LM Studio."""
-        if self.spazio_fatto or not self.finestra:
+        aggiornando l'indice invece di far leggere il modello a chi chatta.
+
+        Con SCARICA_CHAT=no non si tocca niente: chi chatta continua a
+        ricevere risposte mentre si legge. Ha senso quando i modelli stanno
+        tutti in VRAM insieme — e da quando il server e' llama-swap ci stanno
+        (11,1 GB su 16,3, misurato il 22/09/2026). Il prezzo lo paga la
+        lettura, non le persone: se a Docling non basta lo spazio rimasto,
+        quel blocco si rifa' sul processore (vedi _gpu_piena), piu' lento ma
+        senza fallire.
+
+        Scaricarlo costava 34 secondi di ricarica a OGNI messaggio, perche'
+        l'indicizzazione lo rifaceva a ogni file."""
+        if self.spazio_fatto or not self.finestra or not SCARICA_CHAT:
             return
         self.spazio_fatto = True
         libera = vram_libera_mb()
@@ -651,18 +669,20 @@ class Lettore:
             print(f"modello di chat scaricato per fare spazio: {libera} MB liberi, "
                   f"ne servono {VRAM_MINIMA_MB}", flush=True)
 
-    def pezzi(self, p: pathlib.Path, progresso=None, solo_gpu=False, dentro=None):
+    def pezzi(self, p: pathlib.Path, progresso=None, solo_gpu=False, dentro=None, lettura=None):
         """progresso(fatte, totali) se c'e', chiamata ad ogni blocco completato.
         solo_gpu: file che fuori dalla finestra si legge SOLO finche' la GPU e'
         libera; se la perde a meta', si ferma e si riprende dopo (Rimandato).
         dentro: cartella (relativa alla radice) dove scrivere le immagini man
         mano che escono; si torna il METADATO, non l'immagine, cosi' la memoria
-        non cresce con le pagine."""
+        non cresce con le pagine.
+        lettura: `docling` o `pagina`; None = quello che dice la configurazione.
+        Lo decide la FONTE, non il file: vedi come_leggere()."""
         if p.suffix.lower() in TESTO:
             testo = p.read_text(encoding="utf-8", errors="replace")
             return unisci([(x, None) for x in re.split(r"\n\s*\n", testo)]), []
         self._fai_spazio()
-        if LETTURA == "pagina" and p.suffix.lower() == ".pdf":
+        if (lettura or LETTURA) == "pagina" and p.suffix.lower() == ".pdf":
             # Il TESTO lo legge il VLM guardando la pagina; le IMMAGINI continua
             # a estrarle Docling, che su quelle e' affidabile e serve per
             # mostrarle in chat. Due letture della stessa pagina, ognuna per
@@ -1082,7 +1102,8 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         IN_CORSO.update(fid=fid, rel=rel, stato=vecchio[4] if vecchio else None)
         try:
             pezzi, immagini = lettore.pezzi(p, _progresso, solo_gpu=grosso,
-                                            dentro=_cartella_sorgenti(percorso, rel))
+                                            dentro=_cartella_sorgenti(percorso, rel),
+                                            lettura=come_leggere(fid))
         except Rimandato as e:
             if vecchio:
                 conn.execute("UPDATE documenti SET impronta = %s, dimensione = %s, modificato_il = %s,"
@@ -1291,6 +1312,21 @@ def main():
 # cose che mancavano alle domande vere.
 
 LETTURA = os.environ.get("LETTURA", "docling")     # docling | pagina
+# Le fonti che si leggono a PAGINA invece che con Docling, separate da virgola
+# (id della fonte, come in `sources`). Non e' globale di proposito: misurato il
+# 22/09/2026, sui cataloghi il percorso a due sguardi porta il recupero da
+# 10/20 a 17/20, ma sui documenti di PROSA — policy, procedure — Docling da
+# solo fa gia' 4/4, e il prompt «catalogo» li' imporrebbe una griglia che non
+# c'e' (sulle pagine non-prodotto di EUROSAND produceva tabelle vuote).
+# Questa variabile e' la D16 in piccolo: quando ci sara' l'impostazione per
+# fonte nel pannello, sparisce e il valore arriva da `sources`.
+FONTI_A_PAGINA = {x.strip() for x in os.environ.get("LETTURA_PAGINA", "").split(",") if x.strip()}
+
+
+def come_leggere(fonte: str) -> str:
+    """`pagina` per le fonti dichiarate a griglia, altrimenti quello che dice
+    LETTURA. Un solo posto che lo decide."""
+    return "pagina" if fonte in FONTI_A_PAGINA else LETTURA
 DPI_PAGINA = int(os.environ.get("DPI_PAGINA", "150"))
 # Il Markdown del VLM si tiene finche' il documento e' lo stesso: e' il
 # risultato costoso (~20 minuti a catalogo) e non dipende da come spezziamo i

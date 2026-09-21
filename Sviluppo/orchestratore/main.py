@@ -317,7 +317,15 @@ def _immagini_per_la_domanda(conn, qvec, gruppi, righe):
     che le descrizioni venissero salvate — si torna alla scelta per pagina.
     """
     documenti = list({r["documento"] for r in righe}) if righe else None
-    trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI)
+    # ...e nelle PAGINE che hanno risposto. Il documento da solo non basta:
+    # quando la risposta viene da un catalogo solo, «stesso documento» lascia
+    # candidate tutte le sue pagine. Il 22/09/2026, alla domanda «sassi rossi»
+    # con il testo che citava le pagine 4, 6 e 7, sono uscite sfere di acciaio
+    # (pagina 31), ciottoli di fiume (63) e stelline natalizie (92) — sotto la
+    # frase «Ecco le figure delle pagine citate», che quindi era falsa.
+    pagine = sorted({r["page"] for r in righe if r.get("page") is not None}) if righe else None
+    trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI,
+                                           pagine=pagine)
     if trovate:
         return [r["id"] for r in trovate]
     return _immagini_del_turno(righe)

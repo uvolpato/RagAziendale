@@ -316,6 +316,47 @@ def test_il_markdown_salvato_dipende_dalle_istruzioni():
     assert len(IMPRONTA_PROMPT) == 8 and IMPRONTA_PROMPT.isalnum()
 
 
+
+def test_il_modo_di_leggere_lo_decide_la_fonte():
+    """Sui cataloghi il percorso a due sguardi porta il recupero da 10/20 a
+    17/20; sui documenti di prosa Docling da solo fa gia' 4/4, e il prompt
+    «catalogo» li' imporrebbe una griglia che non c'e'. Quindi non e' una
+    scelta globale: la dichiara chi sa cosa contiene la cartella."""
+    indicizza.FONTI_A_PAGINA = {"acquisti-decobrands"}
+    indicizza.LETTURA = "docling"
+    assert indicizza.come_leggere("acquisti-decobrands") == "pagina"
+    assert indicizza.come_leggere("sicurezza-luis") == "docling"
+    # LETTURA resta la rete di sicurezza per le fonti non dichiarate.
+    indicizza.LETTURA = "pagina"
+    assert indicizza.come_leggere("sicurezza-luis") == "pagina"
+    indicizza.LETTURA = "docling"
+    indicizza.FONTI_A_PAGINA = set()
+
+
+
+def test_con_scarica_chat_no_il_modello_di_chat_non_si_tocca():
+    """Da quando i modelli stanno tutti in VRAM insieme, scaricare quello di
+    chat faceva pagare 34 secondi di ricarica a OGNI messaggio, perche'
+    l'indicizzazione lo rifaceva a ogni file (misurato il 22/09/2026)."""
+    lettore = indicizza.Lettore(conn=None, finestra=True)
+    indicizza.SCARICA_CHAT = False
+    chiamate = []
+    vero = indicizza.scarica_llm
+    indicizza.scarica_llm = lambda: chiamate.append(1) or True
+    try:
+        lettore._fai_spazio()
+        assert chiamate == [], "con SCARICA_CHAT=no non si scarica niente"
+        # E con l'impostazione attiva si comporta come prima: decide la VRAM.
+        indicizza.SCARICA_CHAT = True
+        lettore.spazio_fatto = False
+        indicizza.vram_libera_mb = lambda: 100          # molto poca
+        lettore._fai_spazio()
+        assert chiamate == [1], "con SCARICA_CHAT=si e poca VRAM si scarica"
+    finally:
+        indicizza.scarica_llm = vero
+        indicizza.SCARICA_CHAT = True
+
+
 if __name__ == "__main__":
     import tempfile
     esiti = []
