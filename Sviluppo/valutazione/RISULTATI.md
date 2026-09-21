@@ -163,5 +163,16 @@ dove il modello e' gia' residente.
   trova perche' nell'indice non c'e'. E' un problema di lettura.
 - **8 (neon)**: la risposta era in posizione 322 prima del rerank, cioe' fuori
   anche da 150 candidati.
-- **5 (sfere inox sfuse)**: era in posizione 45, dovrebbe rientrare: va
-  guardata a mano, probabilmente il `riscontro` e' scritto male.
+- **5 (sfere inox sfuse)**: guardata a mano il 22/09/2026, e il `riscontro`
+  e' giusto — sbaglia il recupero. I primi otto risultati vengono tutti da un
+  ALTRO catalogo (INGE Holly&Jolly): «Kugel, 10 cm, Kunststoff», palline di
+  plastica natalizie. La domanda dice «sfere metalliche giganti da 10 o 15
+  CENTIMETRI», EUROSAND scrive «sfere di acciaio 100/150 MM», e l'altro
+  catalogo dice letteralmente «10 cm». Il reranker ha preferito la
+  corrispondenza letterale sbagliata, e la parola «metalliche» non e' bastata
+  a scartare la plastica.
+
+  Due cose che nessun ritocco al recupero risolve: **le unita' di misura** (cm
+  contro mm) e **la concorrenza fra cataloghi** su una parola comune. Sono da
+  tenere fra i casi di prova quando si toccheranno le misure o il confine fra
+  fonti.
