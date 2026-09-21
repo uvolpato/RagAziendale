@@ -93,7 +93,7 @@ def leggi(conn, img_id: int):
 # ~700 KB: quattro in fondo a una risposta sono quasi 3 MB, e in chat si
 # vedono comunque piccole. Si manda la miniatura e si tiene l'originale a un
 # clic di distanza (main._blocco_immagini).
-LATO_MINIATURA = int(os.environ.get("IMMAGINI_LATO_MINIATURA", "320"))
+LATO_MINIATURA = int(os.environ.get("IMMAGINI_LATO_MINIATURA", "160"))
 
 
 def miniatura(dati: bytes, lato: int = LATO_MINIATURA):

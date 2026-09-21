@@ -146,9 +146,19 @@ def _senza_aggiunte(messaggio: dict) -> dict:
     la risposta."""
     if messaggio.get("role") != "assistant":
         return messaggio
-    righe = [r for r in messaggio["content"].splitlines()
-             if MARCA_OFFERTA not in r and "![immagine" not in r
-             and MARCA_FONTI not in r]
+    righe = []
+    for r in messaggio["content"].splitlines():
+        if MARCA_OFFERTA in r or MARCA_FONTI in r:
+            continue
+        if "![immagine" in r:
+            # Con le figure se ne vanno intestazione e separatore della loro
+            # tabella, che altrimenti restano orfani. Si tolgono solo QUI,
+            # attaccati a una riga di figure: «|---|---|» da solo e' anche il
+            # separatore di una tabella scritta dal modello, e quella resta.
+            while righe and IMPALCATURA_TABELLA.match(righe[-1]):
+                righe.pop()
+            continue
+        righe.append(r)
     # Il filetto restava orfano dell'elenco che introduceva.
     while righe and righe[-1].strip() in ("---", ""):
         righe.pop()
@@ -175,6 +185,11 @@ MARCA_OFFERTA = "immagini collegate a questa risposta"
 # _blocco_offerta) e RICONOSCERLA nella cronologia per toglierla
 # (_senza_aggiunte). Una sola costante, cosi' non possono divergere.
 MARCA_FONTI = "_Fonti: "
+# Intestazione e riga di separazione della tabella delle figure: celle VUOTE,
+# solo barre, trattini e spazi. Tolta la riga con le immagini resterebbero
+# orfane, e il modello se le rivedrebbe in cronologia. Una tabella vera del
+# modello ha del testo nelle celle, quindi non combacia.
+IMPALCATURA_TABELLA = re.compile(r"^\s*\|[\s|:-]*\|\s*$")
 # "Si", "mostra", "fammi vedere": un consenso, non una domanda. Deve essere un
 # messaggio breve, altrimenti "quali immagini ci sono nel catalogo?" verrebbe
 # scambiato per un si'.
@@ -262,14 +277,32 @@ def _fonti_citate(righe) -> str:
     return "\n\n---\n" + MARCA_FONTI + " · ".join(voci) + "_"
 
 
+PER_RIGA = 4        # quante figure affiancare
+
+
 def _blocco_immagini(url_per_pos) -> str:
-    """Le figure, in markdown, una per riga: MINIATURA cliccabile.
+    """Le figure, in markdown: miniature cliccabili, quattro per riga.
 
     In chat serve riconoscere il prodotto, non leggerne le etichette: si manda
     la versione piccola (`mini=1`) e l'originale resta a un clic di distanza.
     Quattro figure di catalogo a piena risoluzione sono quasi 3 MB per
-    risposta, e si vedono comunque rimpicciolite."""
-    return "\n".join(f"[![immagine {n}]({u}&mini=1)]({u})" for n, u in url_per_pos.items())
+    risposta, e si vedono comunque rimpicciolite.
+
+    Una TABELLA, non immagini di seguito: LibreChat applica `display: block`
+    a ogni `img` (preflight di Tailwind, verificato nel CSS compilato), quindi
+    metterle sulla stessa riga di markdown non basta — si impilerebbero lo
+    stesso. Ogni cella invece e' un riquadro suo, e le celle stanno in fila.
+    """
+    celle = [f"[![immagine {n}]({u}&mini=1)]({u})" for n, u in url_per_pos.items()]
+    if not celle:
+        return ""
+    righe = ["|" + "|".join(" " * 2 for _ in range(PER_RIGA)) + "|",
+             "|" + "|".join("---" for _ in range(PER_RIGA)) + "|"]
+    for i in range(0, len(celle), PER_RIGA):
+        gruppo = celle[i:i + PER_RIGA]
+        gruppo += [" "] * (PER_RIGA - len(gruppo))      # celle vuote in coda
+        righe.append("| " + " | ".join(gruppo) + " |")
+    return "\n".join(righe)
 
 
 def _immagini_per_la_domanda(conn, qvec, gruppi, righe):

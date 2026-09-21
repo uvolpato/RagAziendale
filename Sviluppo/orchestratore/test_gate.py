@@ -382,6 +382,21 @@ def main():
         assert MARCA_FONTI not in pulita, "il 21/09/2026 il modello ricopiava l\u2019elenco del turno prima"
         assert not pulita.rstrip().endswith("---"), "il filetto resta orfano dell\u2019elenco"
 
+    @prova("T1.24", "le figure stanno quattro per riga e l'impalcatura non torna al modello")
+    def _():
+        from orchestratore.main import PER_RIGA, _blocco_immagini, _senza_aggiunte
+        blocco = _blocco_immagini({n: f"https://x/immagini/{n}?firma=y" for n in range(1, 5)})
+        corpo = [r for r in blocco.splitlines() if "![immagine" in r]
+        assert len(corpo) == 1, f"quattro figure stanno su una riga sola: {blocco}"
+        assert corpo[0].count("![immagine") == PER_RIGA, corpo[0]
+        # LibreChat mette display:block su ogni img: senza tabella si impilano.
+        assert blocco.splitlines()[1].startswith("|---"), "serve la riga di separazione, o non e' una tabella"
+        pulita = _senza_aggiunte({"role": "assistant", "content": "Ecco i vasi.\n\n" + blocco})["content"]
+        assert pulita.strip() == "Ecco i vasi.", f"non deve restare impalcatura: {pulita!r}"
+        # Una tabella scritta dal MODELLO ha testo nelle celle: non si tocca.
+        tabella = "Ecco i vasi.\n\n| Codice | Colore |\n|---|---|\n| DST2001 | rosso |"
+        assert _senza_aggiunte({"role": "assistant", "content": tabella})["content"] == tabella
+
     @prova("T1.23", "le fonti sulla stessa pagina si raggruppano invece di ripetersi")
     def _():
         from orchestratore.main import _fonti_citate
