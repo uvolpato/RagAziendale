@@ -46,6 +46,22 @@ def test_le_varianti_di_una_tabella_restano_pezzi_distinti():
     assert any("rustic arrangement" in x and "DST20" not in x for x in pezzi)
 
 
+def test_il_titolo_lungo_resta_il_contesto_delle_varianti():
+    """Sulla pagina vera il titolo NON arriva da solo: Docling gli attacca in
+    coda la descrizione della figura, e il pezzo supera i 200 caratteri.
+    Con il tetto rigido il contesto risultava vuoto e le righe finivano nude:
+    in EUROSAND pagina 7 il pezzo era letteralmente «DST2001 rot red», senza
+    una parola che dicesse «pietre». Ecco perche' «sassi rossi» non trovava
+    nulla (misurato in banca dati il 21/09/2026)."""
+    titolo = ("DEKOSTEINE deco rocks | pierres decoratives | pietre decorative 9 - 13 mm "
+              "A rustic display of decorative stones arranged in a shallow wooden bowl, "
+              "with warm beige and grey tones, photographed on a linen cloth in daylight.")
+    assert len(titolo) > 200, "il caso da coprire e' proprio il titolo lungo"
+    pezzi = [testo for testo, _ in unisci([(titolo, 7), ("DST2001 rot red", 7)])]
+    rosso = [x for x in pezzi if "rot red" in x]
+    assert len(rosso) == 1 and "pietre decorative" in rosso[0], rosso
+
+
 def test_una_riga_qualsiasi_non_e_una_variante():
     """Il riconoscimento deve essere stretto: un codice a inizio riga e riga
     corta. Una frase che cita un codice resta prosa."""

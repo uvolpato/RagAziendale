@@ -198,11 +198,17 @@ def _e_variante(testo):
 
 def _contesto_di_pagina(pezzi_pagina):
     """Il testo che dice DI COSA parla la pagina: il primo pezzo di prosa
-    abbastanza lungo (il titolo del prodotto, di solito con le misure)."""
+    abbastanza lungo (il titolo del prodotto, di solito con le misure).
+
+    Il titolo sta in TESTA al pezzo, quindi si taglia invece di scartare: sulla
+    pagina vera Docling gli attacca in coda la descrizione della figura e il
+    pezzo supera i 200 caratteri. Con un tetto rigido il contesto restava
+    vuoto e le righe di tabella finivano nude — «DST2001 rot red» senza una
+    parola che dicesse «pietre» (EUROSAND pagina 7, 21/09/2026)."""
     for testo, _pagina in pezzi_pagina:
         pulito = " ".join(testo.split())
-        if not _e_variante(pulito) and 15 <= len(pulito) <= 200:
-            return pulito
+        if not _e_variante(pulito) and len(pulito) >= 15:
+            return pulito[:200]
     return ""
 
 
