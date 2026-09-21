@@ -142,7 +142,7 @@ def _senza_aggiunte(messaggio: dict) -> dict:
     if messaggio.get("role") != "assistant":
         return messaggio
     righe = [r for r in messaggio["content"].splitlines()
-             if MARCA_OFFERTA not in r and not r.lstrip().startswith("![immagine")]
+             if MARCA_OFFERTA not in r and "![immagine" not in r]
     return {**messaggio, "content": "\n".join(righe).strip()}
 
 
@@ -241,8 +241,13 @@ def _fonti_citate(righe) -> str:
 
 
 def _blocco_immagini(url_per_pos) -> str:
-    """Le figure, in markdown, una per riga."""
-    return "\n".join(f"![immagine {n}]({u})" for n, u in url_per_pos.items())
+    """Le figure, in markdown, una per riga: MINIATURA cliccabile.
+
+    In chat serve riconoscere il prodotto, non leggerne le etichette: si manda
+    la versione piccola (`mini=1`) e l'originale resta a un clic di distanza.
+    Quattro figure di catalogo a piena risoluzione sono quasi 3 MB per
+    risposta, e si vedono comunque rimpicciolite."""
+    return "\n".join(f"[![immagine {n}]({u}&mini=1)]({u})" for n, u in url_per_pos.items())
 
 
 def _immagini_per_la_domanda(conn, qvec, gruppi, righe):
@@ -462,7 +467,8 @@ async def chat(request: Request):
 
 
 @app.get("/immagini/{img_id}")
-def servizio_immagine(request: Request, img_id: int, scade: str = "", firma: str = "", u: str = ""):
+def servizio_immagine(request: Request, img_id: int, scade: str = "", firma: str = "", u: str = "",
+                      mini: int = 0):
     """Serve un'immagine a DUE condizioni: URL firmato valido, e permesso
     ancora valido per la persona a cui e' stato consegnato.
 
@@ -483,6 +489,9 @@ def servizio_immagine(request: Request, img_id: int, scade: str = "", firma: str
     if not dati:
         return JSONResponse({"error": "immagine non trovata"}, status_code=404)
     b, tipo = dati
+    # `mini` non entra nella firma: non e' un permesso, e' solo la taglia.
+    if mini:
+        b, tipo = immagini.miniatura(b)
     return Response(content=b, media_type=tipo,
                     headers={"Cache-Control": "private, max-age=300"})
 

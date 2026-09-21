@@ -87,3 +87,29 @@ def leggi(conn, img_id: int):
     if not p.is_file():
         return None
     return p.read_bytes(), "image/png"
+
+
+# Lato lungo della miniatura. Una figura di catalogo esce a 1600 px e pesa
+# ~700 KB: quattro in fondo a una risposta sono quasi 3 MB, e in chat si
+# vedono comunque piccole. Si manda la miniatura e si tiene l'originale a un
+# clic di distanza (main._blocco_immagini).
+LATO_MINIATURA = int(os.environ.get("IMMAGINI_LATO_MINIATURA", "320"))
+
+
+def miniatura(dati: bytes, lato: int = LATO_MINIATURA):
+    """(bytes, content_type) della versione piccola. JPEG: su una foto di
+    prodotto pesa una frazione del PNG, e per una miniatura la perdita non si
+    vede. Se l'immagine non e' leggibile si restituisce l'originale: una
+    figura grande e' meglio di una figura assente."""
+    from io import BytesIO
+    try:
+        from PIL import Image
+        with Image.open(BytesIO(dati)) as img:
+            img = img.convert("RGB")
+            img.thumbnail((lato, lato))
+            buf = BytesIO()
+            img.save(buf, "JPEG", quality=80, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+    except Exception as e:
+        print(f"miniatura non riuscita: {type(e).__name__}: {e}", flush=True)
+        return dati, "image/png"

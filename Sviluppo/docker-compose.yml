@@ -371,6 +371,13 @@ services:
       OAUTH2_PROXY_COOKIE_NAME: _sessione_immagini
       OAUTH2_PROXY_COOKIE_SECURE: "true"
       OAUTH2_PROXY_COOKIE_SAMESITE: lax
+      # Una risposta porta piu' figure, e i tag <img> partono TUTTI INSIEME
+      # senza sessione: sono altrettanti login in parallelo. Con un cookie
+      # CSRF solo, l'ultimo sovrascrive gli altri e si vede una figura su
+      # quattro (visto il 21/09/2026: tre 302 e un 200). Un cookie CSRF per
+      # richiesta e i flussi non si pestano i piedi.
+      OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST: "true"
+      OAUTH2_PROXY_COOKIE_CSRF_EXPIRE: 5m
       # Chi e' dentro l'azienda puo' vedere le figure che la RICERCA gli ha
       # gia' concesso: il permesso vero lo applica l'orchestratore, immagine
       # per immagine, con i gruppi che arrivano da qui.
