@@ -292,3 +292,47 @@ Tutti e quattro i ruoli, attraverso llama-swap, il 21/09/2026:
 
 Il VLM era il rischio vero: è l'unico che ha bisogno del file `mmproj` per
 vedere davvero le immagini invece di trattarle come testo.
+
+### 7.7 Avvio automatico
+
+llama-swap non e' un servizio Windows: e' un programma. Per farlo partire da
+solo c'e' un'**operazione pianificata** chiamata `llama-swap`, che scatta
+all'accesso dell'utente e riprova tre volte se fallisce.
+
+```
+schtasks /query /tn llama-swap          stato
+schtasks /run   /tn llama-swap          avvia adesso
+schtasks /end   /tn llama-swap          ferma
+schtasks /delete /tn llama-swap /f      toglie l'avvio automatico
+```
+
+Oppure da `taskschd.msc`, cercando `llama-swap`.
+
+Avvio a mano, se serve:
+
+```
+%LOCALAPPDATA%\llama-stack\llama-swap.exe ^
+  --config "C:\Progetti\RAG Aziendale\Sviluppo\modelli\llama-swap.yaml" ^
+  --listen 127.0.0.1:1235
+```
+
+Come si vede se e' su: <http://127.0.0.1:1235/ui/>, oppure
+`curl http://127.0.0.1:1235/v1/models`. Se i container rispondono
+"Connection refused" verso `host.docker.internal:1235`, e' questo che manca.
+
+### 7.8 TTL zero: tutti i modelli restano in memoria
+
+Scelta del 21/09/2026: nessun modello si scarica da solo per inattivita'. Il
+costo di una ricarica non e' l'attesa in se' — e' che cade addosso a chi sta
+facendo la domanda, e durante una lettura di documenti si paga a ogni blocco.
+
+**Misurato con tutti e quattro residenti: 11,1 GB su 16,3.**
+
+Restano 5,1 GB liberi, e qui c'e' un fatto da tenere presente: **il picco
+misurato di Docling e' 6,1 GB**. Con tutti e quattro caricati, la lettura dei
+documenti NON ci sta, e ripiegherebbe sul processore.
+
+La valvola esiste gia' e continua a funzionare: l'indicizzazione scarica il
+modello di chat (4,1 GB) prima di leggere, lasciando 9,2 GB liberi — e
+`ttl: 0` non lo impedisce, perche' vuol dire «non scaricarlo da solo», non
+«non si puo' scaricare». llama-swap lo ricarica alla prima domanda successiva.

@@ -16,6 +16,18 @@
 # I NOMI dei modelli sono identici a quelli che esponeva LM Studio: cosi'
 # litellm-config.yaml, .env e ingestion non cambiano di una riga. Si sposta
 # solo la porta.
+#
+# TTL 0 OVUNQUE, per scelta (21/09/2026): tutti i modelli restano in memoria,
+# nessuno si scarica da solo per inattivita'. Il costo di una ricarica non e'
+# solo l'attesa — e' che cade addosso a chi sta facendo la domanda, e in una
+# lettura di documenti si paga a ogni blocco. La VRAM costa meno del tempo
+# delle persone.
+#
+# Questo NON disattiva lo scarico manuale: l'indicizzazione continua a
+# scaricare il modello di chat quando serve spazio a Docling (scarica_llm in
+# ingestion/indicizza.py, POST /api/models/unload/<id>), e llama-swap lo
+# ricarica alla prima domanda successiva. ttl vuol dire «non scaricarlo da
+# solo», non «non si puo' scaricare».
 
 healthCheckTimeout: 500
 logLevel: info
@@ -43,11 +55,11 @@ models:
       --ctx-size 10496
       --parallel 4
       ${gpu}
-    ttl: 1800
+    ttl: 0
 
   # ---- embedding -------------------------------------------------------
-  # Non si scarica mai (ttl 0): serve a ogni domanda E a ogni pezzo indicizzato,
-  # e pesa 440 MB. Il tipo di pooling lo decide il modello, non si forza: bge-m3
+  # Serve a ogni domanda E a ogni pezzo indicizzato, e pesa 440 MB.
+  # Il tipo di pooling lo decide il modello, non si forza: bge-m3
   # usa il suo, e imporne un altro darebbe vettori diversi da quelli gia'
   # nell'indice — che e' il modo piu' rapido per rendere inutile tutto l'indice.
   "text-embedding-bge-m3-embeddings":
@@ -78,9 +90,10 @@ models:
     ttl: 0
 
   # ---- descrizione delle immagini --------------------------------------
-  # Serve solo durante la lettura dei documenti, a blocchi: ttl corto, cosi'
-  # fuori dall'indicizzazione libera 3,3 GB. `--mmproj` e' il pezzo che fa
-  # vedere le immagini al modello: senza, risponde come se fossero testo.
+  # Serve durante la lettura dei documenti, a ogni blocco di pagine: resta
+  # carico (3,3 GB) perche' ricaricarlo a ogni blocco costerebbe piu' della
+  # VRAM che libera. `--mmproj` e' il pezzo che fa vedere DAVVERO le immagini
+  # al modello: senza, risponde come se fossero testo.
   "qwen/qwen3-vl-4b":
     name: "Descrizione immagini (Qwen3-VL 4B)"
     cmd: |
@@ -91,7 +104,7 @@ models:
       --ctx-size 8192
       --parallel 4
       ${gpu}
-    ttl: 600
+    ttl: 0
 
 routing:
   router:
