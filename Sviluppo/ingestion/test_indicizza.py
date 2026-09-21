@@ -62,6 +62,21 @@ def test_il_titolo_lungo_resta_il_contesto_delle_varianti():
     assert len(rosso) == 1 and "pietre decorative" in rosso[0], rosso
 
 
+def test_dopo_una_riga_di_tabella_non_ci_si_attacca_nulla():
+    """La riga di tabella e' un pezzo CHIUSO. Senza questo, lo scarto dell'OCR
+    che segue le finiva dentro: in EUROSAND pagina 7 il pezzo era
+    «... | DST2001 rot red ai. p , oa mel i». Misurato il 21/09/2026: con la
+    coda la distanza dalla domanda «sassi rossi» era 0,5030, senza 0,4651 —
+    cioe' sopra al primo classificato di quel giorno (0,4758)."""
+    pagina = [("DEKOSTEINE pietre decorative 9 - 13 mm", 7),
+              ("DST2001 rot red", 7),
+              ("ai.", 7), ("p", 7), ("oa", 7)]
+    pezzi = [testo for testo, _ in unisci(pagina)]
+    rosso = [x for x in pezzi if "rot red" in x]
+    assert len(rosso) == 1, rosso
+    assert rosso[0].endswith("DST2001 rot red"), f"la riga non deve raccogliere la coda: {rosso[0]!r}"
+
+
 def test_una_riga_qualsiasi_non_e_una_variante():
     """Il riconoscimento deve essere stretto: un codice a inizio riga e riga
     corta. Una frase che cita un codice resta prosa."""

@@ -228,18 +228,29 @@ def unisci(pezzi):
     out = []
     for pagina in _pagine(pezzi):
         contesto = _contesto_di_pagina(pagina)
+        # Il pezzo appena messo in coda era una riga di tabella? Non basta
+        # riguardare out[-1]: li' dentro c'e' gia' il titolo davanti alla riga,
+        # e un testo lungo non sembra piu' una riga di tabella. Cosi' il pezzo
+        # successivo ci si attaccava dentro, e in EUROSAND pagina 7 il chunk
+        # finiva «... | DST2001 rot red ai. p , oa mel i» — sporcizia dell'OCR
+        # dentro il pezzo che deve dire «pietra decorativa rossa». Misurato il
+        # 21/09/2026: con la coda 0,5030 dalla domanda, senza 0,4651 (e il
+        # primo classificato di quel giorno stava a 0,4758).
+        chiuso = False
         for testo, pag in pagina:
             testo = " ".join(testo.split())
             if not testo:
                 continue
             if _e_variante(testo):
                 out.append((f"{contesto} | {testo}" if contesto else testo, pag))
+                chiuso = True
                 continue
-            if (out and out[-1][1] == pag and not _e_variante(out[-1][0])
+            if (out and out[-1][1] == pag and not chiuso
                     and len(out[-1][0]) < MIN_PEZZO and len(out[-1][0]) + len(testo) <= MAX_PEZZO):
                 out[-1] = (out[-1][0] + "\n" + testo, pag)
             else:
                 out.append((testo, pag))
+            chiuso = False
     finali = []
     for testo, pagina in out:
         while len(testo) > MAX_PEZZO:
