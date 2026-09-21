@@ -83,7 +83,11 @@ MB_MAX_DI_GIORNO = int(os.environ.get("MB_MAX_DI_GIORNO", "0"))
 # Chi tiene il modello di chat, per poterlo scaricare nella finestra:
 # sviluppo LM Studio (SDK sulla stessa porta dell'API). In produzione ci sara'
 # il server di inferenza: vLLM prealloca la VRAM e si libera con /sleep.
-LMSTUDIO_HOST = os.environ.get("LMSTUDIO_HOST", "")         # "host.docker.internal:1234"
+# Il server dei modelli, per SCARICARE quello di chat quando serve la VRAM a
+# Docling. Dal 21/09/2026 e' llama-swap (fuori da Docker, sull'host): espone
+# POST /api/models/unload/<id>. Prima era LM Studio con il suo SDK Python.
+MODELLI_HOST = os.environ.get("MODELLI_HOST", "")           # "host.docker.internal:1235"
+MODELLO_CHAT = os.environ.get("MODELLO_CHAT", "")           # l'id da scaricare, es. "qwen3-8b-gsq"
 # Chi descrive le immagini dei cataloghi (le rende ricercabili per nome):
 #   api  un VLM servito altrove (sviluppo: glm-ocr su LM Studio, 2,3 GB;
 #        produzione: il server di inferenza). Se non risponde, Docling registra
@@ -391,28 +395,32 @@ def _gpu_piena(e):
 
 
 def scarica_llm():
-    """Scarica da LM Studio i modelli di CHAT e lascia l'embedding: quello serve
-    a questo giro per fare i vettori. True se ha scaricato qualcosa. Non alza
-    mai: se LM Studio non risponde si legge lo stesso, in CPU.
-    Ricaricarlo non tocca a noi: al primo messaggio lo rifa' LM Studio (JIT) con
-    la configurazione salvata li', invece che con parametri indovinati da qui.
+    """Scarica il modello di CHAT per fare spazio a Docling, e lascia stare
+    l'embedding e il VLM: quelli servono a QUESTO giro. True se ha scaricato
+    qualcosa. Non alza mai: se il server dei modelli non risponde si legge lo
+    stesso, in CPU.
+
+    Dal 21/09/2026 il server e' llama-swap (`POST /api/models/unload/<id>`) e
+    non piu' LM Studio con il suo SDK. Ricaricarlo non tocca a noi: llama-swap
+    lo riavvia alla prima richiesta, con i parametri del suo YAML invece che
+    con parametri indovinati da qui — stessa proprieta' che aveva il JIT di LM
+    Studio, ed e' il motivo per cui questa funzione scarica e basta.
+
     ponytail: in produzione il modello sta su vLLM, che prealloca la VRAM e si
     libera con /sleep; quando il server GPU esistera' e' un ramo in piu' qui."""
-    if not LMSTUDIO_HOST:
+    if not MODELLI_HOST or not MODELLO_CHAT:
         return False
     try:
-        import lmstudio
-        # Il VLM che descrive le immagini NON si scarica: serve a questo giro,
-        # come l'embedding. Si toglie solo chi tiene la VRAM per la chat.
-        tieni = {VLM_MODELLO} if VLM_DESCRIZIONI == "api" and VLM_MODELLO else set()
-        with lmstudio.Client(LMSTUDIO_HOST) as c:
-            scaricati = [m for m in c.llm.list_loaded() if m.identifier not in tieni]
-            for m in scaricati:
-                m.unload()
-        return bool(scaricati)
+        import urllib.request
+        base = MODELLI_HOST if "://" in MODELLI_HOST else f"http://{MODELLI_HOST}"
+        req = urllib.request.Request(
+            f"{base.rstrip('/')}/api/models/unload/{MODELLO_CHAT}", method="POST")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            # 200 = scaricato; 404 = non era caricato, e va benissimo.
+            return r.status == 200
     except Exception as e:
-        print(f"LM Studio non ha scaricato il modello ({type(e).__name__}: {e}): si legge con quel che c'e'",
-              flush=True)
+        print(f"il modello di chat non e' stato scaricato ({type(e).__name__}: {e}): "
+              f"si legge con quel che c'e'", flush=True)
         return False
 
 

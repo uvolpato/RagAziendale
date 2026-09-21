@@ -94,15 +94,18 @@ services:
       VRAM_MINIMA_MB: ${VRAM_MINIMA_MB-3500}
       FINESTRA_NOTTE: ${FINESTRA_NOTTE-}
       MB_MAX_DI_GIORNO: ${MB_MAX_DI_GIORNO-0}
-      # LM Studio sta fuori da Docker, sulla macchina: da qui si raggiunge
-      # con host.docker.internal, come per i vettori.
-      LMSTUDIO_HOST: ${LMSTUDIO_HOST-host.docker.internal:1234}
+      # Il server dei modelli sta FUORI da Docker, sulla macchina: da qui si
+      # raggiunge con host.docker.internal, come per i vettori. Dal 21/09/2026
+      # e' llama-swap sulla 1235 (prima LM Studio sulla 1234). Serve per
+      # scaricare il modello di chat e fare spazio a Docling.
+      MODELLI_HOST: ${MODELLI_HOST-host.docker.internal:1235}
+      MODELLO_CHAT: ${MODELLO_CHAT-qwen3-8b-gsq}
       # Chi descrive le immagini: un VLM su LM Studio (Qwen3-VL 4B, 3,3 GB:
       # trascrive le etichette e descrive colori e materiali), oppure off.
       # Dentro il servizio non ne gira piu' nessuno: pesava 3,3 GB e diceva
       # solo "a few bottles".
       VLM_DESCRIZIONI: ${VLM_DESCRIZIONI-api}
-      VLM_URL: ${VLM_URL-http://host.docker.internal:1234/v1}
+      VLM_URL: ${VLM_URL-http://host.docker.internal:1235/v1}
       VLM_MODELLO: ${VLM_MODELLO-}
       # Prezzi trascritti dalle immagini: fuori dall'indice di regola (i prezzi
       # vengono dal gestionale, decisione 72), ammessi sui cataloghi fornitore

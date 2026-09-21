@@ -201,3 +201,94 @@ rileggere tutto (§5, `index_meta`).
 - **Descrizioni fatte dal modello di chat** (configurazioni «16 GB qualità», «24 GB», «32 GB»): il codice oggi sa chiedere le descrizioni **solo durante la lettura**, a un VLM dedicato. Il passaggio in sottofondo — prendere le immagini già salvate, farle descrivere dal modello di chat quando è caricato, aggiungere i pezzi all'indice — va scritto: serve una colonna `descrizione` su `immagini`, il completamento (come `completa_vettori`) e un freno per non rubare il modello a chi sta chattando.
 - **Qwen2.5-VL** non è mai stato provato: è il candidato per la configurazione «16 GB velocità», dove glm-ocr non basta perché non descrive.
 - **Le due GPU** non sono provate: il codice le regge già (`DOCLING_URL`), ma nessuno ha verificato la configurazione reale.
+
+---
+
+## 7. Il server dei modelli: llama-swap, fuori da Docker
+
+*Cambiato il 21/09/2026. Prima: LM Studio come server, sulla porta 1234.*
+
+### 7.1 Perché
+
+Due motivi, entrambi misurati.
+
+**Il rerank.** LM Studio non espone nessun endpoint di reranking:
+`POST /v1/rerank` risponde *"Unexpected endpoint"*. Il modello `bge-reranker-v2-m3`
+era già scaricato e inutilizzabile. Con llama.cpp funziona: 2,6 s su 40 brani,
+e discrimina bene (+5,54 per una corrispondenza vera contro −11,04 per una
+frase fuori tema).
+
+**I modelli non devono girare in Docker.** Su Windows, Docker Desktop si tiene
+memoria e GPU e non le restituisce: la macchina si siede. I modelli stanno
+sull'host, i container li raggiungono con `host.docker.internal` — che è già il
+modo in cui il progetto funzionava con LM Studio.
+
+### 7.2 Cos'è
+
+**llama-swap** (MIT, un binario Go) davanti a **llama-server** di llama.cpp
+(MIT, build ufficiale CUDA per Windows). Fa quello che faceva LM Studio — un
+endpoint solo, i modelli si caricano su richiesta, TTL per scaricarli — più
+`/v1/rerank`, e con un'interfaccia web che mostra anche le richieste e le
+risposte, utile quando una risposta arriva vuota.
+
+```
+%LOCALAPPDATA%\llama-stack\
+    bin\llama-server.exe      build ufficiale CUDA + DLL del runtime
+    llama-swap.exe
+```
+
+Configurazione: `Sviluppo/modelli/llama-swap.yaml` (nel repository).
+Avvio:
+
+```
+%LOCALAPPDATA%\llama-stack\llama-swap.exe ^
+  --config "...\Sviluppo\modelli\llama-swap.yaml" --listen 127.0.0.1:1235
+```
+
+Interfaccia: <http://127.0.0.1:1235/ui/>
+
+### 7.3 Cosa NON cambia
+
+I **nomi** dei modelli sono identici a quelli che esponeva LM Studio, di
+proposito: `litellm-config.yaml` e il codice non cambiano di una riga. Si
+sposta solo la porta, da 1234 a 1235.
+
+I file `.gguf` restano nella cartella di LM Studio: **niente da riscaricare**.
+LM Studio resta installato come **gestore** dei modelli — è comodo per
+scaricarne di nuovi — ma non fa più il server. Se un giorno esce di scena, si
+sposta la cartella e si cambia la macro `modelli` nel YAML.
+
+### 7.4 Il modello di chat si scarica in un altro modo
+
+`ingestion/indicizza.py` scarica il modello di chat per far posto a Docling
+(`scarica_llm`, lock `BLOCCO_LLM`). Usava l'SDK Python di LM Studio; ora usa
+`POST /api/models/unload/<id>` di llama-swap. Variabili: `MODELLI_HOST` e
+`MODELLO_CHAT` (prima `LMSTUDIO_HOST`).
+
+Ricaricarlo continua a non essere compito dell'indicizzazione: llama-swap lo
+riavvia alla prima richiesta con i parametri del suo YAML. È la stessa
+proprietà che aveva il caricamento su richiesta di LM Studio, ed è il motivo
+per cui quella funzione scarica e basta.
+
+### 7.5 VRAM
+
+Misurato dopo il passaggio, con tutti e quattro i modelli configurati e la
+chat in uso: **11,3 GB su 16,3**. Lo YAML li tiene tutti e quattro nello stesso
+gruppo (`swap: false`), perché insieme stanno in 8,7 GB e lasciano spazio a
+Docling (picco misurato 6,1 GB). Se non dovesse bastare, la modifica è una
+riga: `swap: true` fa in modo che chat e VLM non siano mai caricati insieme,
+al prezzo di una ricarica a ogni passaggio.
+
+### 7.6 Provato
+
+Tutti e quattro i ruoli, attraverso llama-swap, il 21/09/2026:
+
+| | Esito |
+|---|---|
+| Descrizione immagini (Qwen3-VL 4B + `mmproj`) | trascrive il tedesco del catalogo: *"Kugel, 20 cm, in PoS-Disp., Glas…"* |
+| Rerank (bge-reranker-v2-m3) | −0,73 per le pietre rosse contro −11,01 per una frase su Parigi |
+| Embedding (bge-m3) | 1024 dimensioni, attraverso LiteLLM |
+| Chat (Qwen3 8B GSQ) | risponde attraverso LiteLLM |
+
+Il VLM era il rischio vero: è l'unico che ha bisogno del file `mmproj` per
+vedere davvero le immagini invece di trattarle come testo.
