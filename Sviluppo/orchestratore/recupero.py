@@ -206,3 +206,118 @@ def immagini_pertinenti(conn, qvec, gruppi, documenti=None, limite: int = 4):
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(SQL_IMMAGINI, par)
         return cur.fetchall()
+
+
+# ------------------------------------------------------------------ altri modi di guardare
+#
+# La ricerca a somiglianza risponde a UNA domanda: «dammi i pezzi che
+# assomigliano a questa frase». Funziona quando l'utente DESCRIVE una cosa, e
+# sbanda quando la NOMINA: un codice o un nome di linea, dentro un pezzo di
+# duecento caratteri, si diluisce. Misurato il 21/09/2026 sulle domande vere:
+# «le sfere Marrakesch» aveva la risposta in posizione 26 su 4571, fuori dalle
+# prime 8, mentre la parola MARRAKESCH nel catalogo compare in una pagina sola.
+#
+# Qui sotto le altre due domande che servono — «dove compare questa parola» e
+# «cosa c'e' intorno» — piu' «cosa c'e' in generale». Sono le mosse che hanno
+# risolto a mano il caso «sassi rossi» (VALUTAZIONE-ORCHESTRATORE-AGENTE.md §9).
+#
+# Il filtro dei permessi e' lo STESSO di cerca(), nella query: gruppi ∩
+# acl_groups, aziende ∩ aziende, stato = 'attiva'. Non e' copiato per pigrizia
+# ma perche' deve valere qui identico: uno strumento che dimentica le ACL e' una
+# fuga di dati, e questi strumenti li chiamera' un agente.
+
+_CONSENTITE = """
+    SELECT id, residency FROM sources
+     WHERE acl_groups && %(gruppi)s::text[]
+       AND aziende && %(aziende)s::text[]
+       AND stato = 'attiva'
+"""
+
+SQL_ESATTA = f"""
+WITH consentite AS ({_CONSENTITE})
+SELECT c.id, c.source_id, c.documento, c.page, c.content, s.residency
+FROM chunks c
+JOIN consentite s ON s.id = c.source_id
+WHERE c.content ILIKE %(motivo)s
+ORDER BY length(c.content), c.documento, c.page
+LIMIT %(limite)s;
+"""
+
+SQL_PAGINA = f"""
+WITH consentite AS ({_CONSENTITE})
+SELECT c.id, c.source_id, c.documento, c.page, c.content, s.residency
+FROM chunks c
+JOIN consentite s ON s.id = c.source_id
+WHERE c.documento = %(documento)s AND c.page IS NOT DISTINCT FROM %(page)s
+ORDER BY c.id;
+"""
+
+SQL_DOCUMENTI = f"""
+WITH consentite AS ({_CONSENTITE})
+SELECT c.source_id, c.documento, count(*) AS pezzi,
+       min(c.page) AS prima, max(c.page) AS ultima
+FROM chunks c
+JOIN consentite s ON s.id = c.source_id
+GROUP BY c.source_id, c.documento
+ORDER BY c.documento;
+"""
+
+
+def _permessi(gruppi):
+    """(gruppi, aziende) o None se questa persona non puo' vedere niente.
+    Stessa regola di cerca(): nessun gruppo o nessuna azienda = nessun dato."""
+    from .identita import aziende as aziende_di
+    aziende = aziende_di(gruppi)
+    if not gruppi or not aziende:
+        return None
+    return {"gruppi": gruppi, "aziende": aziende}
+
+
+def cerca_esatta(conn, termine: str, gruppi: list[str], limite: int = 8):
+    """I pezzi che contengono ALLA LETTERA `termine`: un codice, un nome di
+    linea, una sigla. Maiuscole ignorate.
+
+    Ordinati dal pezzo piu' CORTO: se «MARRAKESCH» compare nel titolo di una
+    pagina e dentro un indice lungo, il titolo e' quasi sempre la risposta e
+    l'indice quasi mai. Niente punteggi: o la parola c'e' o non c'e'.
+
+    `termine` e' trattato come testo, non come motivo di ricerca: i caratteri
+    speciali di LIKE si neutralizzano, cosi' un termine con `%` dentro non
+    diventa «qualsiasi cosa»."""
+    par = _permessi(gruppi)
+    if par is None or not (termine or "").strip():
+        return []
+    pulito = termine.strip().replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    par |= {"motivo": f"%{pulito}%", "limite": limite}
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(SQL_ESATTA, par)
+        return cur.fetchall()
+
+
+def pagina(conn, documento: str, page, gruppi: list[str]):
+    """Tutti i pezzi di UNA pagina, nell'ordine in cui stanno sul foglio.
+
+    «DST2001 rot red» da solo non vuol dire niente; la pagina dice che sono
+    pietre decorative da 9-13 mm e quali colori esistono. Senza questo il
+    modello vede il frammento e non ha modo di chiedere cosa c'e' intorno."""
+    par = _permessi(gruppi)
+    if par is None:
+        return []
+    par |= {"documento": documento, "page": page}
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(SQL_PAGINA, par)
+        return cur.fetchall()
+
+
+def documenti_visibili(conn, gruppi: list[str]):
+    """I documenti che questa persona puo' vedere, con quanti pezzi e che
+    pagine. Serve a due cose: rispondere a «quali cataloghi avete?», che oggi
+    il sistema non sa fare perche' sa solo cercare DENTRO i documenti; e
+    permettere di dire «ho guardato nei quattro cataloghi a cui hai accesso e
+    non c'e'» invece di un «non trovato» che non si sa quanto valga."""
+    par = _permessi(gruppi)
+    if par is None:
+        return []
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(SQL_DOCUMENTI, par)
+        return cur.fetchall()

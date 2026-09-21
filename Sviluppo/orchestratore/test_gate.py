@@ -194,6 +194,54 @@ def main():
         assert "t-listini" in fonti_ven, \
             f"vendite NON vede il listino che dovrebbe vedere: {fonti_ven}"
 
+    @prova("T1.25", "gli altri modi di guardare rispettano le ACL come la ricerca")
+    def _():
+        """Ricerca esatta, pagina e elenco documenti sono strumenti che
+        chiamera' un AGENTE: se uno dei tre dimentica i permessi, il ciclo li
+        aggira senza che nessuno se ne accorga. Stessa prova della T1.14, sugli
+        strumenti nuovi."""
+        magazzino = identita.gruppi(identita.verifica(f"Bearer {token_di('prova.magazzino')}"))
+        vendite = identita.gruppi(identita.verifica(f"Bearer {token_di('prova.vendite')}"))
+
+        # 1. ricerca esatta: la parola c'e', ma non per tutti.
+        mag = recupero.cerca_esatta(conn, "Sconto riservato", magazzino)
+        ven = recupero.cerca_esatta(conn, "Sconto riservato", vendite)
+        assert mag == [], f"il magazzino trova il listino con la ricerca esatta: {mag}"
+        assert any(r["source_id"] == "t-listini" for r in ven), "vendite NON trova il listino"
+
+        # 2. pagina: conoscere documento e pagina non deve bastare.
+        assert recupero.pagina(conn, "listino.pdf", 3, magazzino) == [], \
+            "la pagina si apre anche senza permesso"
+        assert recupero.pagina(conn, "listino.pdf", 3, vendite), "vendite non apre la sua pagina"
+
+        # 3. elenco: non deve rivelare nemmeno i NOMI dei documenti altrui.
+        visti = {r["documento"] for r in recupero.documenti_visibili(conn, magazzino)}
+        assert "listino.pdf" not in visti, f"l'elenco rivela un documento non consentito: {visti}"
+        assert "manuale.pdf" in visti, f"l'elenco non mostra quello consentito: {visti}"
+
+        # 4. senza gruppi, tutti e tre non rispondono.
+        assert recupero.cerca_esatta(conn, "garanzia", []) == []
+        assert recupero.pagina(conn, "manuale.pdf", 12, []) == []
+        assert recupero.documenti_visibili(conn, []) == []
+
+        # 5. fonte SOSPESA e fonte di un'ALTRA azienda restano fuori (T1.15/T1.16).
+        tutti = ["tutti", "azienda-luis"]
+        fonti = {r["source_id"] for r in recupero.cerca_esatta(conn, "garanzia", tutti, limite=50)}
+        assert "t-sospesa" not in fonti, f"una fonte sospesa risponde: {fonti}"
+        assert "t-altra" not in fonti, f"una fonte di un'altra azienda risponde: {fonti}"
+
+    @prova("T1.26", "la ricerca esatta cerca testo, non un motivo con i jolly")
+    def _():
+        """`%` dentro il termine non deve diventare «qualsiasi cosa»: senza
+        neutralizzarlo, cercare «100%» restituirebbe tutto il consentito."""
+        tutti = ["tutti", "azienda-luis"]
+        assert recupero.cerca_esatta(conn, "%", tutti) == [], "il jolly di LIKE passa"
+        assert recupero.cerca_esatta(conn, "_", tutti) == [], "il jolly di un carattere passa"
+        assert recupero.cerca_esatta(conn, "   ", tutti) == [], "termine vuoto"
+        # e una ricerca vera continua a funzionare, maiuscole ignorate
+        assert any("garanzia" in r["content"].lower()
+                   for r in recupero.cerca_esatta(conn, "GARANZIA della serie X", tutti))
+
     @prova("T1.14b", "utente senza gruppi -> nessun risultato")
     def _():
         righe, _ = recupero.cerca(conn, "garanzia", [])

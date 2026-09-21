@@ -62,3 +62,48 @@ Il primo conteggio dava 11/20, ma due riscontri erano sbagliati miei:
 Da qui i vincoli aggiunti a `trovata()`: il pezzo deve venire dal documento
 giusto e non dalle pagine dell'indice. Con il metro stretto la domanda 16
 (amfori) passa da «trovata» a «non trovata»: era anche quella l'indice.
+
+---
+
+## 21/09/2026 (sera) — cosa guadagnano ricerca esatta e pagina intera
+
+Stesso indice della misura precedente. Strumenti nuovi in `recupero.py`:
+`cerca_esatta`, `pagina`, `documenti_visibili`.
+
+| | Trovate nei primi 8 |
+|---|---|
+| Oggi | 10/20 |
+| Solo ricerca esatta sui nomi presi dalla domanda | **1/20** |
+| Oggi + pagina intera | **11/20** |
+| Unione dei due (quello che userebbe un agente) | **12/20** |
+
+**+2 su venti.** Molto meno della previsione che avevo scritto (16-17/20).
+
+### Perché la ricerca esatta rende così poco
+
+Delle venti domande, **solo tre nominano qualcosa**: «Brillant / Metallic»,
+«Amfori», «Marrakesch». Le altre diciassette **descrivono**: «sfere trasparenti
+che trattengono l'acqua», «frammenti di vetro intorno ai 5 millimetri»,
+«ciottoli neri con effetto specchio».
+
+La premessa da cui ero partito — «chi compra cita i codici» — **non regge su
+queste domande**. E c'è un problema più profondo, circolare: la ricerca esatta
+ha risolto il caso «sassi rossi» *a mano* perché avevo già guardato i dati e
+sapevo che esisteva la stringa `rot red`. Chi fa la domanda non lo sa. Un
+agente potrebbe usarla solo **dopo** aver già trovato qualcosa da cui pescare
+il termine — cioè dopo una ricerca riuscita.
+
+Resta utile come **seconda mossa** (lo strumento diverso al secondo giro, §9),
+non come prima linea.
+
+### Cosa resta in piedi
+
+I due interventi con la posizione misurata:
+
+- **codici a una lettera** (`E5500`, `F0305`, `B02G1`) riconosciuti come riga
+  di tabella, cosi' ricevono il titolo di pagina → domande 1, 2, 4, cioè la
+  categoria che fa 0/5;
+- **candidati da 30 a 150 + rerank** → domande 3, 4, 6, 20, la cui risposta sta
+  già fra la posizione 26 e la 59.
+
+Sono previsioni anche queste. Il numero vero lo dà la rimisura.
