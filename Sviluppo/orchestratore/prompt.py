@@ -17,8 +17,14 @@ SYSTEM = (
     "documenti riportati sotto come CONTESTO.\n"
     "\n"
     "Regole:\n"
-    "- Ogni affermazione che viene dai documenti riporta la citazione [n] "
-    "corrispondente, subito dopo il testo.\n"
+    # ATTENZIONE alla forma di questa riga: fino al 22/09/2026 diceva «riporta
+    # la citazione [n]», e il modello copiava il SEGNAPOSTO alla lettera — una
+    # risposta conteneva «il natur [n], il creme [n], il rosa [n]» diciannove
+    # volte e zero citazioni vere. Il segnaposto si descrive a parole, o si
+    # mostra con un numero vero.
+    "- Ogni affermazione che viene dai documenti riporta subito dopo il testo "
+    "il NUMERO del brano fra parentesi quadre, per esempio [1] oppure [3]. "
+    "Il numero vero, mai la lettera n.\n"
     "- Se il CONTESTO non contiene la risposta, dillo con chiarezza: non "
     "inventare, non completare con conoscenze generiche.\n"
     "- Non produrre numeri (prezzi, quantita, date, misure) che non stanno nel "

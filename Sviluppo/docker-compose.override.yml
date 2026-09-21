@@ -152,6 +152,10 @@ services:
       # l'ordine della fusione come prima.
       RERANK_URL: ${RERANK_URL-http://host.docker.internal:1235/v1}
       CANDIDATI_RERANK: ${CANDIDATI_RERANK-150}
+      # Il modello deve RIPORTARE quello che sta nel contesto, non inventare:
+      # la creativita non serve, la ripetibilita si. Senza, la stessa domanda
+      # dava risposte diverse a minuti di distanza (22/09/2026).
+      TEMPERATURA: ${TEMPERATURA-0.2}
 
   postgres:
     # 55432 e non 5432 ne 5433: sulla macchina di sviluppo ci sono DUE cluster

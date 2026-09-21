@@ -34,6 +34,15 @@ MODEL_NAME = "assistente-v1"
 LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
 MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 APP_HOST = os.environ.get("APP_HOST", "assistente.localhost")
+# Temperatura bassa ma non zero: a zero anche la decodifica avida puo' entrare
+# in loop su un contesto pieno di righe di tabella quasi uguali.
+TEMPERATURA = float(os.environ.get("TEMPERATURA", "0.2"))
+# NIENTE frequency_penalty da qui. Provata il 22/09/2026 e scartata subito:
+# punisce i token gia' usati, e una citazione come «[2]» si ripete
+# legittimamente dieci volte in una risposta. Il modello ha smesso di citare i
+# numeri e ha scritto «il natur [n], il creme [n], il rosa [n]».
+# Contro la degenerazione agisce `--repeat-penalty 1.1` sul server
+# (modelli/llama-swap.yaml): finestra corta, non tocca le citazioni.
 MAX_IMMAGINI = 4          # quante immagini citare in fondo alla risposta: oltre appesantisce
 # Coda del prompt di sistema, per le stranezze del modello del momento: sta in
 # configurazione perche' cambia col modello, e cambiare modello non deve voler
@@ -362,6 +371,17 @@ def _stream_litellm(messages, rotta, uso):
         "model": rotta,
         "messages": messages,
         "stream": True,
+        # Temperatura e penalita' si dichiarano QUI, non si lasciano al server.
+        # Senza, valgono i valori predefiniti di llama.cpp — temperatura alta e
+        # repeat_penalty 1.0, cioe' disattivata — e il 22/09/2026 sono successe
+        # due cose: la stessa domanda ha dato risposte diverse a distanza di
+        # minuti, e a «ma sono tutti di sassi rossi?» il modello e' entrato in
+        # loop ripetendo «verde foglia (FSA1050), verde acero (FSA1050)» per
+        # decine di righe, bruciando tutto il budget di token.
+        #
+        # Qui il modello deve RIPORTARE quello che sta nel contesto, non
+        # inventare: la creativita' non serve e la ripetibilita' si'.
+        "temperature": TEMPERATURA,
         # Con include_usage LiteLLM manda l'uso dei token nell'ultimo chunk:
         # serve alla traccia (token_in/token_out) senza una seconda chiamata.
         "stream_options": {"include_usage": True},

@@ -67,6 +67,13 @@ models:
       --port ${PORT}
       --ctx-size 16384
       --parallel 2
+      # Rete di sicurezza contro la degenerazione: llama.cpp ha
+      # repeat-penalty 1.0, cioe' disattivata, e il 22/09/2026 il modello e'
+      # entrato in loop ripetendo «verde foglia (FSA1050), verde acero
+      # (FSA1050)» per decine di righe. L'orchestratore manda gia' le sue
+      # penalita' a ogni richiesta; questa vale per chi chiama il server
+      # senza dichiararle (prove a mano, altri strumenti).
+      --repeat-penalty 1.1
       ${gpu}
     ttl: 0
 
