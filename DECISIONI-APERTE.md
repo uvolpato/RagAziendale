@@ -123,6 +123,32 @@ punti che vanno previsti **prima** di scriverle, non dopo:
     l'altalena dei modelli e il difetto del punto 7.
 
 | **D15** | **Dove stanno le cartelle dei documenti e chi fa rispettare i permessi di scrittura** (modello: una cartella per gruppo, scritta e letta dai suoi membri; una cartella generale letta da tutti e scritta da pochi gruppi) | Condivisione Windows con gruppi di Active Directory (serve D8: Keycloak collegato ad AD) · **Nextcloud con cartelle di gruppo e accesso con Keycloak** (stessi gruppi, caricamento dal web e sincronizzazione da PC; in futuro anche SharePoint e Google Drive) · caricamento dal nostro pannello | Se l'azienda ha già un file server con AD → quello. Altrimenti Nextcloud. **Da sapere prima**: c'è un file server? c'è AD? Il modello (decisione 71) è fatto e funziona su cartelle locali: manca solo dove stanno i file veri | Cartelle dei gruppi in produzione |
+| **D17** | **L'orchestratore diventa un agente?** Oggi è una catena fissa: token → embedding → ricerca con ACL nella query → gate → prompt → modello. Un agente deciderebbe da sé quali strumenti chiamare e quante volte | Catena fissa, come adesso · **agente che decide solo la ricerca** (quante interrogazioni, con che parole, quando fermarsi), con recupero e permessi che restano codice · agente pieno, con i permessi fra i suoi strumenti | **Agente sulla sola ricerca**, e non prima che l'indice sia stabile. LangGraph è già fra le dipendenze dell'orchestratore | Niente oggi. Serve per le domande a più passi: «confronta i prezzi di EUROSAND e FLEURAMI» oggi fa una ricerca sola |
+
+**Requisiti di design per D17** (emersi il 21/09/2026):
+
+1. **L'agente decide COSA cercare, mai COSA può vedere.** Il recupero resta una
+   funzione con i gruppi come parametro obbligatorio, e fra gli strumenti
+   dell'agente non esiste niente che li cambi. È la riga che separa questa
+   decisione da una fuga di dati: oggi i gruppi stanno nella `WHERE` e non
+   c'è percorso che li salti, e deve restare vero anche dopo.
+2. **`test_gate.py` deve continuare a significare qualcosa.** Le sue 19
+   affermazioni sono verdi perché sono rami di codice. Se una diventa «il
+   modello si ricorda di chiamare lo strumento giusto», non è più una
+   verifica: è una speranza. Nessuna regola di sicurezza passa dal prompt.
+3. **Il costo sta in VRAM, non in righe.** Ogni passo dell'agente è un giro
+   del modello: una domanda che oggi costa una chiamata ne costerebbe tre o
+   quattro. Su questa macchina sono 16 GB condivisi con Docling, con 4–5
+   persone in parallelo. Prima di decidere serve la misura, non la stima:
+   quante domande vere hanno davvero bisogno di più di una ricerca.
+4. **Il guadagno vero è il confronto fra documenti.** Le domande a un passo
+   sono già servite bene dalla catena fissa; quelle che oggi falliscono sono
+   quelle che richiedono due ricerche e un confronto. Se la misura del punto
+   3 dice che sono poche, la risposta giusta a D17 è «no».
+5. **Da fare dopo**, non prima: indice stabile e «sassi rossi» verificato.
+   Questa modifica cambia la forma di ogni risposta, e mescolarla a un
+   difetto di recupero aperto renderebbe impossibile capire cosa ha rotto
+   cosa.
 
 ---
 
