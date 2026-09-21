@@ -225,6 +225,9 @@ in più. Da misurare.
 con la cartella dei modelli montata in sola lettura. Misurato: 2,6 s su 40
 brani, discrimina bene. *Non* usare i binari interni di LM Studio.
 
+Lo stesso servizio serve anche le **decisioni tipizzate con probabilità** del
+§7, che LM Studio non sa dare (`logprobs: null`): un motore in più, non due.
+
 ### Fase 4 — il ciclo
 
 Cerca → giudica → riprova, limitato, con risposte vincolate e un passo di
@@ -247,7 +250,79 @@ Secondo la tabella del §5, partendo dal connettore ERP che è già specificato.
 
 ---
 
-## 7. Cosa non farei
+## 7. Decisioni tipizzate invece di prosa — e rizzo-flow
+
+Valutato il 21/09/2026 su richiesta: <https://github.com/Rizzo-AI-Academy/rizzo-flow>
+(Apache 2.0, Python ≥ 3.11, runtime MLX, modelli Spark-X2.5).
+
+**Cosa fa.** Non fa scrivere testo al modello: legge la probabilità di una
+risposta **vincolata** e restituisce una decisione tipizzata — `{"choice":
+"billing", "probabilities": {...}}` — in ~250 ms, su API HTTP (porta 8017).
+Non è un framework di agenti: non fa RAG, non ha subagenti, non parla MCP. È
+uno strumento specializzato per **il passo di giudizio**.
+
+**Perché è pertinente.** Colpisce esattamente il punto debole del §2: il
+modello come giudice di pertinenza sbaglia e non si ferma. E ha una cosa che
+vale la pena rubare a prescindere dal progetto: **l'astensione come esito di
+prima classe** (`__insufficient__` → `insufficient_evidence`, `uncertain`,
+`out_of_range`). È la risposta al rischio del §4, «non lo so deve restare una
+risposta possibile»: lì l'astensione non è un caso limite, è un valore di
+ritorno previsto.
+
+È anche provato su hardware nostro: *"tested on Windows 10 with RTX 5060 Ti
+16 GB"*, e non richiede il toolkit CUDA installato.
+
+### La misura che decide
+
+Provato a ottenere la stessa cosa con il modello che c'è già, vincolando la
+risposta a una lettera invece che a prosa libera:
+
+| | |
+|---|---|
+| Giudizio a prosa libera | 17,8 s — e sceglie *pompon marrone* |
+| Giudizio vincolato, stesso modello | **1,1 s** |
+
+Un ordine di grandezza, senza installare niente. **Ma le probabilità non
+arrivano**: LM Studio risponde `logprobs: null`, e con `max_tokens` basso il
+contenuto esce vuoto perché i token se li prende il ragionamento (è lo stesso
+motivo per cui esiste `SUFFISSO_SISTEMA=/no_think`).
+
+**llama.cpp i logprobs li restituisce**, e llama.cpp serve già per il reranker
+della fase 3. Un servizio solo darebbe rerank **e** decisioni tipizzate con
+probabilità.
+
+### Parere
+
+**L'idea sì, la dipendenza no — non adesso.** Quattro ragioni:
+
+1. **Maturità**: 47 stelle, 21 commit, un solo autore. Per un sistema che deve
+   vivere anni in azienda è una dipendenza che può sparire. La licenza Apache
+   permette di copiarlo in casa, il che attenua ma non annulla.
+2. **VRAM**: +5 GiB (4B a 8 bit) o +3,4 GiB (1.7B). Oggi 7,9 GiB di modelli più
+   6,1 di picco Docling fanno 14 su 16,3: non ci sta mentre legge.
+3. **La probabilità va tarata.** Lo dice il loro README: le distribuzioni
+   escono *"extremely peaked (0.9999)"* e le soglie pensate per Jev non si
+   trasferiscono. Taratura su dati etichettati nostri — cioè, di nuovo, la
+   fase 0.
+4. **Sarebbe il terzo motore di inferenza** sulla stessa macchina, accanto a
+   LM Studio e al llama.cpp della fase 3.
+
+### Cosa si prende comunque
+
+Tre cose, da realizzare con llama.cpp nella fase 3, senza dipendenze nuove:
+
+- **Decisione tipizzata, non prosa.** Già nel §4 fra le difese del ciclo; qui
+  c'è il numero che lo giustifica (1,1 s contro 17,8 s).
+- **L'astensione come valore di ritorno**, non come caso limite.
+- **La soglia tarata su dati veri**, invece di fidarsi della probabilità
+  grezza. Vale per qualunque modello, non solo per il loro.
+
+Da riguardare se il progetto matura, o se l'esperimento con llama.cpp non
+regge.
+
+---
+
+## 8. Cosa non farei
 
 - **Non trasformerei tutto in MCP.** Non aggiunge indipendenza e toglie
   controllo dove serve di più.
