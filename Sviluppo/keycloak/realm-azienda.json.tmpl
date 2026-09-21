@@ -210,6 +210,34 @@
       ]
     },
     {
+      "clientId": "immagini",
+      "name": "Immagini dei documenti",
+      "description": "Sessione per servire le figure estratte dai documenti: oauth2-proxy davanti all'orchestratore. Un tag <img> non porta identita', solo i cookie del dominio.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${OAUTH2_PROXY_IMMAGINI_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["https://${APP_HOST}/oauth2/callback"],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
       "clientId": "litellm",
       "name": "LiteLLM (modelli AI)",
       "description": "Accesso alla UI di LiteLLM via oauth2-proxy. Solo amministratori.",

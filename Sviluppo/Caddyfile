@@ -75,10 +75,20 @@
 		reverse_proxy amministrazione:8000
 	}
 
-	# Immagini dei documenti (cataloghi): servite dall'orchestratore, che le
-	# concede solo con URL firmato a scadenza (il gate ha gia' ammesso il chunk).
+	# Immagini dei documenti (cataloghi): DIETRO SESSIONE. Un tag <img> non
+	# manda identita', solo i cookie: oauth2-proxy autentica con Keycloak e
+	# passa i gruppi all'orchestratore, che ricontrolla le ACL immagine per
+	# immagine. L'URL firmato resta come seconda serratura (il gate lo emette
+	# solo per i chunk gia' ammessi, ed e' legato alla persona).
 	handle /immagini* {
-		reverse_proxy orchestratore:8000
+		reverse_proxy oauth2-proxy-immagini:4180
+	}
+
+	# Ritorno da Keycloak per la sessione delle immagini. Percorso distinto da
+	# quello di LibreChat (/oauth/openid/callback): le due sessioni convivono
+	# sullo stesso dominio senza toccarsi.
+	handle /oauth2/* {
+		reverse_proxy oauth2-proxy-immagini:4180
 	}
 
 	# ------------------------------------------------------------------

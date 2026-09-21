@@ -338,6 +338,51 @@ services:
     volumes:
       - uptime-kuma-data:/app/data
 
+  oauth2-proxy-immagini:
+    # Sessione per le FIGURE dei documenti, non per la chat: un tag <img> nel
+    # browser non manda nessuna identita', solo i cookie del dominio. Qui la
+    # mette oauth2-proxy, che autentica con Keycloak (client `immagini`) e
+    # passa all'orchestratore i gruppi della persona: le ACL si applicano
+    # quando l'immagine viene servita, non solo quando l'URL viene emesso.
+    # Cookie con nome e percorso propri: non tocca la sessione di LibreChat,
+    # che vive sullo stesso dominio.
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.2
+    restart: unless-stopped
+    command: ["--oidc-extra-audience=account"]
+    environment:
+      OAUTH2_PROXY_PROVIDER: keycloak-oidc
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      # L'issuer e' quello ESTERNO, perche' e' quello che Keycloak scrive nei
+      # token. Gli endpoint si dichiarano a mano invece di scoprirli: il
+      # browser va all'esterno (auth), lo scambio del codice e la lettura
+      # delle chiavi restano sulla rete interna, in chiaro come gia' fanno gli
+      # altri servizi. Cosi' l'issuer combacia e non si disattiva nessuna
+      # verifica (gli altri tre proxy fanno l'opposto: discovery + skip).
+      OAUTH2_PROXY_OIDC_ISSUER_URL: https://${SSO_HOST}/realms/${REALM}
+      OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
+      OAUTH2_PROXY_LOGIN_URL: https://${SSO_HOST}/realms/${REALM}/protocol/openid-connect/auth
+      OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/realms/${REALM}/protocol/openid-connect/token
+      OAUTH2_PROXY_PROFILE_URL: http://keycloak:8080/realms/${REALM}/protocol/openid-connect/userinfo
+      OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/realms/${REALM}/protocol/openid-connect/certs
+      OAUTH2_PROXY_CLIENT_ID: immagini
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_IMMAGINI_CLIENT_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: https://${APP_HOST}/oauth2/callback
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_IMMAGINI_COOKIE_SECRET}
+      OAUTH2_PROXY_COOKIE_NAME: _sessione_immagini
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_COOKIE_SAMESITE: lax
+      # Chi e' dentro l'azienda puo' vedere le figure che la RICERCA gli ha
+      # gia' concesso: il permesso vero lo applica l'orchestratore, immagine
+      # per immagine, con i gruppi che arrivano da qui.
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_UPSTREAMS: http://orchestratore:8000
+      OAUTH2_PROXY_PASS_USER_HEADERS: "true"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "false"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+    depends_on: [keycloak, orchestratore]
+
   oauth2-proxy-uptime:
     # SSO per Uptime Kuma (stesso pattern di Dagster), client Keycloak `uptime`.
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.2

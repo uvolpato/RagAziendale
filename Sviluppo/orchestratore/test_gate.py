@@ -36,6 +36,8 @@ os.environ.setdefault("OIDC_ISSUER", "https://sso.localhost/realms/azienda")
 os.environ.setdefault("OIDC_AUDIENCE", "orchestratore")
 os.environ.setdefault("EGRESS_INTERNAL", "host.docker.internal,localhost,keycloak")
 os.environ.setdefault("EGRESS_EXTERNAL", "api.provider-esempio.com")
+# Serve a T1.21: e' la chiave con cui si firmano gli URL delle immagini.
+os.environ.setdefault("ORCHESTRATOR_KEY", da_env("ORCHESTRATOR_KEY") or "prova")
 
 import psycopg                                    # noqa: E402
 from orchestratore import egress, gate, identita, recupero   # noqa: E402
@@ -290,6 +292,54 @@ def main():
         assert degradato is True, "il degrado non e' segnalato"
         assert len(righe) >= 1, "il full-text non ha trovato nulla"
         assert righe[0]["source_id"] == "t-manuali"
+
+    print("\n--- Immagini: firma e permesso attuale " + "-" * 29)
+
+    @prova("T1.21", "l'immagine si serve solo con firma valida E permesso ancora valido")
+    def _():
+        from orchestratore import immagini
+        from orchestratore.main import _gruppi_noti, _ricorda_gruppi
+        import psycopg.rows
+        c = psycopg.connect(os.environ["DATABASE_URL"], row_factory=psycopg.rows.dict_row)
+        try:
+            with c.cursor() as cur:
+                cur.execute("""INSERT INTO immagini (source_id, documento, page, percorso)
+                               VALUES ('t-listini', 'listino.pdf', 3, 't-prova/x.png')
+                               ON CONFLICT (source_id, percorso) DO UPDATE SET page = 3
+                               RETURNING id""")
+                img = cur.fetchone()["id"]
+            c.commit()
+
+            # La firma e' legata alla persona: cambiando utente non vale piu'.
+            url = immagini.firma_url(img, "https://x", "utente-a")
+            scade = url.split("scade=")[1].split("&")[0]
+            firma = url.split("firma=")[1].split("&")[0]
+            assert immagini.valida(img, scade, firma, "utente-a")
+            assert not immagini.valida(img, scade, firma, "utente-b"), \
+                "un collegamento inoltrato non deve valere per un altro utente"
+            assert not immagini.valida(img, scade, "0" * 32, "utente-a")
+
+            # Il permesso si rilegge adesso: t-listini e' di vendite/direzione.
+            _ricorda_gruppi(c, "utente-a", ["vendite", "azienda-luis"])
+            _ricorda_gruppi(c, "utente-b", ["magazzino", "azienda-luis"])
+            assert immagini.visibile(c, img, _gruppi_noti(c, "utente-a")), \
+                "chi ha il gruppo giusto deve vedere la figura"
+            assert not immagini.visibile(c, img, _gruppi_noti(c, "utente-b")), \
+                "chi non ha il gruppo non deve vederla, firma o no"
+
+            # Fonte sospesa: l'immagine smette di essere servita SUBITO.
+            with c.cursor() as cur:
+                cur.execute("UPDATE sources SET stato = 'sospesa' WHERE id = 't-listini'")
+            c.commit()
+            assert not immagini.visibile(c, img, _gruppi_noti(c, "utente-a")), \
+                "una fonte sospesa non serve piu' le sue immagini"
+        finally:
+            with c.cursor() as cur:
+                cur.execute("UPDATE sources SET stato = 'attiva' WHERE id = 't-listini'")
+                cur.execute("DELETE FROM gruppi_utente WHERE utente IN ('utente-a','utente-b')")
+            c.commit()
+            c.close()
+
 
     print("\n--- Immagini su richiesta " + "-" * 43)
 

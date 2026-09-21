@@ -207,7 +207,7 @@ def main():
         return r
 
     allinea_al_template(c, A, ok)
-    for client_oauth in ("dagster", "uptime", "litellm", "litellm-sso"):
+    for client_oauth in ("dagster", "uptime", "litellm", "litellm-sso", "immagini"):
         allinea_client_oauth(c, A, ok, client_oauth)
 
     # 1. Deleghe attive sul realm

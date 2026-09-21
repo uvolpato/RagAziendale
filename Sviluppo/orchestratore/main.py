@@ -75,6 +75,53 @@ def _indice_in_aggiornamento(conn) -> bool:
         return bool(cur.fetchone()["bloccato"])
 
 
+def _ricorda_gruppi(conn, utente: str, gruppi: list) -> None:
+    """Ultimo elenco di gruppi visto nel token di questa persona (migrazione
+    015). Non e' un archivio di identita': solo il `sub` e i gruppi, che stanno
+    gia' nel token."""
+    if not utente:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""INSERT INTO gruppi_utente (utente, gruppi, aggiornato_il)
+                           VALUES (%s, %s, now())
+                           ON CONFLICT (utente) DO UPDATE SET gruppi = EXCLUDED.gruppi,
+                             aggiornato_il = now()""", (utente, gruppi))
+        conn.commit()
+    except Exception as e:      # non si rompe un turno di chat per questo
+        print(f"gruppi non registrati per {utente}: {type(e).__name__}: {e}", flush=True)
+
+
+def _gruppi_della_richiesta(request, conn, utente: str) -> list:
+    """I gruppi di chi sta chiedendo l'immagine, nell'ordine di affidabilita'.
+
+    1. `X-Forwarded-Groups`, messo da oauth2-proxy dopo aver autenticato la
+       persona con Keycloak: e' la SESSIONE, quindi sono i gruppi di adesso.
+    2. Altrimenti l'ultimo elenco visto nel token di quella persona
+       (migrazione 015): serve finche' la sessione non c'e' — per esempio
+       quando l'orchestratore viene raggiunto dalla rete interna.
+
+    In entrambi i casi il permesso si ricontrolla su `sources`: la sessione
+    dice CHI sei, non COSA puoi vedere.
+    """
+    intestazione = (request.headers.get("x-forwarded-groups") or "") if request is not None else ""
+    if intestazione:
+        # oauth2-proxy le separa con virgola; Keycloak le scrive con lo slash
+        # davanti perche' i gruppi sono un albero (full.path): "/vendite".
+        return [g.strip().lstrip("/") for g in intestazione.split(",") if g.strip()]
+    return _gruppi_noti(conn, utente)
+
+
+def _gruppi_noti(conn, utente: str) -> list:
+    """I gruppi dell'ultimo token di quella persona, o [] se non li abbiamo."""
+    if not utente:
+        return []
+    with conn.cursor() as cur:
+        cur.execute("SELECT gruppi FROM gruppi_utente WHERE utente = %s", (utente,))
+        riga = cur.fetchone()
+    return (riga["gruppi"] if isinstance(riga, dict) else riga[0]) if riga else []
+
+
 def _risposta_unica(testo: str):
     """Una risposta finta ma ben formata: LibreChat si aspetta lo stream SSE."""
     def gen():
@@ -157,6 +204,40 @@ def _domanda_precedente(messages) -> str:
     trovate = [m["content"].strip() for m in messages
                if m.get("role") == "user" and isinstance(m.get("content"), str)]
     return trovate[-2] if len(trovate) > 1 else ""
+
+
+# "Quali fragranze ci sono?", "elenca i formati", "che colori avete": la
+# risposta sta in DIECI pezzi diversi, uno per variante, non negli otto che
+# bastano a una domanda puntuale. Su un catalogo otto pezzi danno un elenco di
+# due voci e sembra che il resto non esista (visto il 20/09/2026).
+ELENCO = re.compile(r"\b(quali|quante|elenca|elencare|lista|tutt[ei]|che\s+\w+\s+ci\s+sono|"
+                    r"che\s+\w+\s+(avete|ci sono|esistono)|assortimento|gamma|catalogo completo)\b", re.I)
+PEZZI_ELENCO = 20
+
+
+def pezzi_da_recuperare(domanda: str) -> int:
+    """Quanti pezzi mettere nel contesto: di piu' per le domande di elenco."""
+    return PEZZI_ELENCO if ELENCO.search(domanda or "") else 8
+
+
+def _fonti_citate(righe) -> str:
+    """Documento e pagina di ogni pezzo citato, in coda alla risposta.
+
+    Il modello cita «[7]» e basta: chi legge non ha modo di sapere che [7] e'
+    «CATALOGO IPURO 2025.pdf, pagina 8», quindi per verificare deve sfogliare a
+    mano — ed e' successo davvero il 20/09/2026, con un utente che ha concluso
+    «non c'e'» su un prodotto che stava a pagina 8. Il disclaimer chiede di
+    verificare sempre la fonte citata: senza questo elenco non e' possibile.
+    I numeri corrispondono all'ordine in cui i pezzi entrano nel CONTESTO
+    (prompt.contesto), quindi [n] qui e [n] nella risposta sono lo stesso pezzo.
+    """
+    if not righe:
+        return ""
+    voci = []
+    for i, r in enumerate(righe, 1):
+        pagina = f", pagina {r['page']}" if r.get("page") is not None else ""
+        voci.append(f"[{i}] {r['documento']}{pagina}")
+    return "\n\n---\n_Fonti: " + " · ".join(voci) + "_"
 
 
 def _blocco_immagini(url_per_pos) -> str:
@@ -277,6 +358,11 @@ async def chat(request: Request):
                             status_code=401)
     gruppi = identita.gruppi(claim)
     utente = claim.get("sub") or ""
+    # Gruppi dell'ultimo token: servono a decidere, quando il browser chiede
+    # un'immagine, se quella persona puo' ancora vederla (un <img> non porta
+    # identita', solo i cookie del dominio).
+    _ricorda_gruppi(conn_gruppi := _conn(), utente, gruppi)
+    conn_gruppi.close()
 
     domanda = _domanda(corpo.get("messages", []))
     conn = _conn()
@@ -300,7 +386,7 @@ async def chat(request: Request):
         conn.close()
         if not ids:
             return _risposta_unica("Non ho immagini da mostrare per quella risposta.")
-        urls = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}") for i, iid in enumerate(ids)}
+        urls = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}", utente) for i, iid in enumerate(ids)}
         return _risposta_unica("Ecco le figure delle pagine citate:\n\n" + _blocco_immagini(urls))
 
     # 2. La domanda per la RICERCA: in una conversazione l'ultima frase da sola
@@ -312,7 +398,8 @@ async def chat(request: Request):
 
     # 3. Embedding della domanda (puo degradare a full-text) e ricerca con ACL.
     qvec = recupero.embedding(cercata)
-    righe, degradato = recupero.cerca(conn, cercata, gruppi, qvec=qvec)
+    righe, degradato = recupero.cerca(conn, cercata, gruppi, qvec=qvec,
+                                      limite=pezzi_da_recuperare(domanda))
 
     # 4. Gate: contaminazione e rotta. Puo rifiutare il turno.
     try:
@@ -324,7 +411,7 @@ async def chat(request: Request):
 
     # 5. Prompt: system + contesto + la cronologia dei messaggi.
     ids_immagini = _immagini_per_la_domanda(conn, qvec, gruppi, righe)
-    url_per_pos = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}")
+    url_per_pos = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}", utente)
                    for i, iid in enumerate(ids_immagini)}
     messaggi = [{"role": "system",
                  "content": prompt.SYSTEM + "\n" + prompt.contesto(righe) + SUFFISSO_SISTEMA}]
@@ -333,6 +420,10 @@ async def chat(request: Request):
     messaggi += storico
 
     chieste = chiede_le_immagini(domanda)
+    # Offerta gia' fatta nel turno precedente per le STESSE figure: ripeterla a
+    # ogni risposta e' rumore (sei risposte, sei offerte identiche, viste il
+    # 20/09/2026). Chi voleva vederle ha gia' avuto l'occasione di dirlo.
+    gia_offerte = MARCA_OFFERTA in _ultima_risposta(storico_messaggi)
 
     def _immagini_finali():
         """Coda della risposta: le figure se le ha chieste l'utente (o se
@@ -342,6 +433,8 @@ async def chat(request: Request):
             return "\n\n_Non ho figure collegate a questa risposta._" if chieste else ""
         if not SU_RICHIESTA or chieste:
             return "\n\n" + _blocco_immagini(url_per_pos)
+        if gia_offerte:
+            return ""
         quante = len(url_per_pos)
         return (f"\n\n_Ci sono {quante} {MARCA_OFFERTA}"
                 f"{' (figure, schemi, foto dei prodotti)' if quante > 1 else ''}: "
@@ -352,7 +445,7 @@ async def chat(request: Request):
         try:
             for pezzo in _stream_litellm(messaggi, decisione["rotta"], uso):
                 yield pezzo
-            finale = _immagini_finali()
+            finale = _fonti_citate(righe) + _immagini_finali()
             if finale:
                 yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': finale}, 'index': 0}]})}\n\n"
             yield "data: [DONE]\n\n"
@@ -369,14 +462,21 @@ async def chat(request: Request):
 
 
 @app.get("/immagini/{img_id}")
-def servizio_immagine(img_id: int, scade: str = "", firma: str = ""):
-    """Serve un'immagine SOLO con URL firmato valido: la firma viene emessa dal
-    gate quando ha ammesso il chunk. Niente id libero = niente IDOR sulle
-    immagini altrui."""
-    if not immagini.valida(img_id, scade, firma):
+def servizio_immagine(request: Request, img_id: int, scade: str = "", firma: str = "", u: str = ""):
+    """Serve un'immagine a DUE condizioni: URL firmato valido, e permesso
+    ancora valido per la persona a cui e' stato consegnato.
+
+    La firma da sola direbbe soltanto «il gate aveva approvato», e varrebbe
+    fino alla scadenza anche dopo che la fonte e' stata sospesa o la persona e'
+    uscita dal gruppo. Il secondo controllo rilegge `sources` adesso: lo stato
+    della fonte ha effetto immediato, un cambio di gruppi al primo messaggio
+    successivo di quella persona (migrazione 015)."""
+    if not immagini.valida(img_id, scade, firma, u):
         return JSONResponse({"error": "url non valido o scaduto"}, status_code=403)
     conn = _conn()
     try:
+        if not immagini.visibile(conn, img_id, _gruppi_della_richiesta(request, conn, u)):
+            return JSONResponse({"error": "non consentito"}, status_code=403)
         dati = immagini.leggi(conn, img_id)
     finally:
         conn.close()

@@ -447,7 +447,7 @@ def _opzioni_pdf(device="cpu"):
         # figure che occupano almeno il 15% della pagina — fuori loghi e
         # cornici, dentro le foto prodotto (a 0,05 erano 324 immagini su 41
         # pagine, quasi tutte decorative).
-        scale=3.0, picture_area_threshold=0.15,
+        scale=3.0, picture_area_threshold=0.08,
         # Trascrizione E descrizione, in inglese. Chiedere la descrizione in
         # italiano faceva inventare a glm-ocr ("profumo di arsenico"); chiedere
         # SOLO la trascrizione lasciava fuori dall'indice gli attributi visivi,

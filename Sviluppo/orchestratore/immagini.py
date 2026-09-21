@@ -13,7 +13,12 @@ import pathlib
 import time
 
 RADICE = pathlib.Path(os.environ.get("IMMAGINI", "/immagini"))
-VALIDITA = 15 * 60            # secondi: abbastanza per la lettura, corto contro la condivisione
+# Quanto vale un URL firmato. 15 minuti erano troppo pochi: una conversazione
+# riaperta dopo pranzo mostrava riquadri vuoti al posto delle figure, e in coda
+# ai log una fila di 403 (20/09/2026). Otto ore coprono la giornata di lavoro.
+# Il collegamento resta una chiave che vale per chi ce l'ha, ma non e' piu'
+# l'unica difesa: le ACL si ricontrollano quando l'immagine viene servita.
+VALIDITA = int(os.environ.get("IMMAGINI_VALIDITA_MIN", "480")) * 60
 
 
 def _chiave():
@@ -23,22 +28,54 @@ def _chiave():
     return os.environ["ORCHESTRATOR_KEY"].encode()
 
 
-def firma_url(img_id: int, base: str) -> str:
-    """URL assoluto firmato per un'immagine, valido VALIDITA secondi."""
+def firma_url(img_id: int, base: str, utente: str = "") -> str:
+    """URL assoluto firmato per un'immagine, valido VALIDITA secondi.
+
+    La firma lega l'URL anche alla PERSONA a cui e' stato consegnato: cosi' il
+    collegamento inoltrato a un collega di un'altra area non e' spendibile da
+    lui, perche' serve anche a ritrovare i suoi gruppi quando si serve il file.
+    """
     scade = int(time.time()) + VALIDITA
-    firma = hmac.new(_chiave(), f"{img_id}:{scade}".encode(), hashlib.sha256).hexdigest()[:32]
-    return f"{base}/immagini/{img_id}?scade={scade}&firma={firma}"
+    return f"{base}/immagini/{img_id}?scade={scade}&firma={_firma(img_id, scade, utente)}" \
+           + (f"&u={utente}" if utente else "")
 
 
-def valida(img_id: int, scade: str, firma: str) -> bool:
+def _firma(img_id: int, scade, utente: str = "") -> str:
+    messaggio = f"{img_id}:{scade}:{utente}".encode()
+    return hmac.new(_chiave(), messaggio, hashlib.sha256).hexdigest()[:32]
+
+
+def valida(img_id: int, scade: str, firma: str, utente: str = "") -> bool:
     """La firma dell'URL e' autentica e non scaduta."""
     try:
         if int(scade) < int(time.time()):
             return False
-        attesa = hmac.new(_chiave(), f"{img_id}:{scade}".encode(), hashlib.sha256).hexdigest()[:32]
-        return hmac.compare_digest(attesa, firma or "")
+        return hmac.compare_digest(_firma(img_id, scade, utente or ""), firma or "")
     except (ValueError, TypeError):
         return False
+
+
+def visibile(conn, img_id: int, gruppi: list) -> bool:
+    """L'immagine appartiene a una fonte che QUESTA persona puo' vedere, ADESSO.
+
+    La firma dice che il gate aveva approvato; questo dice che il permesso vale
+    ancora. Senza, un URL emesso stamattina continuerebbe a funzionare dopo che
+    la fonte e' stata sospesa o la persona e' uscita dal gruppo — ed e' proprio
+    il caso in cui deve smettere. Stesso predicato della ricerca: gruppi,
+    aziende e stato della fonte, letti da `sources`.
+    """
+    from .identita import aziende as aziende_di
+    aziende = aziende_di(gruppi or [])
+    if not gruppi or not aziende:
+        return False
+    with conn.cursor() as cur:
+        cur.execute("""SELECT EXISTS (
+                         SELECT 1 FROM immagini i JOIN sources s ON s.id = i.source_id
+                          WHERE i.id = %s AND s.acl_groups && %s::text[]
+                            AND s.aziende && %s::text[] AND s.stato = 'attiva') AS ok""",
+                    (img_id, gruppi, aziende))
+        riga = cur.fetchone()
+        return bool(riga["ok"] if isinstance(riga, dict) else riga[0])
 
 
 def leggi(conn, img_id: int):
