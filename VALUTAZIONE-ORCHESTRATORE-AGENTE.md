@@ -25,6 +25,10 @@ gratis.
 servizi che scrivono o che fanno rispettare le regole.** MCP cambia *chi
 chiama* un servizio, non quanto è indipendente: i servizi sono già indipendenti.
 
+**Prima degli strumenti non c'è nessun agente** (§9, scritto dopo la prima
+misura sulle domande vere): un agente con un modo solo di cercare è una
+ricerca lenta ripetuta. Il §9 corregge l'ordine di lavoro del §6.
+
 ---
 
 ## 2. Le misure da cui parte tutto
@@ -332,3 +336,72 @@ regge.
   suo disegno su registro, limiti e revoca.
 - **Non toglierei la catena fissa.** Se l'agente non converge entro N passi,
   deve poter ripiegare sul comportamento di oggi, che una risposta la dà.
+
+---
+
+## 9. Perché l'agente, e cosa deve avere per funzionare
+
+> Scritto il 21/09/2026 dopo la prima misura sulle 24 domande vere. **Cambia
+> l'ordine di lavoro del §6**: questa parte viene prima delle fasi 1-3, perché
+> quelle senza questa sono ritocchi.
+
+### Le mosse che servono, prese da un caso vero
+
+Ricostruzione di cosa è servito davvero, a mano, per far funzionare «sassi
+rossi». Non è un elenco di buone intenzioni: ognuno di questi passi è nella
+cronologia della sessione.
+
+1. **Guardare com'è fatto il corpus prima di cercarci dentro.** Quali
+   documenti, quanti pezzi, che forma ha un pezzo.
+2. **Cercare, e accorgersi che il risultato è sbagliato.** Muschio di renna e
+   vasi su un terrazzo erano riconoscibilmente fuori tema.
+3. **Dopo il fallimento, cambiare TIPO di ricerca, non ripetere la stessa.**
+   Da «dove stanno le pietre rosse» a «la stringa `rot red` esiste?»: da
+   semantica a **esatta su un token distintivo**. È lì che si è trovato.
+4. **Guardare i vicini**: non il pezzo, la pagina. La struttura — un titolo e
+   venti righe di colore nude — è saltata fuori da sola.
+5. **Risalire al meccanismo**, non fermarsi al sintomo.
+6. **Misurare invece di credere.** Due ipotesi su quattro sono state scartate
+   dai numeri, non dal ragionamento.
+
+### Cosa di queste manca al sistema
+
+| Mossa | Oggi |
+|---|---|
+| Più modi di cercare | **Uno solo.** La ricerca testuale esiste ma è morta: `plainto_tsquery` mette in AND ogni termine, quindi su «sassi rossi» torna zero |
+| Guardare l'intorno | **No.** Frammenti isolati, mai la pagina |
+| Accorgersi che il risultato è sbagliato | **No** |
+| Cambiare strategia dopo un fallimento | **No.** Un colpo e basta |
+| Dire «non l'ho trovato» | **Sì** — l'unica che c'è già, e va difesa |
+
+### La conclusione che conta
+
+**Un agente senza più modi di cercare è solo una ricerca lenta ripetuta.** Il
+valore del ciclo non sta nel ciclo: sta nell'avere strumenti *diversi* fra un
+giro e l'altro. Al secondo tentativo, a mano, si è usato uno strumento diverso;
+un agente con un martello solo, al secondo colpo ribatte sullo stesso chiodo.
+
+Questo corregge l'ordine del §6: **prima gli strumenti, poi il ciclo che li
+usa.** Le fasi 1-3 (riscrittura, pagina, rerank) sono conseguenze, non
+strategia — e la riscrittura è già stata bocciata dalla misura (0 su 20 di
+guadagno).
+
+### E il giudizio di fondo sul sistema
+
+**Per i documenti di prosa** — policy, procedure, normativa — il sistema è
+adatto e funziona già: nelle 24 domande, le categorie *Specifiche tecniche* e
+*Certificazioni* fanno 4/4 e 2/3.
+
+**Per i cataloghi prodotto no, e non è questione di taratura.** Un catalogo è
+**un database che è stato stampato**: prodotti, codici, varianti, formati,
+prezzi, pagine. Lo appiattiamo in frammenti di testo e poi chiediamo a 1024
+numeri di ricostruire quella struttura. Ogni guasto trovato il 21/09/2026 è lo
+stesso guasto: `DST2001 rot red` senza il prodotto davanti, `E5500 5.5 l` senza
+il titolo di pagina, `amfori` che è un logo e quindi sparisce. Non sono casi
+singoli: sono la struttura buttata via in lettura, che si prova a far
+ricomporre alla matematica dei vettori.
+
+Per i cataloghi, la direzione di lungo periodo è **estrarre la struttura**
+(prodotto → codice → formato → prezzo) invece di incorporare pagine. È lo
+stesso lavoro del connettore ERP già specificato, applicato ai cataloghi
+fornitore.
