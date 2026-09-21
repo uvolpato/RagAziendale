@@ -149,6 +149,21 @@ punti che vanno previsti **prima** di scriverle, non dopo:
    Questa modifica cambia la forma di ogni risposta, e mescolarla a un
    difetto di recupero aperto renderebbe impossibile capire cosa ha rotto
    cosa.
+6. **Misurato su una conversazione vera** (21/09/2026, cinque turni sui
+   profumatori): dei tre difetti trovati, **un agente non ne avrebbe corretto
+   nessuno**. Due blocchi «Fonti» di seguito — il modello ricopiava l'elenco
+   del turno prima perché glielo rimandavamo indietro nella cronologia: il
+   difetto sta in *cosa gli passi*, non in come decide, e un agente l'avrebbe
+   ricopiato allo stesso modo. Otto voci per due pagine nell'elenco delle
+   fonti: formattazione, cioè codice. Il modello che scrive «consulta il PDF»
+   mentre il sistema gli allega le figure sotto: non sa cosa farà il sistema
+   dopo di lui, e resta vero anche da agente — a meno che allegare le immagini
+   non diventi uno *strumento* suo, e allora vale il punto 1.
+
+   Il caso in cui l'agente avrebbe aiutato **non compare** in quella
+   conversazione: nessuno ha chiesto un confronto fra due cataloghi. È il
+   punto 4 visto dall'altra parte — prima di decidere serve sapere quante
+   domande vere sono di quel tipo, e finora le osservate sono zero su cinque.
 
 ---
 
