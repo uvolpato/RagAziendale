@@ -243,6 +243,16 @@ senza metro non si sa se migliora o peggiora.
 Parallelismo e confine dei permessi nello stesso disegno. Abilita il confronto
 fra cataloghi.
 
+**È qui che un framework si ripaga**, e non prima: il ciclo della fase 4 sono
+cinquanta righe di Python, che si testano con `test_gate.py`. LangGraph (MIT)
+serve per i rami paralleli e per la sessione che sopravvive fra un messaggio e
+l'altro. Era fra le dipendenze dal primo commit — messo per costruire gli
+«archi concettuali», che LangGraph non sa fare: il «graph» del nome è il grafo
+del *flusso di esecuzione*, non un grafo di concetti (quello è Cognee, D13, e
+gli archi trasversali sono comunque esclusi dal 19/09/2026). Tolto il
+21/09/2026 senza essere mai stato importato; si rimette con una riga quando
+questa fase arriva.
+
 ### Fase 6 — sessione e memoria per utente
 
 I punti 3a e 3b. La 3c (autonomia in assenza) è un progetto a sé e non entra
