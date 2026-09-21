@@ -132,17 +132,26 @@ def _risposta_unica(testo: str):
 
 
 def _senza_aggiunte(messaggio: dict) -> dict:
-    """Toglie dalla cronologia le righe che ha scritto il SISTEMA, non il
-    modello: l'offerta delle immagini e i collegamenti alle figure.
+    """Toglie dalla cronologia TUTTE le righe che ha scritto il SISTEMA, non il
+    modello: l'elenco delle fonti, l'offerta delle immagini, i collegamenti
+    alle figure, e il filetto che le separa.
 
-    Rimandargliele indietro lo porta a imitarle: il modello le riscriveva in
-    coda alla propria risposta, e l'offerta compariva due volte (visto il
-    20/09/2026, conversazione sui profumatori). Al modello interessa cosa ha
-    detto, non come il sistema ha decorato la risposta."""
+    Rimandargliele indietro lo porta a imitarle. Il 20/09/2026 era l'offerta a
+    comparire due volte; il 21/09/2026, sulla stessa conversazione, erano le
+    FONTI: il modello ricopiava di sana pianta l'elenco del turno prima e il
+    sistema gli accodava quello vero, con numeri diversi. Due blocchi «Fonti»
+    di seguito, e i riferimenti [n] del primo puntavano ai pezzi di un altro
+    turno — cioe' esattamente il contrario di quello che l'elenco serve a
+    fare. Al modello interessa cosa ha detto, non come il sistema ha decorato
+    la risposta."""
     if messaggio.get("role") != "assistant":
         return messaggio
     righe = [r for r in messaggio["content"].splitlines()
-             if MARCA_OFFERTA not in r and "![immagine" not in r]
+             if MARCA_OFFERTA not in r and "![immagine" not in r
+             and MARCA_FONTI not in r]
+    # Il filetto restava orfano dell'elenco che introduceva.
+    while righe and righe[-1].strip() in ("---", ""):
+        righe.pop()
     return {**messaggio, "content": "\n".join(righe).strip()}
 
 
@@ -162,6 +171,10 @@ SU_RICHIESTA = os.environ.get("IMMAGINI_SU_RICHIESTA", "1") != "0"
 # Frase dell'offerta. Contiene MARCA: al turno dopo si guarda se l'assistente
 # aveva davvero offerto qualcosa, prima di interpretare un "si" come consenso.
 MARCA_OFFERTA = "immagini collegate a questa risposta"
+# Le due marche servono a due cose insieme: scrivere la riga (_fonti_citate,
+# _blocco_offerta) e RICONOSCERLA nella cronologia per toglierla
+# (_senza_aggiunte). Una sola costante, cosi' non possono divergere.
+MARCA_FONTI = "_Fonti: "
 # "Si", "mostra", "fammi vedere": un consenso, non una domanda. Deve essere un
 # messaggio breve, altrimenti "quali immagini ci sono nel catalogo?" verrebbe
 # scambiato per un si'.
@@ -230,14 +243,23 @@ def _fonti_citate(righe) -> str:
     verificare sempre la fonte citata: senza questo elenco non e' possibile.
     I numeri corrispondono all'ordine in cui i pezzi entrano nel CONTESTO
     (prompt.contesto), quindi [n] qui e [n] nella risposta sono lo stesso pezzo.
+
+    Una pagina che compare in piu' pezzi si scrive UNA volta sola, con tutti i
+    suoi numeri davanti. Su un catalogo e' la norma — un prodotto occupa testo,
+    tabella e descrizione della figura — e l'elenco veniva fuori cosi':
+    «[2] pagina 19 · [3] pagina 20 · [4] pagina 20 · [5] pagina 20». Otto voci
+    per due pagine: chi legge non ha piu' voglia di verificare niente.
     """
     if not righe:
         return ""
-    voci = []
+    per_pagina = {}
     for i, r in enumerate(righe, 1):
-        pagina = f", pagina {r['page']}" if r.get("page") is not None else ""
-        voci.append(f"[{i}] {r['documento']}{pagina}")
-    return "\n\n---\n_Fonti: " + " · ".join(voci) + "_"
+        per_pagina.setdefault((r["documento"], r.get("page")), []).append(i)
+    voci = []
+    for (documento, page), numeri in per_pagina.items():
+        pagina = f", pagina {page}" if page is not None else ""
+        voci.append("".join(f"[{n}]" for n in numeri) + f" {documento}{pagina}")
+    return "\n\n---\n" + MARCA_FONTI + " · ".join(voci) + "_"
 
 
 def _blocco_immagini(url_per_pos) -> str:

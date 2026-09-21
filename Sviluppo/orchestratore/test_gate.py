@@ -371,6 +371,31 @@ def main():
         utente = {"role": "user", "content": "ne ho bisogno in auto"}
         assert _senza_aggiunte(utente) == utente, "le domande dell\u2019utente non si toccano"
 
+    @prova("T1.22", "l'elenco delle fonti non torna indietro al modello, che altrimenti lo ricopia")
+    def _():
+        from orchestratore.main import _fonti_citate, _senza_aggiunte, MARCA_FONTI
+        righe = [{"documento": "CATALOGO IPURO 2025.pdf", "page": 19},
+                 {"documento": "CATALOGO IPURO 2025.pdf", "page": 20}]
+        risposta = "Le candele profumate sono a pagina 20 [2]." + _fonti_citate(righe)
+        pulita = _senza_aggiunte({"role": "assistant", "content": risposta})["content"]
+        assert "candele profumate" in pulita, "la risposta vera non deve sparire"
+        assert MARCA_FONTI not in pulita, "il 21/09/2026 il modello ricopiava l\u2019elenco del turno prima"
+        assert not pulita.rstrip().endswith("---"), "il filetto resta orfano dell\u2019elenco"
+
+    @prova("T1.23", "le fonti sulla stessa pagina si raggruppano invece di ripetersi")
+    def _():
+        from orchestratore.main import _fonti_citate
+        # Su un catalogo un prodotto occupa testo, tabella e descrizione della
+        # figura: la stessa pagina arriva piu' volte.
+        righe = [{"documento": "CATALOGO IPURO 2025.pdf", "page": 20},
+                 {"documento": "CATALOGO IPURO 2025.pdf", "page": 20},
+                 {"documento": "CATALOGO IPURO 2025.pdf", "page": 20},
+                 {"documento": "CATALOGO IPURO 2025.pdf", "page": 6}]
+        elenco = _fonti_citate(righe)
+        assert elenco.count("CATALOGO IPURO 2025.pdf") == 2, f"una voce per pagina: {elenco}"
+        assert "[1][2][3] CATALOGO IPURO 2025.pdf, pagina 20" in elenco, elenco
+        assert "[4] CATALOGO IPURO 2025.pdf, pagina 6" in elenco, elenco
+
 
     print("\n--- Indicizzazione che scarica il modello " + "-" * 27)
 
