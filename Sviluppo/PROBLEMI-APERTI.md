@@ -219,6 +219,71 @@ oggi 19 / 79%. Una etichetta corretta su tutte le figure deve farla salire.
 
 ---
 
+## 5-bis. Nel Markdown la descrizione non dice DI QUALE figura parla
+
+### L'evidenza
+
+Nel `.md` di una pagina la descrizione prende il posto del segnaposto e basta:
+
+```
+DST2043 creme cream
+
+Immagine: nessun testo The image shows a close-up of irregularly shaped,
+light beige decorative stones...
+```
+
+Nessun riferimento al file. Il legame figura → descrizione esiste **solo
+nell'ordine**, e solo dentro `_pezzi_dal_markdown_figure`: la figura n-esima
+del blocco riceve la descrizione n-esima. Fuori da quella funzione il legame
+non c'è più.
+
+Conseguenze, tutte osservate:
+
+- chi apre il `.md` — ed e' l'artefatto che si guarda quando una risposta e'
+  sbagliata — **non puo' risalire all'immagine**;
+- il modello riceve il pezzo e **non sa quale figura sta leggendo**, quindi non
+  potrebbe citarla nemmeno volendo;
+- il legame posizionale e' fragile: se il conto fra segnaposto e figure non
+  torna, tutto slitta di uno e nessuno se ne accorge.
+
+E' anche il motivo per cui tutto il lavoro sulle didascalie del 22/09 e' stato
+in salita: si e' cercato di ricostruire a valle (dal testo attorno al
+segnaposto) un'informazione che **esisteva a monte** ed e' stata buttata.
+
+### Il nome del file: attenzione a come si legge
+
+`50_1.png` **non** e' «la prima immagine di pagina 50». La prima parte e' la
+pagina, la seconda e' un **contatore globale del documento**:
+
+```python
+for n, (img, pagina, descr) in enumerate(immagini, start=da_indice):
+    nome = f"{pagina or 0}_{n}.png"
+```
+
+`da_indice` prosegue di blocco in blocco. Pagina 7 di EUROSAND comincia a
+`7_51.png`.
+
+### Soluzioni candidate
+
+| | cosa | costo | rischio |
+|---|---|---|---|
+| **A** | Nel Markdown, scrivere il riferimento accanto alla descrizione: `Immagine [7_51.png]: …` | un'ora + rilettura | il riferimento entra nel testo indicizzato: va visto se sporca la ricerca (un nome file e' un termine rarissimo, quindi l'IDF lo peserebbe molto) |
+| **B** | Come A, ma il riferimento **non entra nell'embedding**: si tiene in una colonna a parte e si ricompone quando serve | mezza giornata | piu' codice, ma niente effetti sulla ricerca |
+| **C** | Lasciare il `.md` pulito e salvare a fianco una mappa `pagina → [file, descrizione]` | un'ora | l'artefatto leggibile resta senza il legame, che e' meta' del motivo per cui lo si salva |
+
+La **A** e' la piu' semplice e va misurata prima di sceglierla: il rischio non
+e' teorico, perche' dal 22/09 il ramo lessicale pesa i termini rari e un nome
+di file e' il termine piu' raro che ci sia.
+
+### Cosa misurare
+
+I metri esistono gia' e coprono entrambi i rischi: `misura.py` (il recupero
+peggiora se i nomi file sporcano il testo?) e `figure.py` (la figura giusta
+esce di piu'?). Basta rileggere EUROSAND e confrontare con 18/20, 14/20, 11/12
+e 79%.
+
+---
+
 ## 6. Le domande corte perdono 4 domande su 20
 
 ### L'evidenza

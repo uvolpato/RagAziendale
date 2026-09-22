@@ -183,6 +183,15 @@ Rileggere `llama-swap.yaml` richiede di **riavviare** il processo: non c'è un
 endpoint di ricarica, e una modifica al file senza riavvio non ha effetto
 (costato un'ora il 22/09).
 
+**Avvio (segnalazione per la produzione, NON ancora attuata):** oggi llama-swap
+parte al **login** dell'utente (Task Scheduler, task `llama-swap`,
+`LogonTrigger`), non all'avvio del PC. Docker Desktop pure parte al login, e i
+container sicuri per l'avvio automatico sono dietro a Docker Desktop. In
+produzione tutto questo deve partire **all'accensione del PC, senza login**:
+llama-swap va spostato su un `BootTrigger` (o servizio) e Docker Desktop/la
+compose su avvio di sistema. Da fare come passo separato, NON nel mezzo
+dell'ingestion (mai fermare il giro in corso).
+
 ### 6.2 Chi parla con chi
 
 Orchestratore e ingestion passano da **LiteLLM**, per nome logico
