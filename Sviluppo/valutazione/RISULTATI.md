@@ -862,3 +862,29 @@ Il `Content-Range` e' la parte che rende l'idea praticabile: il browser scarica
 Quando l'etichetta della figura non c'e', la didascalia diventa «pagina 7»:
 non e' un ripiego povero, e' l'unica cosa che sappiamo con certezza, ed e'
 cliccabile.
+
+---
+
+## 22/09/2026 — la domanda a cui non si puo' rispondere
+
+Chat: «ho un cliente fiorista, vuole omaggiare i clienti con qualcosa che costi
+poco e sia utile». Gli otto pezzi arrivati al modello: due prodotti, un FORMATO
+di confezione (due volte), prosa pubblicitaria, una descrizione di figura in
+coreano, note olfattive.
+
+Il modello ne ha ricavato SETTE proposte regalo, con i prezzi presi dalle righe
+dei formati, e ha chiuso con «queste opzioni sono economiche, utili e adatte».
+Nessuna delle due affermazioni sta da nessuna parte nei documenti.
+
+**Il recupero ha fatto quel che poteva: e' la risposta a essere disonesta.** La
+domanda chiede un giudizio che il catalogo non contiene — non esiste un
+attributo «utile» o «da regalo» — e il modello ha vestito il risultato da
+risposta.
+
+E' la classe di guasto piu' pericolosa: non sbaglia un dato, sbaglia la
+premessa, e suona bene.
+
+Le 4 domande SENZA RISPOSTA sono nel banco di prova dal 21/09 e non sono mai
+state misurate. Sono esattamente questa classe.
+
+Problemi, cause e soluzioni candidate: `PROBLEMI-APERTI.md`.
