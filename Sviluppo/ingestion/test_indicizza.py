@@ -422,6 +422,38 @@ def test_le_descrizioni_delle_figure_entrano_nel_testo_col_prodotto():
     assert pezzi[1][0].startswith("Immagine:") and "cartone" in pezzi[1][0]
 
 
+
+def test_un_id_con_la_barra_si_scarica_lo_stesso():
+    """L'id del VLM contiene una barra («qwen/qwen3-vl-4b»): senza protezione
+    diventa un altro pezzo di percorso e il server risponde 404 — cioe' il
+    modello resterebbe caricato e Docling non avrebbe la VRAM, senza che
+    niente si lamenti."""
+    import urllib.parse
+    chiamate = []
+
+    class FintaRisposta:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    import urllib.request
+    vera = urllib.request.urlopen
+    urllib.request.urlopen = lambda req, timeout=0: chiamate.append(req.full_url) or FintaRisposta()
+    vecchio = indicizza.MODELLI_HOST
+    indicizza.MODELLI_HOST = "host:1235"
+    try:
+        assert indicizza._scarica_modello("qwen/qwen3-vl-4b")
+        assert chiamate and chiamate[0].endswith("/api/models/unload/qwen%2Fqwen3-vl-4b"), chiamate
+        # Senza host o senza modello non si chiama nessuno.
+        indicizza.MODELLI_HOST = ""
+        assert indicizza._scarica_modello("qualsiasi") is False
+        indicizza.MODELLI_HOST = "host:1235"
+        assert indicizza._scarica_modello("") is False
+    finally:
+        urllib.request.urlopen = vera
+        indicizza.MODELLI_HOST = vecchio
+
+
 if __name__ == "__main__":
     import tempfile
     esiti = []

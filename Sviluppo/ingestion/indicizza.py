@@ -415,19 +415,30 @@ def scarica_llm():
 
     ponytail: in produzione il modello sta su vLLM, che prealloca la VRAM e si
     libera con /sleep; quando il server GPU esistera' e' un ramo in piu' qui."""
-    if not MODELLI_HOST or not MODELLO_CHAT:
+    return _scarica_modello(MODELLO_CHAT, "di chat") if MODELLO_CHAT else False
+
+
+def _scarica_modello(modello: str, come_si_chiama: str = "") -> bool:
+    """Scarica UN modello dal server. True se c'era ed e' uscito.
+
+    Non alza mai: se il server non risponde si va avanti con quel che c'e'.
+    llama-swap lo ricarica alla prima richiesta successiva."""
+    if not MODELLI_HOST or not modello:
         return False
     try:
+        import urllib.parse
         import urllib.request
         base = MODELLI_HOST if "://" in MODELLI_HOST else f"http://{MODELLI_HOST}"
-        req = urllib.request.Request(
-            f"{base.rstrip('/')}/api/models/unload/{MODELLO_CHAT}", method="POST")
+        # L'id puo' contenere una barra ("qwen/qwen3-vl-4b"): va protetta, o
+        # diventa un altro pezzo di percorso e il server risponde 404.
+        via = urllib.parse.quote(modello, safe="")
+        req = urllib.request.Request(f"{base.rstrip('/')}/api/models/unload/{via}", method="POST")
         with urllib.request.urlopen(req, timeout=30) as r:
             # 200 = scaricato; 404 = non era caricato, e va benissimo.
             return r.status == 200
     except Exception as e:
-        print(f"il modello di chat non e' stato scaricato ({type(e).__name__}: {e}): "
-              f"si legge con quel che c'e'", flush=True)
+        print(f"il modello {come_si_chiama or modello} non e' stato scaricato "
+              f"({type(e).__name__}: {e}): si legge con quel che c'e'", flush=True)
         return False
 
 
@@ -748,6 +759,21 @@ class Lettore:
             # sappiamo false. Nessun doppione, perche' Docling qui non ne
             # produce piu' (descrivi=False), e una chiamata invece di due.
             titoli = _titoli_di_pagina(dentro)
+            # Il VLM ha finito: le pagine sono lette. Ora tocca a Docling, e i
+            # due non lavorano MAI insieme — quindi si libera la VRAM che il
+            # VLM tiene (4,3 GB) invece di quella del modello di chat.
+            #
+            # Misurato il 22/09/2026: con tutti e quattro i modelli caricati
+            # restavano 1,9 GB liberi e Docling, che ne chiede 6,1, superava i
+            # 600 secondi per blocco. Togliendo il VLM restano 8,5 GB e ci sta
+            # comodo — mentre chi chatta continua ad avere risposta, che e' il
+            # contrario di quello che faceva la vecchia finestra notturna.
+            #
+            # llama-swap lo ricarica da solo alla prima pagina del documento
+            # dopo. Le descrizioni delle figure arrivano DOPO questa riga e lo
+            # riaccendono: e' voluto, a quel punto Docling ha finito.
+            if _scarica_modello(VLM_MODELLO, "che legge le pagine"):
+                print("    VLM scaricato: la VRAM va a Docling", flush=True)
             altri, immagini = self._con_docling(p, meta(0.5), solo_gpu, dentro, descrivi=False)
             immagini = _descrivi_col_titolo(immagini, titoli)
             return testi + altri + _pezzi_dalle_figure(immagini, titoli), immagini
