@@ -1677,12 +1677,12 @@ def _pezzi_da_markdown(md, pagina):
 
 
 SEGNAPOSTO = "<!-- image -->"
-# Quanto testo attorno al segnaposto si tiene, per lato.
+# Quanto testo PRIMA del segnaposto si tiene.
 INTORNO = 120
 
 
 def attorno_ai_segnaposti(markdown: str) -> list:
-    """Il testo che CIRCONDA ogni segnaposto, uno per segnaposto, in ordine.
+    """Il testo che PRECEDE ogni segnaposto, uno per segnaposto, in ordine.
 
     Serve a dare un'identita' alla figura. Il modello visivo descrive un
     RITAGLIO, e nel ritaglio il codice articolo c'e' solo se il layout della
@@ -1692,19 +1692,52 @@ def attorno_ai_segnaposti(markdown: str) -> list:
     stessa pagina — la ricerca non sbagliava a cercare, mancava proprio il
     dato.
 
-    Nel Markdown della pagina, invece, il codice sta sempre: e' la riga
-    accanto al segnaposto. Non e' un'associazione certa — l'ordine di lettura
-    puo' mettere la figura una riga prima o dopo il suo articolo — e per
-    questo si tiene il testo di ENTRAMBI i lati e si usa per CERCARE, non per
-    etichettare. Un indizio in piu', non una verita'.
+    Nel Markdown della pagina il codice c'e' sempre, e sta PRIMA della sua
+    figura. Su EUROSAND pagina 7:
+
+        Immagine: ...pietre bianche...      <- il ritaglio ha il suo codice
+        DST2043 creme cream                 <- codice
+        Immagine: ...pietre beige...        <- beige = creme = DST2043
+        DST2012 hellgrau light grey         <- codice
+        Immagine: ...pietre grigio chiaro...
+
+    Fra un segnaposto e l'altro c'e' esattamente UN codice, quindi la finestra
+    va delimitata dal segnaposto precedente: non e' una scelta di stile, e' la
+    differenza fra un'etichetta e un'ambiguita'.
+
+    La prima versione prendeva 120 caratteri da ENTRAMBI i lati e si portava
+    dietro anche il prodotto successivo. Misurato sulle 890 figure di EUROSAND
+    il 22/09/2026:
+
+                              un codice solo   nessuno   piu' di uno
+        entrambi i lati              171         520         199
+        solo quello che precede      194         643           0
+
+    Piu' figure identificate e zero ambigue: non e' un compromesso, e' un
+    difetto che se ne va. Le 199 ambigue sono il motivo per cui, chiedendo
+    «sassi rossi», uscivano due figure BLU che si portavano dietro «DST2001
+    rot red» dalla riga del prodotto accanto.
+
+    Torna una COPPIA per figura: (prima, dopo). I due lati servono a due cose
+    diverse, e per un pezzo della serata ho provato a farli fare dallo stesso
+    testo — sbagliando.
+
+        prima   l'ETICHETTA. Delimitata dal segnaposto precedente, quindi
+                porta al massimo il codice di UN prodotto. E' quella che si
+                mostra sotto la miniatura in chat, dove una parola di troppo
+                e' un'affermazione falsa.
+        dopo    contesto in piu' per la RICERCA. Su 891 figure di EUROSAND,
+                123 hanno il codice solo da questo lato: tagliarlo faceva
+                scendere le figure trovate da 11/12 a 10/12 e le pertinenti
+                dal 79 al 58 per cento (misurato il 22/09/2026).
+
+    La ricerca vuole recall, la didascalia vuole precisione. Non e' un
+    compromesso da trovare: sono due campi, e si tengono separati.
     """
     pezzi = (markdown or "").split(SEGNAPOSTO)
-    fuori = []
-    for i in range(len(pezzi) - 1):
-        prima = " ".join(pezzi[i].split())[-INTORNO:]
-        dopo = " ".join(pezzi[i + 1].split())[:INTORNO]
-        fuori.append(" ".join(f"{prima} {dopo}".split()))
-    return fuori
+    return [(" ".join(pezzi[i].split())[-INTORNO:],
+             " ".join(pezzi[i + 1].split())[:INTORNO])
+            for i in range(len(pezzi) - 1)]
 
 
 def nei_segnaposti(markdown: str, descrizioni: list) -> str:
@@ -1738,8 +1771,8 @@ def _pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli):
     file invece di dedurre.
 
     Torna anche le immagini con la descrizione ARRICCHITA del testo che
-    circonda il loro segnaposto — il codice articolo, quando nel ritaglio non
-    c'e' (vedi attorno_ai_segnaposti).
+    circonda il loro segnaposto — il codice articolo, quando nel ritaglio
+    non c'e' (vedi attorno_ai_segnaposti).
     """
     per_pagina = {}
     for i, (_percorso, pagina, descr) in enumerate(immagini):
@@ -1755,9 +1788,17 @@ def _pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli):
         # e' quello che identifica la figura, e quel che viene dal modello
         # visivo resta a descriverla. Va nell'indice delle IMMAGINI, non nel
         # Markdown, dove sarebbe la stessa riga scritta due volte.
-        for (i, descr), intorno in zip(qui, attorno_ai_segnaposti(md)):
+        for (i, descr), (prima, dopo) in zip(qui, attorno_ai_segnaposti(md)):
             percorso, pag, _ = immagini[i]
-            unita = " — ".join(x for x in (intorno, descr) if x)
+            # Tre parti, separatore SEMPRE presente: l'etichetta (che puo'
+            # essere vuota), il contesto dopo, e la descrizione del modello.
+            # Il separatore e' quello che distingue «non ho trovato
+            # un'etichetta» da «l'etichetta e' questa», e la didascalia in chat
+            # si regge su quella distinzione.
+            # NIENTE strip a sinistra: con l'etichetta vuota il separatore
+            # iniziale e' il segno che l'etichetta non c'e'. Toglierlo faceva
+            # scambiare il contesto DOPO per l'etichetta.
+            unita = f"{prima} — {dopo} — {descr}".rstrip(" ")
             arricchite[i] = (percorso, pag, unita)
         titolo = titoli.get(pagina, "")
         if titolo:

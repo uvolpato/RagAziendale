@@ -317,24 +317,39 @@ DIDASCALIA = 44
 def _didascalia(descrizione: str) -> str:
     """Cosa scrivere sotto una miniatura.
 
-    La descrizione di una figura e' «<testo del catalogo attorno alla figura>
-    — <descrizione del modello visivo>» (vedi attorno_ai_segnaposti in
+    La descrizione di una figura e' «<testo del catalogo che PRECEDE la
+    figura> — <descrizione del modello visivo>» (vedi prima_dei_segnaposti in
     ingestion). La didascalia usa la PRIMA meta': sono le parole del catalogo,
     con i codici articolo.
 
-    Non dice «questa e' FSA1001», dice cosa c'e' scritto accanto. La
-    differenza non e' pedanteria: l'ordine di lettura puo' mettere una figura
-    una riga prima o dopo il suo articolo, quindi il codice e' un INDIZIO.
-    Scrivere il testo vero lascia giudicare chi guarda; un'etichetta sola
-    sarebbe un'affermazione che non possiamo sostenere.
+    Non dice «questa e' FSA1001», dice cosa c'e' scritto prima. Resta un
+    indizio — se il layout mette il codice altrove, la figura resta senza — ma
+    dal 22/09/2026 non e' piu' ambiguo: la finestra si ferma al segnaposto
+    precedente, quindi porta al massimo il codice di UN prodotto.
 
     La seconda meta' — il testo del modello visivo, in inglese — non si
     mostra: serve a cercare, non a leggere.
     """
     testo = " ".join((descrizione or "").split())
-    if not testo:
+    # Il separatore c'e' SOLO se l'etichetta c'e': quando prima della figura
+    # non c'era testo di catalogo, la descrizione salvata e' la sola frase del
+    # modello visivo. Senza questo controllo la didascalia mostrerebbe quella
+    # — una frase in inglese sotto una miniatura — spacciandola per l'etichetta
+    # del prodotto (22/09/2026: 85 figure su 891).
+    if " — " not in testo:
+        return ""
+    # Etichetta vuota: la descrizione salvata comincia col separatore, e
+    # dividerla darebbe il CONTESTO DOPO — cioe' il prodotto successivo,
+    # l'ambiguita' che tutto questo serve a togliere. Il 22/09/2026 usciva
+    # «— metallic» sotto una miniatura, che non e' l'etichetta di niente.
+    if testo.startswith("—"):
         return ""
     testo = testo.split(" — ")[0]
+    # Il testo prima della figura e' tagliato a lunghezza fissa e comincia a
+    # meta' parola: «nten diamonds & brilliants». Si riparte dalla prima
+    # parola intera — una didascalia si legge, non si decifra.
+    if " " in testo[:40]:
+        testo = testo.split(" ", 1)[1] if not testo[:1].isupper() else testo
     # «nessun testo» e' quello che il modello scrive quando nel ritaglio non
     # c'e' niente da trascrivere: come didascalia non dice nulla.
     if testo.lower().startswith("nessun testo"):

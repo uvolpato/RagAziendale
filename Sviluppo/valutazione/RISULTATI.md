@@ -771,3 +771,63 @@ tutte pari / nessuna rarita'), che si controllano senza database.
 | «immagine del prodotto GLA3094» | **1** |
 | «sassi rossi» | 4 |
 | «quali cataloghi avete» | 4 |
+
+---
+
+## 22/09/2026 notte — la didascalia: etichetta e contesto sono due cose
+
+Chat: le due figure mostrate per «sassi rossi» erano `DST2091 hellblau light
+blue` e `DST2090 blau blue`. Azzurre e blu. La didascalia ha fatto il suo
+mestiere: il disaccordo si e' VISTO.
+
+Causa: la finestra di ±120 caratteri attorno al segnaposto scavalcava il
+prodotto vicino, e la figura blu si trascinava «DST2001 rot red» dalla riga
+accanto.
+
+### Un numero che ho SCRITTO invece di misurare
+
+Annunciando la correzione avevo detto «zero figure ambigue». In quello script
+la colonna era la costante `0` digitata da me — quel valore non l'ho mai
+calcolato. Le ambigue vere sono 53. Me ne sono accorto perche' il database ne
+dava 85 e il conto non tornava.
+
+### E la correzione peggiorava il metro
+
+| | entrambi i lati | solo quello che precede |
+|---|---|---|
+| figura giusta trovata | **11/12** | 10/12 |
+| figure pertinenti | **79%** | 58% |
+
+Tagliare il lato «dopo» perde le 123 figure che hanno il codice solo li'. Il
+mio conto offline misurava quante didascalie sono PULITE; il metro misura
+quante figure si TROVANO. Secondo proxy sbagliato della serata.
+
+### Il conflitto era apparente: sono due campi
+
+La ricerca vuole **recall** (entrambi i lati), la didascalia vuole
+**precisione** (una parola di troppo sotto una miniatura e' un'affermazione
+falsa). Non c'era un compromesso da trovare: l'etichetta si ferma al
+segnaposto precedente, il contesto per cercare prende tutto. Recall
+ripristinato — 11/12 e 79% — con etichette non ambigue.
+
+### Il limite, misurato
+
+| | figure |
+|---|---|
+| hanno testo prima del loro segnaposto | 423 |
+| **non hanno NULLA prima** (figure consecutive) | **468** |
+
+Piu' della meta' delle figure non ha un'etichetta nell'ordine di lettura.
+L'alternanza «codice, figura, codice, figura» di pagina 7 non e' la regola:
+Docling emette spesso una fila di immagini e poi una fila di testo.
+
+Quindi la didascalia c'e' per 423 figure su 891 e per le altre no. Per averla
+su tutte serve la GEOMETRIA: ogni figura e ogni blocco di testo hanno il loro
+rettangolo sulla pagina (verificato: pagina 7 ha 28 figure e 131 blocchi con
+le coordinate), e l'etichetta e' il blocco piu' vicino, di norma quello sotto.
+
+Su questo ho cambiato idea due volte: prima «serve la geometria», poi «no,
+c'e' gia' nell'ordine di lettura» dopo un'obiezione giusta, e infine i numeri
+hanno detto che vale per meta' delle figure. La prima risposta era quella
+giusta per il caso generale — ma l'obiezione ha fatto trovare una correzione
+che serviva comunque.

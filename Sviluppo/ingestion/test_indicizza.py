@@ -417,14 +417,21 @@ def test_la_figura_prende_il_codice_dal_testo_attorno():
 """
     intorni = indicizza.attorno_ai_segnaposti(md)
     assert len(intorni) == 2, intorni
-    assert "EK-9915" in intorni[0]
-    assert "EK-9916" in intorni[1]
-    # Si tengono ENTRAMBI i lati: l'ordine di lettura puo' mettere la figura
-    # una riga prima o dopo il suo articolo, e sbagliare lato vorrebbe dire
-    # attaccarla all'articolo sbagliato.
-    assert "EK-9916" in intorni[0], "manca il lato dopo"
+    prima = [p for p, _ in intorni]
+    assert "EK-9915" in prima[0]
+    assert "EK-9916" in prima[1]
+    # SOLO quello che precede, delimitato dal segnaposto prima. La prima
+    # versione prendeva anche il lato dopo e si portava dietro il prodotto
+    # successivo: misurato sulle 890 figure di EUROSAND, 199 finivano con PIU'
+    # di un codice — ed e' il motivo per cui a «sassi rossi» uscivano due
+    # figure BLU che si trascinavano «DST2001 rot red» dalla riga accanto.
+    assert "EK-9916" not in prima[0], "l'ETICHETTA non prende il prodotto dopo"
+    assert "EK-9915" not in prima[1], "e nemmeno quello di prima"
+    # Il lato DOPO invece c'e', e serve alla ricerca: su 891 figure, 123 hanno
+    # il codice solo li', e senza si perdono.
+    assert "EK-9916" in intorni[0][1], "il contesto dopo serve a cercare"
 
-    # Nessun segnaposto: nessun intorno, e non deve esplodere.
+    # Nessun segnaposto: niente, e non deve esplodere.
     assert indicizza.attorno_ai_segnaposti("solo testo") == []
     assert indicizza.attorno_ai_segnaposti("") == []
 
