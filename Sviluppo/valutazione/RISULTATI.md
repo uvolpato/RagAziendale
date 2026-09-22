@@ -176,3 +176,46 @@ dove il modello e' gia' residente.
   contro mm) e **la concorrenza fra cataloghi** su una parola comune. Sono da
   tenere fra i casi di prova quando si toccheranno le misure o il confine fra
   fonti.
+
+---
+
+## 22/09/2026 — le descrizioni dentro il testo: 18/20
+
+Reindicizzato EUROSAND con le descrizioni delle figure messe **al posto dei
+segnaposto `<!-- image -->` del Markdown di Docling**, invece che come pezzi
+staccati in fondo alla pagina. 770 pezzi, 891 immagini, 36 minuti.
+
+| | prima (17/09 sera) | ora |
+|---|---|---|
+| trovate, domanda com'e' | 17/20 | **18/20** |
+| trovate, domanda riscritta | 15/20 | 17/20 |
+| in posizione #1 | — | **15/20** |
+
+Guadagna la **5** (sfere inox), che prima non si trovava mai: ora e' al #4.
+Non e' la misura in centimetri ad essere stata capita — e' che la descrizione
+della figura delle sfere ora sta nello stesso pezzo del codice e del formato,
+quindi il cross-encoder vede una cosa sola invece di due mezze.
+
+### Perche' funziona
+
+Staccata, una descrizione e' un pezzo che dice «sfere di acciaio lucido» e
+nient'altro: nessun codice, nessun prezzo, nessun formato. Per entrare negli
+otto posti deve battere i pezzi che quei dati ce li hanno — e perde. Messa
+dove stava la figura, i due pezzi diventano uno: la prosa che risponde alla
+domanda descrittiva viaggia insieme ai dati che servono a rispondere.
+
+### Restano fuori
+
+- **16 (amfori)**: sempre un LOGO. Non e' recupero, e' lettura. Invariata.
+- **8 (neon)**: era in posizione 322, ora e' fuori dai primi 8 ma dentro i 150
+  candidati. Non misurata piu' a fondo.
+
+### La riscrittura resta spenta
+
+17/20 contro 18/20: terza misura, terza bocciatura. Perde la 9.
+
+### Cosa si puo' ancora togliere
+
+`TESTO_DOCLING=no` rimette le descrizioni staccate: e' la forma di prima, e
+serve a rimisurare questa stessa tabella se un altro PDF si comportasse
+diversamente. Non e' un'opzione da esporre, e' il banco di prova.

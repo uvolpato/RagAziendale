@@ -28,9 +28,14 @@ def prova(nome, descrizione):
 
 
 def main():
-    @prova("P1", "il system prompt pretende citazioni [n] e vieta di inventare")
+    @prova("P1", "il prompt chiede un numero VERO, non il segnaposto [n]")
     def _():
-        assert "citazione [n]" in prompt.SYSTEM
+        # Fino al 22/09/2026 diceva «riporta la citazione [n]» e il modello
+        # copiava il segnaposto: «il natur [n], il creme [n]» diciannove volte,
+        # zero citazioni vere. Il segnaposto non deve stare nelle regole.
+        regole = prompt.SYSTEM[prompt.SYSTEM.index("Regole:"):]
+        assert "[n]" not in regole
+        assert "[1]" in regole
         assert "non inventare" in prompt.SYSTEM.lower()
         assert "CONTESTO" in prompt.SYSTEM.upper()
 

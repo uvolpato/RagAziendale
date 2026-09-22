@@ -400,6 +400,35 @@ def test_senza_vlm_le_figure_restano_come_sono():
 
 
 
+def test_le_descrizioni_finiscono_dove_stava_la_figura():
+    """Il punto di tutto: la descrizione deve restare ACCANTO al suo codice.
+
+    Staccata in fondo alla pagina, «ciottoli neri con effetto specchio» e
+    «EK-9915» sono due pezzi diversi e il rerank ne sceglie uno solo. Docling
+    i segnaposto li mette gia' al posto giusto: ci si infila la nostra
+    descrizione e si indicizza quello."""
+    md = """| codice | colore |
+| EK-9915 | nero |
+<!-- image -->
+
+| EK-9916 | rosso |
+<!-- image -->
+"""
+    fuori = indicizza.nei_segnaposti(md, ["ciottoli neri lucidi", "ciottoli rossi opachi"])
+    assert fuori.index("EK-9915") < fuori.index("ciottoli neri") < fuori.index("EK-9916")
+    assert "ciottoli rossi opachi" in fuori
+    assert indicizza.SEGNAPOSTO not in fuori
+
+    # Meno descrizioni che segnaposto (una figura scartata): il resto non slitta
+    # di una posizione, i segnaposto in piu' spariscono e basta.
+    fuori = indicizza.nei_segnaposti(md, ["ciottoli neri lucidi"])
+    assert fuori.index("EK-9915") < fuori.index("ciottoli neri") < fuori.index("EK-9916")
+    assert indicizza.SEGNAPOSTO not in fuori
+
+    # Nessuna descrizione: resta il testo, senza segnaposto orfani.
+    assert indicizza.SEGNAPOSTO not in indicizza.nei_segnaposti(md, [])
+
+
 def test_le_descrizioni_delle_figure_entrano_nel_testo_col_prodotto():
     """La prosa che descrive le figure e' quella che fa funzionare le domande
     descrittive — «ciottoli neri con effetto specchio» non combacia con nessun

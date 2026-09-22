@@ -111,7 +111,7 @@ SECONDI_PER_BLOCCO = int(os.environ.get("SECONDI_PER_BLOCCO", "600"))
 # Segno messo su un file PRIMA di leggerlo: se il processo muore mentre lo
 # legge (memoria), al giro dopo il file risulta non leggibile invece di far
 # ripartire il servizio all'infinito sullo stesso file.
-IN_LETTURA = "lettura interrotta: il servizio si e' fermato mentre leggeva questo file (probabile memoria esaurita)"
+IN_LETTURA = "lettura interrotta: il servizio si e' fermato mentre leggeva questo file"
 # Il file che stiamo leggendo adesso: serve a distinguere un riavvio VOLUTO
 # (deploy, docker stop: arriva SIGTERM) da un guasto vero (memoria esaurita,
 # corrente che manca: il processo muore e basta). Nel primo caso il documento
@@ -552,7 +552,30 @@ def _converti(percorso, blocco, device="cpu", descrivi=True):
     tolte = togli_prezzi(ris.document)
     if tolte:
         print(f"    {tolte} descrizioni con prezzi scartate (decisione 72)", flush=True)
-    return _chunk(ris.document), _immagini(ris.document)
+    return _chunk(ris.document), _immagini(ris.document), _markdown_per_pagina(ris.document, blocco)
+
+
+def _markdown_per_pagina(documento, blocco):
+    """{pagina: markdown} con i SEGNAPOSTO delle figure al loro posto.
+
+    `export_to_markdown(page_no=N)` estrae una pagina sola da un documento gia'
+    convertito: i segnaposto per pagina si ottengono pagando UNA conversione
+    ogni sei pagine, non una per pagina. Misurato il 22/09/2026: un blocco di
+    sei pagine costa 61 s, una pagina sola 56 — quasi tutto avvio. Una pagina
+    per blocco sarebbe costata 80 minuti in piu' per catalogo.
+
+    Il conto torna: sulle pagine 7-12 di EUROSAND i segnaposto sono 28, 11, 5,
+    4, 6, 8 — esattamente le figure di quelle pagine.
+    """
+    fuori = {}
+    pagine = range(blocco[0], blocco[1] + 1) if blocco else sorted(
+        {p.prov[0].page_no for p in documento.pictures if p.prov} or {1})
+    for n in pagine:
+        try:
+            fuori[n] = documento.export_to_markdown(page_no=n)
+        except Exception as e:
+            print(f"    markdown della pagina {n} non estratto ({type(e).__name__}: {e})", flush=True)
+    return fuori
 
 
 def _immagini(documento):
@@ -643,7 +666,7 @@ def _converti_remoto(percorso, blocco):
     if ris.get("status") not in ("success", "partial_success"):
         raise RuntimeError(f"docling-serve: {ris.get('status')} {str(ris.get('errors'))[:300]}")
     doc = DoclingDocument.model_validate(ris["document"]["json_content"])
-    return _chunk(doc), _immagini(doc)
+    return _chunk(doc), _immagini(doc), {}
 
 
 def _in_processo(percorso, blocco, device, descrivi=True):
@@ -654,8 +677,11 @@ def _in_processo(percorso, blocco, device, descrivi=True):
     try:
         return pool.apply_async(_converti, (percorso, blocco, device, descrivi)).get(timeout=SECONDI_PER_BLOCCO)
     except multiprocessing.TimeoutError:
-        raise MemoryError(f"lettura troppo lenta{dove}: oltre {SECONDI_PER_BLOCCO} s, "
-                          f"probabile memoria esaurita") from None
+        # Il messaggio dice COSA e' successo, non perche'. «Probabile memoria
+        # esaurita» e' un'ipotesi, e in due occasioni ha mandato a cercare la
+        # RAM mentre il blocco era solo lento (OCR su pagine fitte).
+        raise MemoryError(f"blocco non finito{dove}: fermato dopo "
+                          f"{SECONDI_PER_BLOCCO} s (SECONDI_PER_BLOCCO)") from None
     finally:
         pool.terminate()
         pool.join()
@@ -774,9 +800,19 @@ class Lettore:
             # riaccendono: e' voluto, a quel punto Docling ha finito.
             if _scarica_modello(VLM_MODELLO, "che legge le pagine"):
                 print("    VLM scaricato: la VRAM va a Docling", flush=True)
-            altri, immagini = self._con_docling(p, meta(0.5), solo_gpu, dentro, descrivi=False)
+            _, immagini, markdown = self._con_docling(p, meta(0.5), solo_gpu, dentro,
+                                                      descrivi=False)
             immagini = _descrivi_col_titolo(immagini, titoli)
-            return testi + altri + _pezzi_dalle_figure(immagini, titoli), immagini
+            # Le descrizioni vanno NEI SEGNAPOSTO del Markdown di Docling, che
+            # li mette dove stanno le figure: cosi' ogni descrizione resta
+            # accanto al suo codice articolo invece di galleggiare nella
+            # pagina. Poi si indicizza quel Markdown, ed e' lo stesso file che
+            # si salva su disco: quello che leggi e' quello che viene cercato.
+            # Senza il testo di Docling restano le sole descrizioni, staccate:
+            # e' la forma di prima, e serve a misurare se quel testo aiuti.
+            figure = (_pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli)
+                      if TESTO_DOCLING else _pezzi_dalle_figure(immagini, titoli))
+            return testi + figure, immagini
         return self._con_docling(p, progresso, solo_gpu, dentro)
 
     def _pagine_col_vlm(self, p, progresso=None, dentro=None):
@@ -821,39 +857,41 @@ class Lettore:
             blocchi = [(a, min(a + PAGINE_PER_BLOCCO - 1, n)) for a in range(1, n + 1, PAGINE_PER_BLOCCO)] or [None]
             if progresso:
                 progresso(0, n)
-        grezzi, immagini = [], []
+        grezzi, immagini, markdown = [], [], {}
         if DOCLING_URL:
             for blocco in blocchi:
-                g, im = _converti_remoto(str(p), blocco)
+                g, im, md = _converti_remoto(str(p), blocco)
+                markdown.update(md)
                 grezzi += g
                 immagini += _scrivi_immagini(dentro, im, len(immagini)) if dentro else im
                 if len(blocchi) > 1:
                     print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]} (GPU)", flush=True)
                 if progresso and blocco:
                     progresso(blocco[1], blocchi[-1][1])
-            return unisci(grezzi), immagini
+            return unisci(grezzi), immagini, markdown
         for blocco in blocchi:
             device = dove_leggere()
             if solo_gpu and device != "cuda":
                 raise Rimandato(f"GPU occupata dopo {blocco[0] - 1 if blocco else 0} pagine")
             try:
-                g, im = _in_processo(str(p), blocco, device, descrivi)
+                g, im, md = _in_processo(str(p), blocco, device, descrivi)
             except Exception as e:
                 if not _gpu_piena(e):
                     raise
                 print(f"    {p.name}: la GPU non ce l'ha fatta ({type(e).__name__}), questo blocco in CPU",
                       flush=True)
                 device = "cpu"
-                g, im = _in_processo(str(p), blocco, "cpu", descrivi)
+                g, im, md = _in_processo(str(p), blocco, "cpu", descrivi)
             grezzi += g
+            markdown.update(md)
             immagini += _scrivi_immagini(dentro, im, len(immagini)) if dentro else im
-            del g, im
+            del g, im, md
             if len(blocchi) > 1:
                 print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]}"
                       f"{' (GPU)' if device == 'cuda' else ''}", flush=True)
             if progresso and blocco:
                 progresso(blocco[1], blocchi[-1][1])
-        return unisci(grezzi), immagini
+        return unisci(grezzi), immagini, markdown
 
 
 # ------------------------------------------------------------------ vettori
@@ -1386,6 +1424,12 @@ LETTURA = os.environ.get("LETTURA", "docling")     # docling | pagina
 # Questa variabile e' la D16 in piccolo: quando ci sara' l'impostazione per
 # fonte nel pannello, sparisce e il valore arriva da `sources`.
 FONTI_A_PAGINA = {x.strip() for x in os.environ.get("LETTURA_PAGINA", "").split(",") if x.strip()}
+# Nel percorso a pagina, il TESTO di Docling serve ancora? Le sue descrizioni
+# delle figure ora le scriviamo noi, per pagina e con il titolo del prodotto;
+# quello che resta del suo contributo e' l'OCR e i frammenti che il VLM
+# potrebbe aver saltato. Con `no` Docling fa SOLO l'estrazione delle immagini.
+# Da decidere con le 24 domande vere, non a naso: il riferimento e' 17/20.
+TESTO_DOCLING = os.environ.get("TESTO_DOCLING", "si") != "no"
 
 
 def come_leggere(fonte: str) -> str:
@@ -1591,6 +1635,69 @@ def _pezzi_da_markdown(md, pagina):
         i += 1
     chiudi()
     return fuori
+
+
+SEGNAPOSTO = "<!-- image -->"
+
+
+def nei_segnaposti(markdown: str, descrizioni: list) -> str:
+    """Le descrizioni al posto dei segnaposto, nell'ordine in cui compaiono.
+
+    Cosi' la descrizione di una figura finisce DOVE sta la figura: accanto al
+    suo codice articolo, non genericamente dentro la pagina. Sulla pagina 7 di
+    EUROSAND il segnaposto e' seguito da «DST2043 creme cream», quindi il
+    pezzo che ne esce lega la descrizione al codice giusto.
+
+    Se i conti non tornano — piu' segnaposto che descrizioni o viceversa — si
+    sostituisce solo quello che combacia e il resto dei segnaposto sparisce:
+    meglio una pagina con qualche descrizione in meno che una con le
+    descrizioni attaccate all'articolo sbagliato.
+    """
+    fuori, resto = [], list(descrizioni)
+    for pezzo in (markdown or "").split(SEGNAPOSTO):
+        fuori.append(pezzo)
+        if resto:
+            d = " ".join((resto.pop(0) or "").split())
+            fuori.append(f"\n\nImmagine: {d}\n\n" if d else "")
+    return "".join(fuori).strip()
+
+
+def _pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli):
+    """Il Markdown di Docling con le descrizioni al posto dei segnaposto,
+    salvato per pagina e spezzato dallo stesso chunker della lettura a pagina.
+
+    Un artefatto solo per pagina, leggibile da una persona e identico a quello
+    che finisce nell'indice: quando una risposta sara' sbagliata si apre quel
+    file invece di dedurre.
+    """
+    per_pagina = {}
+    for _percorso, pagina, descr in immagini:
+        per_pagina.setdefault(pagina, []).append(descr or "")
+    fuori = []
+    for pagina, md in sorted(markdown.items()):
+        completo = nei_segnaposti(md, per_pagina.get(pagina, []))
+        if not completo:
+            continue
+        titolo = titoli.get(pagina, "")
+        if titolo:
+            completo = titolo + '\n\n' + completo
+        _salva_markdown(dentro, "figure", pagina, completo)
+        fuori += _pezzi_da_markdown(completo, pagina)
+    return fuori
+
+
+def _salva_markdown(dentro, quale, pagina, testo):
+    """Un file per pagina, accanto a quello del VLM. Non e' un registro: e' il
+    materiale che si indicizza, e averlo su disco e' l'unico modo di guardare
+    cosa e' stato letto senza rifare la lettura."""
+    if not dentro:
+        return
+    try:
+        fuori = RADICE / dentro / f"markdown-{quale}"
+        fuori.mkdir(parents=True, exist_ok=True)
+        (fuori / f"{pagina:04d}.md").write_text(testo, encoding="utf-8")
+    except OSError as e:
+        print(f"  markdown {quale} non salvato ({type(e).__name__}: {e})", flush=True)
 
 
 def _pezzi_dalle_figure(immagini, titoli):

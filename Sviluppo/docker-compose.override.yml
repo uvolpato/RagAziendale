@@ -124,6 +124,15 @@ services:
       # E' la D16 in piccolo: quando ci sara' l'impostazione per fonte nel
       # pannello, questa variabile sparisce.
       LETTURA_PAGINA: ${LETTURA_PAGINA-}
+      # Nel percorso a pagina: dove finiscono le descrizioni delle figure.
+      #   si  dentro al Markdown di Docling, al posto dei segnaposto
+      #       `<!-- image -->`, cioe' accanto al codice articolo della figura.
+      #       Si indicizza quel Markdown, ed e' il file che si trova su disco
+      #       in `_sorgenti/<hash>/markdown-figure/`.
+      #   no  staccate, una per figura, come prima del 22/09/2026. Serve a
+      #       misurare se il testo di Docling aggiunga qualcosa o faccia solo
+      #       doppione del Markdown del VLM.
+      TESTO_DOCLING: ${TESTO_DOCLING-si}
       DPI_PAGINA: ${DPI_PAGINA-150}
       # Il Markdown del VLM si tiene da solo finche' il PDF e' lo stesso: un
       # --forza rispezza senza richiamare il modello (secondi invece di venti
