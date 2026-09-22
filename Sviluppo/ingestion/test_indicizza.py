@@ -357,6 +357,48 @@ def test_con_scarica_chat_no_il_modello_di_chat_non_si_tocca():
         indicizza.SCARICA_CHAT = True
 
 
+
+def test_il_titolo_di_pagina_arriva_a_chi_descrive_le_figure(tmp_path):
+    """Un ritaglio di 221x149 px senza contesto inganna: il 22/09/2026 un
+    primo piano di sassi rossi e' stato descritto come «possibly dried fruit or
+    processed food». Con il titolo della pagina davanti lo stesso ritaglio
+    diventa «reddish-brown decorative stones, approximately 9-13 mm».
+
+    Il titolo si prende dal Markdown che il VLM ha gia' scritto: non costa una
+    chiamata in piu'."""
+    indicizza.RADICE = tmp_path
+    dentro = "fonte/_sorgenti/abc123"
+    md = tmp_path / dentro / f"markdown-{indicizza.IMPRONTA_PROMPT}"
+    md.mkdir(parents=True)
+    (md / "0007.md").write_text(
+        "```markdown\n# DEKOSTEINE\ndeco rocks | pietre decorative\n9 - 13 mm\n\n| a | b |\n",
+        encoding="utf-8")
+    (md / "0012.md").write_text("# FARBSAND\nsabbia colorata\n", encoding="utf-8")
+
+    titoli = indicizza._titoli_di_pagina(dentro)
+    assert set(titoli) == {7, 12}, titoli
+    assert "DEKOSTEINE" in titoli[7] and "9 - 13 mm" in titoli[7], titoli[7]
+    assert "```" not in titoli[7], "i recinti del modello non fanno parte del titolo"
+    assert "FARBSAND" in titoli[12]
+
+    # Una pagina senza Markdown non ha titolo: la figura si descrive come prima.
+    assert 99 not in titoli
+    # E una cartella che non esiste non fa saltare niente.
+    assert indicizza._titoli_di_pagina("fonte/_sorgenti/mai-vista") == {}
+
+
+def test_senza_vlm_le_figure_restano_come_sono():
+    """Se il VLM non e' configurato non si chiama nessuno e le descrizioni di
+    Docling restano quelle: il documento entra lo stesso."""
+    vero = indicizza.VLM_MODELLO
+    indicizza.VLM_MODELLO = ""
+    try:
+        immagini = [("finta-immagine", 7, "descrizione di Docling")]
+        assert indicizza._descrivi_col_titolo(immagini, {7: "# DEKOSTEINE"}) == immagini
+    finally:
+        indicizza.VLM_MODELLO = vero
+
+
 if __name__ == "__main__":
     import tempfile
     esiti = []

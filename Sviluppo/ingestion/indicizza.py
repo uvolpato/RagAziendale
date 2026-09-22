@@ -431,7 +431,7 @@ def scarica_llm():
         return False
 
 
-def _opzioni_pdf(device="cpu"):
+def _opzioni_pdf(device="cpu", descrivi=True):
     from docling.datamodel.accelerator_options import AcceleratorOptions
     from docling.datamodel.pipeline_options import PdfPipelineOptions, TesseractCliOcrOptions
     # OCR con Tesseract (pacchetto Debian, italiano e inglese): funziona senza
@@ -457,7 +457,10 @@ def _opzioni_pdf(device="cpu"):
     opzioni.images_scale = 3.0
     # Senza un VLM configurato non si chiede niente a nessuno: le immagini
     # entrano lo stesso, trovabili dal testo della loro pagina.
-    if VLM_DESCRIZIONI != "api" or not VLM_MODELLO:
+    # `descrivi=False`: le figure le descriviamo NOI, dopo, passando al modello
+    # il titolo della pagina da cui vengono (vedi _descrivi_col_titolo). Docling
+    # usa un prompt unico per tutto il documento e non puo' saperlo.
+    if not descrivi or VLM_DESCRIZIONI != "api" or not VLM_MODELLO:
         opzioni.do_picture_description = False
         return opzioni
     # Il VLM sta altrove (sviluppo: glm-ocr su LM Studio; produzione: il server
@@ -518,7 +521,7 @@ def _opzioni_pdf(device="cpu"):
     return opzioni
 
 
-def _converti(percorso, blocco, device="cpu"):
+def _converti(percorso, blocco, device="cpu", descrivi=True):
     """Converte UN blocco di pagine (o un file intero) con Docling e restituisce
     [(testo, pagina)] e le immagini [(PIL.Image, pagina)]. Gira in un processo a
     parte che muore subito dopo: Docling non restituisce la memoria fra un
@@ -530,7 +533,7 @@ def _converti(percorso, blocco, device="cpu"):
     from docling.datamodel.settings import settings
     from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
     settings.perf.page_batch_size = 1          # una pagina alla volta in memoria
-    opzioni = _opzioni_pdf(device)
+    opzioni = _opzioni_pdf(device, descrivi)
     conv = DocumentConverter(format_options={
         InputFormat.PDF: PdfFormatOption(pipeline_options=opzioni),
         InputFormat.IMAGE: ImageFormatOption(pipeline_options=opzioni)})
@@ -632,13 +635,13 @@ def _converti_remoto(percorso, blocco):
     return _chunk(doc), _immagini(doc)
 
 
-def _in_processo(percorso, blocco, device):
+def _in_processo(percorso, blocco, device, descrivi=True):
     """_converti in un processo figlio, chiuso a forza se non finisce in tempo."""
     import multiprocessing
     pool = multiprocessing.get_context("spawn").Pool(1, maxtasksperchild=1)
     dove = f" (pagine {blocco[0]}-{blocco[1]})" if blocco else ""
     try:
-        return pool.apply_async(_converti, (percorso, blocco, device)).get(timeout=SECONDI_PER_BLOCCO)
+        return pool.apply_async(_converti, (percorso, blocco, device, descrivi)).get(timeout=SECONDI_PER_BLOCCO)
     except multiprocessing.TimeoutError:
         raise MemoryError(f"lettura troppo lenta{dove}: oltre {SECONDI_PER_BLOCCO} s, "
                           f"probabile memoria esaurita") from None
@@ -732,7 +735,19 @@ class Lettore:
                 return lambda fatte, totali: progresso(round(offset * totali + fatte / 2), totali)
 
             testi = self._pagine_col_vlm(p, meta(0), dentro)
+            # Docling descrive le figure come sempre, e NON si tocca: le sue
+            # descrizioni finiscono dentro il TESTO dei pezzi (il suo chunker
+            # le include), e sono la prosa che fa funzionare le domande
+            # descrittive — 159 pezzi su EUROSAND. Toglierle avrebbe migliorato
+            # le immagini rompendo il testo, e il 17/20 delle domande vere e'
+            # stato misurato con quelle dentro.
+            #
+            # Noi descriviamo IN PIU', solo per la tabella delle immagini,
+            # dicendo al modello da che pagina viene il ritaglio. Costa un
+            # secondo a figura (~9 minuti a catalogo) e si paga una volta per
+            # versione del documento.
             altri, immagini = self._con_docling(p, meta(0.5), solo_gpu, dentro)
+            immagini = _descrivi_col_titolo(immagini, _titoli_di_pagina(dentro))
             return testi + altri, immagini
         return self._con_docling(p, progresso, solo_gpu, dentro)
 
@@ -764,7 +779,7 @@ class Lettore:
                 print(f"    {p.name}: pagina {pagina} di {n} (VLM)", flush=True)
         return fuori
 
-    def _con_docling(self, p, progresso=None, solo_gpu=False, dentro=None):
+    def _con_docling(self, p, progresso=None, solo_gpu=False, dentro=None, descrivi=True):
         """La lettura storica: Docling a blocchi di pagine, in un processo
         figlio che muore subito dopo. Resta il percorso predefinito e l'unico
         per i documenti di PROSA, dove funziona bene (nelle 24 domande vere le
@@ -794,14 +809,14 @@ class Lettore:
             if solo_gpu and device != "cuda":
                 raise Rimandato(f"GPU occupata dopo {blocco[0] - 1 if blocco else 0} pagine")
             try:
-                g, im = _in_processo(str(p), blocco, device)
+                g, im = _in_processo(str(p), blocco, device, descrivi)
             except Exception as e:
                 if not _gpu_piena(e):
                     raise
                 print(f"    {p.name}: la GPU non ce l'ha fatta ({type(e).__name__}), questo blocco in CPU",
                       flush=True)
                 device = "cpu"
-                g, im = _in_processo(str(p), blocco, "cpu")
+                g, im = _in_processo(str(p), blocco, "cpu", descrivi)
             grezzi += g
             immagini += _scrivi_immagini(dentro, im, len(immagini)) if dentro else im
             del g, im
@@ -1386,6 +1401,21 @@ ISTRUZIONI_PAGINA = (
 IMPRONTA_PROMPT = hashlib.sha256(ISTRUZIONI_PAGINA.encode()).hexdigest()[:8]
 
 
+# Le istruzioni per descrivere UNA figura, con il titolo della pagina da cui
+# viene. Il titolo serve a capire COSA sono gli oggetti: senza, un ritaglio di
+# 221x149 px di sassi rossi diventa «possibly dried fruit or processed food»
+# (misurato il 22/09/2026).
+ISTRUZIONI_FIGURA = (
+    "This image is a detail taken from a product catalogue page titled: "
+    "«{titolo}».\n"
+    "Transcribe all text visible in the image, or write 'nessun testo'. Then add one short "
+    "sentence describing what is shown: objects, colours, materials, shapes.\n"
+    "Use the page title only to understand WHAT the objects are. Describe only what you "
+    "actually see in the image, and do not invent details that are not visible."
+)
+SECONDI_PER_FIGURA = int(os.environ.get("SECONDI_PER_FIGURA", "120"))
+
+
 def rispetta_la_forma(md: str) -> bool:
     """Il modello ha seguito le istruzioni? Non si giudica il CONTENUTO — non
     sapremmo — si controlla il CONTRATTO, che e' oggettivo: `<br>` dentro la
@@ -1532,6 +1562,79 @@ def _pezzi_da_markdown(md, pagina):
         blocco.append(r)
         i += 1
     chiudi()
+    return fuori
+
+
+def _titoli_di_pagina(dentro):
+    """{pagina: titolo} dal Markdown che il VLM ha gia' prodotto per ogni
+    pagina. Non costa niente: i file sono gia' sul disco."""
+    titoli = {}
+    base = RADICE / dentro / f"markdown-{IMPRONTA_PROMPT}"
+    if not base.is_dir():
+        return titoli
+    for f in base.glob("*.md"):
+        try:
+            n = int(f.stem)
+        except ValueError:
+            continue
+        righe = [r.strip() for r in f.read_text(encoding="utf-8").splitlines()
+                 if r.strip() and not r.strip().startswith("```")]
+        if righe:
+            titoli[n] = " ".join(righe[:3])[:160]
+    return titoli
+
+
+def _descrivi_col_titolo(immagini, titoli):
+    """Le figure descritte da NOI, dicendo al modello da che pagina vengono.
+
+    Un ritaglio di 221x149 px senza contesto inganna: il 22/09/2026 un primo
+    piano di sassi rossi e' stato descritto come «possibly dried fruit or
+    processed food». Con il titolo della pagina davanti — «DEKOSTEINE deco
+    rocks | pietre decorative 9 - 13 mm» — lo stesso ritaglio diventa
+    «reddish-brown decorative stones, approximately 9-13 mm». Stesso modello,
+    stessa immagine, stesso numero di chiamate: cambia solo che sa cosa sta
+    guardando.
+
+    Il titolo serve a capire COSA sono gli oggetti, non a inventare quello che
+    non si vede: e' scritto nelle istruzioni. Se il modello non risponde, la
+    figura resta senza descrizione e il documento entra lo stesso.
+    """
+    import base64
+    import io
+    import json
+    import urllib.request
+    if VLM_DESCRIZIONI != "api" or not VLM_MODELLO or not VLM_URL:
+        return immagini
+    chiave = os.environ.get("INFERENCE_TOKEN") or os.environ.get("LITELLM_MASTER_KEY") or ""
+    testa = {"Content-Type": "application/json"}
+    if chiave:
+        testa["Authorization"] = f"Bearer {chiave}"
+    fuori, falliti = [], 0
+    for img, pagina, vecchia in immagini:
+        titolo = titoli.get(pagina or 0)
+        if not titolo:
+            fuori.append((img, pagina, vecchia))
+            continue
+        try:
+            buf = io.BytesIO()
+            _riduci(img).save(buf, "PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            corpo = json.dumps({
+                "model": VLM_MODELLO, "max_tokens": 160, "temperature": 0,
+                "messages": [{"role": "user", "content": [
+                    {"type": "text", "text": ISTRUZIONI_FIGURA.format(titolo=titolo)},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}}]}],
+            }).encode()
+            req = urllib.request.Request(f"{VLM_URL.rstrip('/')}/chat/completions",
+                                         data=corpo, headers=testa, method="POST")
+            with urllib.request.urlopen(req, timeout=SECONDI_PER_FIGURA) as r:
+                descr = json.load(r)["choices"][0]["message"]["content"].strip()
+            fuori.append((img, pagina, descr or vecchia))
+        except Exception:
+            falliti += 1
+            fuori.append((img, pagina, vecchia))
+    if falliti:
+        print(f"    {falliti} figure senza descrizione (il modello non ha risposto)", flush=True)
     return fuori
 
 
