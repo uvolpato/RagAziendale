@@ -496,6 +496,29 @@ def main():
             assert {r["page"] for r in tutte} >= {12, 99}, "senza filtro si vede tutto il documento"
             solo12 = recupero.immagini_pertinenti(c, qvec, gruppi, ["manuale.pdf"], 10, pagine=[12])
             assert {r["page"] for r in solo12} == {12},                 f"la figura di un altra pagina non deve uscire: {[r['page'] for r in solo12]}"
+            # La catena INTERA, non i pezzi: il 22/09/2026 una riga rimasta
+            # appesa a una funzione cancellata ha fatto rispondere 500 a ogni
+            # domanda, e nessun test se n'e' accorto perche' tutti chiamavano
+            # le parti una per una. Qui si percorre quello che percorre la chat.
+            from orchestratore.main import _immagini_per_la_domanda
+            righe_finte = [{"documento": "manuale.pdf", "page": 12, "id": 1}]
+            scelte = _immagini_per_la_domanda(c, qvec, gruppi, righe_finte, "la figura")
+            assert isinstance(scelte, list) and scelte, f"nessuna figura scelta: {scelte}"
+            for voce in scelte:
+                assert isinstance(voce, tuple) and len(voce) == 2, f"serve (id, didascalia): {voce}"
+            # QUANTE: mai un numero fisso, ma nemmeno tutte. Il 22/09/2026, a
+            # «sassi rossi», tutte le candidate avevano la stessa rarita' e
+            # ne uscivano 48: una rarita' uguale per tutti non distingue
+            # niente, quindi e' il caso incerto e vale il tetto.
+            from orchestratore.main import CAMPIONE, MAX_IMMAGINI, _scelte
+            def finta(i, rarita, distanza):
+                return {"id": i, "documento": "d", "page": i,
+                        "rarita": rarita, "distanza": distanza}
+            pari = [finta(i, 8.0, 0.54 + i / 1000) for i in range(30)]
+            assert len(_scelte(pari)) <= CAMPIONE, "tutte pari: vale il tetto del campione"
+            distingue = [finta(0, 7.3, 0.42)] + [finta(i, 0.0, 0.30) for i in range(1, 9)]
+            assert [r["id"] for r in _scelte(distingue)] == [0], "la rarita' che distingue decide da sola"
+            assert len(_scelte([finta(i, 3.0, 0.4) for i in range(40)])) <= MAX_IMMAGINI
         finally:
             with c.cursor() as cur:
                 cur.execute("DELETE FROM immagini WHERE percorso LIKE 't-p/%%'")

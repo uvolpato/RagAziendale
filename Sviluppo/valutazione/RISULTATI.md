@@ -746,3 +746,28 @@ Distinguere un codice da una parola rara vorrebbe dire una regola sulla FORMA
 dei codici: funziona su un catalogo e si rompe sul successivo. Meccanismo
 tolto, e al suo posto un tetto sul caso incerto — meno codice e lo stesso
 risultato (79%).
+
+### Due difetti di quel cambio, trovati DOPO averlo spedito
+
+**Un 500 su ogni domanda.** Togliendo `termini_rari()` ho ripulito la funzione
+e non il punto che la chiamava: `AttributeError` a ogni turno di chat. Nessun
+test se n'e' accorto — tutti chiamavano i pezzi uno per uno, e `figure.py`
+chiama `_scelte` direttamente. Aggiunto a T1.27 un passaggio sulla catena
+INTERA (`_immagini_per_la_domanda`), che e' il buco vero: non il nome di
+quella funzione.
+
+**48 figure su «sassi rossi».** Se TUTTE le candidate hanno la stessa rarita',
+il ramo «preciso» le teneva tutte. Ma una rarita' uguale per tutti non
+distingue niente — «sass» e' raro nell'archivio, che e' in tedesco, e compare
+in decine di descrizioni — quindi e' il caso INCERTO e vale il tetto. La
+regola ora e': la rarita' decide **solo se separa**.
+
+Anche questo non lo vedeva il metro: `figure.py` prova solo domande con un
+codice, dove la rarita' separa sempre. Aggiunti al test i tre casi (separa /
+tutte pari / nessuna rarita'), che si controllano senza database.
+
+| domanda | figure |
+|---|---|
+| «immagine del prodotto GLA3094» | **1** |
+| «sassi rossi» | 4 |
+| «quali cataloghi avete» | 4 |

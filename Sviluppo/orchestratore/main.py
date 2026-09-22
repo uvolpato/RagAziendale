@@ -398,9 +398,14 @@ def _scelte(trovate):
     if not trovate:
         return []
     massimo = max(r.get("rarita") or 0 for r in trovate)
-    if massimo > 0:
-        pari = [r for r in trovate if (r.get("rarita") or 0) >= massimo]
-        return _sparse(pari, len(pari))
+    pari = [r for r in trovate if (r.get("rarita") or 0) >= massimo]
+    # La rarita' decide solo se DISTINGUE. Se tutte le candidate hanno lo
+    # stesso punteggio non ha separato niente: e' il caso di «sassi rossi»,
+    # dove «sass» e' raro nell'archivio (che e' in tedesco) e compare in
+    # decine di descrizioni. Senza questo controllo uscivano 48 figure — il
+    # contrario di quello che questa funzione deve fare.
+    if massimo > 0 and len(pari) < len(trovate):
+        return _sparse(pari, min(len(pari), MAX_IMMAGINI))
     # Qui NON si sa quante servano, e il numero giusto non lo sa nessuno: si
     # tengono quelle vicine alla migliore e non piu' di CAMPIONE. Il tetto
     # serve perche' l'incertezza non diventi abbondanza — il 22/09/2026
@@ -462,7 +467,7 @@ def _immagini_per_la_domanda(conn, qvec, gruppi, righe, domanda=""):
     trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI * 4,
                                            pagine=pagine, domanda=domanda)
     if trovate:
-        trovate = _scelte(trovate, esigente=bool(recupero.termini_rari(conn, domanda)))
+        trovate = _scelte(trovate)
         return [(r["id"], _didascalia(r.get("descrizione"))) for r in trovate]
     return [(i, "") for i in _immagini_del_turno(righe)]
 
