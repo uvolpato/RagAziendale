@@ -250,6 +250,122 @@ che manca è **già scritto nei documenti**, nei titoli multilingue.
 
 ---
 
+## 6-bis. Il grafo: Cognee e la divisione per area
+
+Non e' un problema nuovo: e' la **D13**, decisa il 19/09/2026 («Cognee dietro
+il nostro gate, una fonte = un dataset») e mai eseguita. Qui si scrive cosa si
+e' verificato il 22/09 leggendo la documentazione, perche' la decisione era
+stata presa su un elenco di funzionalita', non toccando la cosa.
+
+### Perche' un grafo servirebbe davvero
+
+Mappato sui problemi di questo documento:
+
+| problema | il grafo aiuta? |
+|---|---|
+| §2a domanda aperta: servono categorie, non gli 8 vicini | **plausibilmente si'** — un grafo si percorre («prodotti di categoria X», «sotto € 3,50»), i vettori no |
+| §3 i formati di confezione passano per prodotti | **plausibilmente si'** — l'estrazione a entita' INTERPRETA invece di spezzare |
+| §6 ponte di vocabolario (ciottoli lucidi → SPIEGELSAND) | **plausibilmente si'** — gli alias multilingue stanno gia' nei titoli delle pagine |
+| §5 figura ↔ codice | **no** — e' impaginazione del PDF, a monte di qualsiasi motore |
+| §4 il modello racconta le figure | **no** — e' prompt |
+| §7 debito operativo | **no**, e ne aggiunge |
+
+«Plausibilmente» e non «si'»: **non e' stato verificato**. Le tre righe in alto
+sono ipotesi ragionevoli, non misure.
+
+### L'idea: un grafo per area, scelto in base ai permessi
+
+Proposta dell'utente il 22/09. Coglie un problema che filtrare a valle non
+risolve: **in un grafo il valore sta negli archi**, e se il cammino A→B→C passa
+per un documento non consentito si perde il legame fra A e C. Un grafo
+costruito gia' entro i confini non ha quel problema.
+
+**E' il modello nativo di Cognee**, non un adattamento:
+
+| l'idea | Cognee (documentazione, 22/09/2026) |
+|---|---|
+| un grafo per area | «un dataset e' un contenitore logico di documenti **e dei loro grafi**» |
+| permessi per area, non per documento | «tutti i permessi sono a livello di dataset, **mai per singolo documento**» |
+| l'utente cerca nel grafo che gli spetta | «`recall` limita le interrogazioni ai soli dataset su cui ha permesso di lettura» |
+
+E coincide con il nostro modello: le ACL stanno su `sources`, mai duplicate sui
+pezzi. I backend che supportano l'isolamento comprendono quelli che abbiamo
+gia' (Postgres, PGVector); il grafo sarebbe l'unico pezzo nuovo (Kuzu, Neo4j).
+
+**Il percorso attraversa i confini fra dataset**: per la maggior parte dei tipi
+di ricerca l'ambito puo' contenere piu' dataset, e il contesto si raccoglie con
+vettori e percorso insieme. Quindi chi vede due cataloghi trova anche gli archi
+fra i due — che e' il caso «confronta i prezzi di EUROSAND e FLEURAMI» della
+D17.
+
+Fonti: [Datasets](https://docs.cognee.ai/core-concepts/multi-user-mode/permissions-system/datasets),
+[Architecture](https://docs.cognee.ai/core-concepts/architecture),
+[Search](https://docs.cognee.ai/core-concepts/main-operations/legacy-operations/search).
+
+### N grafi materializzati, o uno con la provenienza sugli archi
+
+Due realizzazioni della stessa idea:
+
+| | N grafi materializzati | un grafo, archi con provenienza |
+|---|---|---|
+| estrazione a entita' | una volta, poi N assemblaggi | **una volta** |
+| **sospendere una fonte** | serve ricostruire | **immediato, come oggi** |
+| nuovo profilo di permessi | nuovo grafo | niente da fare |
+| un documento cambia | tocca ogni grafo che lo contiene | un aggiornamento |
+| velocita' di percorso | massima | si paga il filtro |
+
+La riga che pesa e' la seconda. Oggi sospendere una fonte la toglie dalle
+risposte **nello stesso istante**, perche' il permesso e' una `WHERE` letta
+adesso — ed e' una proprieta' difesa in tre punti (ricerca, immagini,
+documenti). Con grafi precalcolati diventano istantanee.
+
+Proposta: **un grafo solo, provenienza sugli archi, filtro al momento della
+domanda**. Se il filtro in percorso risultasse lento, ALLORA si materializzano
+i profili piu' frequenti — e a quel punto e' una cache con la sua
+invalidazione, non il meccanismo di sicurezza. Il meccanismo di sicurezza resta
+uno, ed e' quello che rende dimostrabile la T1.14.
+
+### Il punto in rosso: un interruttore che fallisce APERTO
+
+Dalla documentazione:
+
+> Senza isolamento: se `ENABLE_BACKEND_ACCESS_CONTROL` e' falso, i parametri
+> dataset vengono **ignorati** durante le ricerche, e le interrogazioni girano
+> su **tutti i dati del sistema, indipendentemente dai permessi**.
+
+Una configurazione sbagliata non da' errore: risponde con tutto. Oggi il nostro
+filtro fallisce CHIUSO — se la `WHERE` sparisce spariscono i risultati, non
+appaiono quelli degli altri.
+
+Non e' un motivo per scartare Cognee. E' il motivo per cui la prova di 1-2
+giorni deve **cominciare** da una T1.14 fatta su Cognee: stessa domanda, due
+utenti, e la dimostrazione che il secondo non vede i dati del primo. Prima di
+qualunque valutazione sulla qualita' delle risposte.
+
+### Costi da mettere in conto
+
+- **L'estrazione a entita' e' una passata del modello su tutto l'archivio.**
+  Misura vicina: 891 chiamate al VLM = 25 minuti per catalogo. Una passata su
+  ~3000 pezzi con l'8B, a ~1 s l'una, e' almeno un'ora — e va rifatta a ogni
+  cambio del prompt di estrazione, come gia' succede con `IMPRONTA_PROMPT`.
+- **Un servizio in piu' da sorvegliare**, e oggi non sorvegliamo nemmeno
+  llama-swap (§7.2).
+- **I confini vanno rispettati in INGESTIONE, non solo in ricerca.** Se
+  l'estrazione unisce due prodotti perche' compaiono in cataloghi di aziende
+  diverse, quel nodo unificato e' gia' una perdita, prima ancora del percorso.
+
+### L'ordine che si propone
+
+1. **Il metro sulle domande aperte** (§2). Senza, non si saprebbe dire se
+   Cognee ha migliorato qualcosa — ed e' la trappola in cui si e' caduti tre
+   volte il 22/09.
+2. **T1.14 su Cognee**: l'isolamento si dimostra, non si legge nella
+   documentazione.
+3. **Prova di 1-2 giorni su EUROSAND**, cosi' i numeri si confrontano con
+   quelli di oggi invece che a impressione.
+
+---
+
 ## 7. Debito operativo (non è ricerca, è manutenzione)
 
 ### 7.1 Un'interruzione del server dei modelli marca i documenti come rotti

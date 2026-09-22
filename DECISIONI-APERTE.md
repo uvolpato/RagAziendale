@@ -27,6 +27,19 @@ Aggiornato: 19/09/2026
 | **D12** | **Prima cartella di documenti per il pilota** | Quale cartella, quale ufficio | Documenti non sensibili, con un responsabile (manuali, cataloghi) | Indicizzazione, prova vera della chat |
 | **D13** | **Motore documentale open source** (lettura dei file, ricerca, grafo dei concetti) | **Cognee** (Apache 2.0; permessi per dataset; grafo + pgvector su Postgres) · RAGFlow (ottima lettura dei documenti, ma permessi solo «io / team» e accesso con Keycloak difettoso) · Onyx (permessi sui documenti solo nella versione a pagamento) · Open WebUI (seconda chat, clausola sul marchio) · LightRAG (solo spazi separati, nessun permesso) · R2R (manutenzione incerta) · motore di SWSB portato in casa | **Cognee dietro il nostro gate**: una fonte = un dataset. Il gate sceglie i dataset permessi (gruppi, azienda, stato) e Cognee cerca solo in quelli. Prima una prova di 1–2 giorni sulla cartella D12 con il modello D1 | Indicizzazione, grafo |
 
+**Verificato il 22/09/2026** (documentazione Cognee, non ancora provato sul
+codice): un dataset contiene i documenti **e i loro grafi**; i permessi sono
+per dataset e mai per documento; `recall` cerca solo nei dataset consentiti, e
+il percorso nel grafo puo' attraversare piu' dataset — quindi chi vede due
+cataloghi trova anche gli archi fra i due. L'isolamento vale sui backend che
+abbiamo gia' (Postgres, PGVector); il grafo e' l'unico pezzo nuovo.
+
+**Punto in rosso**: `ENABLE_BACKEND_ACCESS_CONTROL` fallisce APERTO — se e'
+falso i parametri dataset sono ignorati e la ricerca gira su tutti i dati.
+Oggi il nostro filtro fallisce chiuso. La prova di 1-2 giorni deve cominciare
+da una T1.14 fatta su Cognee, prima di qualunque valutazione sulla qualita'.
+Analisi completa e ordine dei passi: `Sviluppo/PROBLEMI-APERTI.md` §6-bis.
+
 **Requisiti di design per D13** (emersi il 19/09/2026):
 
 1. **Architettura a tre livelli**: Docling = *estrazione* (testo, tabelle, immagini, OCR) · Cognee = *grafo + ricerca* · gate = *permessi*. Non si sostituiscono, si completano. Cognee legge i formati nativi (PDF, DOCX, …): niente obbligo di convertire tutto in Markdown; l'OCR di Docling serve solo per scansioni/foto.
