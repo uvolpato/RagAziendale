@@ -192,7 +192,15 @@ SELECT i.id, i.documento, i.page, i.descrizione,
        (i.embedding <=> %(qvec)s::vector) AS distanza
   FROM immagini i
  WHERE i.source_id IN (SELECT id FROM consentite)
-   AND i.embedding IS NOT NULL
+   -- La descrizione e' un criterio di ORDINAMENTO, non un biglietto
+   -- d'ingresso. Su EUROSAND solo 115 immagini su 894 ne hanno una (la soglia
+   -- descrive le figure grandi, e i campioni di colore di un catalogo sono
+   -- piccoli): pretenderla rendeva INVISIBILI proprio le foto dei prodotti.
+   -- Il 22/09/2026 alla domanda sui sassi rossi mancavano 7_67 e 7_69, i
+   -- campioni della pagina 7, perche' non descritti.
+   -- Senza pagine dichiarate invece si resta prudenti: pescare da tutto un
+   -- catalogo senza sapere cosa raffigurano darebbe figure a caso.
+   AND (i.embedding IS NOT NULL OR %(pagine)s::int[] IS NOT NULL)
    AND (%(documenti)s::text[] IS NULL OR i.documento = ANY(%(documenti)s::text[]))
    -- Solo le PAGINE che hanno risposto, non tutto il documento. Restringere
    -- al documento non restringe niente quando la risposta viene da un
@@ -201,7 +209,9 @@ SELECT i.id, i.documento, i.page, i.descrizione,
    -- natalizie (92), mentre il testo citava le pagine 4, 6 e 7 — e la frase
    -- sopra le immagini diceva «le figure delle pagine citate».
    AND (%(pagine)s::int[] IS NULL OR i.page = ANY(%(pagine)s::int[]))
- ORDER BY i.embedding <=> %(qvec)s::vector
+ ORDER BY (i.embedding IS NULL),          -- prima quelle che sappiamo leggere
+          i.embedding <=> %(qvec)s::vector,
+          i.page, i.id                    -- poi le altre, nell'ordine della pagina
  LIMIT %(limite)s;
 """
 

@@ -475,11 +475,33 @@ def _opzioni_pdf(device="cpu"):
         headers={"Authorization": f"Bearer {chiave}"} if chiave else {},
         params={"model": VLM_MODELLO},
         # scale: il modello vede l'immagine ingrandita 3 volte e legge anche le
-        # etichette piccole. picture_area_threshold: si descrivono solo le
-        # figure che occupano almeno il 15% della pagina — fuori loghi e
-        # cornici, dentro le foto prodotto (a 0,05 erano 324 immagini su 41
-        # pagine, quasi tutte decorative).
-        scale=3.0, picture_area_threshold=0.08,
+        # etichette piccole.
+        #
+        # picture_area_threshold=0: si descrivono TUTTE le figure. La soglia
+        # c'era (0,08 = almeno l'8% della pagina) e il 22/09/2026 e' stata
+        # tolta, perche' selezionava esattamente le figure sbagliate.
+        #
+        # In una griglia di varianti — 26 campioni di colore su una pagina —
+        # ogni campione vale meno dell'1% per costruzione: nessuna griglia di
+        # nessun catalogo passera' mai l'8%. Restavano descritte le foto
+        # d'ambiente (il cesto sul tavolo con le candele) e sparivano le foto
+        # del PRODOTTO, che sono quelle che serve vedere per scegliere un
+        # articolo. Su EUROSAND: 115 immagini cercabili su 894, il 13%.
+        #
+        # Il costo che avevo temuto non c'era: misurato 0,4-0,9 s per figura
+        # piccola, cioe' ~9 minuti in piu' per catalogo, una volta sola per
+        # versione del documento. E le descrizioni delle piccole sono le piu'
+        # utili: «numerous bright red, irregularly shaped, rough-textured»
+        # contro «DEKOSTEINE ... a basket with candles» della grande.
+        #
+        # Il rumore (loghi, icone, cornici) entra nell'indice e non da'
+        # fastidio: «a blue rectangular icon with diagonal stripes» non vince
+        # nessuna ricerca di prodotto. Provato anche a farlo CLASSIFICARE al
+        # modello (PRODOTTO/GRAFICA/AMBIENTE), in due forme di prompt: risponde
+        # sempre PRODOTTO, anche su un'icona che lui stesso descrive come
+        # «icon». Non filtrare, ordinare: e' la stessa regola per cui la
+        # descrizione non e' un biglietto d'ingresso.
+        scale=3.0, picture_area_threshold=0,
         # Trascrizione E descrizione, in inglese. Chiedere la descrizione in
         # italiano faceva inventare a glm-ocr ("profumo di arsenico"); chiedere
         # SOLO la trascrizione lasciava fuori dall'indice gli attributi visivi,
