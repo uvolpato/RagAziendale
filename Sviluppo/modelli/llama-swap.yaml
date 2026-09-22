@@ -164,7 +164,34 @@ models:
       ${llama}
       --model ${modelli}/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF/Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf
       --port ${PORT}
-      --ctx-size 16384
+      # QUESTO MODELLO E' LENTO, e non per la memoria. Misurato il 22/09/2026
+      # con la scheda VUOTA (0 MiB prima, 12.551 dopo, zero memoria
+      # condivisa): 2,6 token al secondo. Una risposta da 300 token sono due
+      # minuti. Per la chat e' inutilizzabile; resta buono per un confronto a
+      # freddo, dove il tempo non conta.
+      #
+      # La causa e' la quantizzazione: IQ3_S e' costosa da decomprimere e
+      # questo formato (GSQ-RCO, con i tensori MTP che llama.cpp scarta) non
+      # ha kernel CUDA ottimizzati. Un Q4_K_M dello stesso modello andrebbe
+      # piu' forte pur pesando di piu'.
+      #
+      # Prima di arrivarci ho incolpato tre cose sbagliate: il contesto a
+      # 16384, i buffer dei modelli piccoli, il traboccamento in memoria
+      # condivisa. Nessuna delle tre. Due trappole da ricordare:
+      #   - `nvidia-smi` NON vede la memoria condivisa, e il «96 per cento di
+      #     utilizzo» non distingue una scheda che lavora da una che aspetta.
+      #     L'unica misura che lo distingue sono i token al secondo.
+      #   - i 1,9-4,7 GB di «GPU condivisa» dei modelli piccoli NON sono un
+      #     traboccamento: sono i buffer di --batch-size 8192 allocati come
+      #     memoria host bloccata. Ci sono anche a scheda semivuota.
+      #
+      # 8192 e non 16384, con la cache KV a 8 bit: non serviva a risolvere la
+      # lentezza (non l'ha risolta), ma un 27B con 16k di contesto f16 chiede
+      # circa 4 GB di sola cache, e tenerli occupati per un modello di
+      # confronto e' sprecato.
+      --ctx-size 8192
+      --cache-type-k q8_0
+      --cache-type-v q8_0
       --parallel 1
       ${gpu}
     ttl: 1800

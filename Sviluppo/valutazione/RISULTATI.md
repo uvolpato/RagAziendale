@@ -447,3 +447,59 @@ dichiarato resta **non misurato**, e il metro non esiste ancora.
 
 Il modulo resta, spento (`RICERCA_AGENTE=si` per accenderlo). Si accende
 quando i numeri lo diranno.
+
+---
+
+## 22/09/2026 — 8B contro 27B: pari, e il 27B costa dodici volte tanto
+
+Domanda: il modello da 8 miliardi e' il collo di bottiglia delle risposte?
+
+`risposte.py` ora si spezza in due fasi (`RISPOSTE_CONTESTI`): prima si cerca
+e si CONGELANO i contesti su file, poi si genera soltanto. Serve alla VRAM —
+un 27B e i modelli di ricerca non stanno insieme in 16 GB — ma serve
+soprattutto alla misura: sui contesti congelati si confrontano i MODELLI, non
+due recuperi diversi.
+
+| | riscontri riportati | tempo a risposta |
+|---|---|---|
+| Qwen3 8B (oggi) | **19/26 — 73%** | ~2 s |
+| Qwen3.8 27B IQ3_S | 18/26 — 69% | ~25 s |
+
+Un riscontro di differenza: dentro il rumore dichiarato PRIMA di guardare.
+Sul dato che conta sono pari, e il 27B costa dodici volte tanto.
+
+La colonna `righe` aggiunge un pezzo: il 27B scrive risposte da 27, 37, 37
+righe dove l'8B ne scrive 1-5. **Piu' prolisso, non piu' completo.**
+
+**Cosa NON dice questa misura**: quanti dei dati attesi arrivano nella
+risposta, e basta. Non la correttezza della prosa, non il ragionamento, non le
+4 domande senza risposta. E il 27B e' provato a IQ3_S, una quantizzazione
+pesante: un Q4 dello stesso modello potrebbe andare meglio, e non e' stato
+provato.
+
+### Tre diagnosi sbagliate sulla stessa lentezza
+
+Il 27B gira a **2,6 token al secondo**. Ho incolpato, nell'ordine:
+
+1. il contesto a 16384 (cache KV troppo grande) — corretto a 8192: nessun
+   cambiamento, e per giunta llama-swap non aveva nemmeno riletto il file;
+2. i buffer dei modelli piccoli in memoria condivisa — scaricati: **peggiora**;
+3. il traboccamento in memoria condivisa in generale.
+
+Nessuna delle tre. Con la scheda VUOTA (0 MiB prima, 12.551 dopo, zero
+memoria condivisa) fa 2,6 token/s lo stesso: e' la quantizzazione IQ3_S, che
+e' costosa da decomprimere e in questo formato non ha kernel CUDA ottimizzati.
+
+**Due trappole da ricordare**, perche' mi hanno ingannato tutte e due:
+
+- `nvidia-smi` **non vede la memoria condivisa**, e il «96 per cento di
+  utilizzo» non distingue una scheda che lavora da una che aspetta il bus.
+  L'unica misura che lo distingue sono i token al secondo.
+- I 1,9-4,7 GB di «GPU condivisa» dei modelli di embedding e rerank **non
+  sono un traboccamento**: sono i buffer di `--batch-size 8192` allocati come
+  memoria host bloccata. Ci sono anche con la scheda semivuota.
+
+E una previsione sbagliata di stima: avevo detto «venti minuti» per venti
+domande moltiplicando tutto per 2,6 token/s. Ce ne sono voluti sette: le
+risposte sono corte e l'elaborazione del prompt e' molto piu' veloce della
+generazione.

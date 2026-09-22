@@ -39,6 +39,32 @@ K = 8
 LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
 CHIAVE = os.environ.get("LITELLM_MASTER_KEY", "")
 
+# Per provare un ALTRO modello senza toccare la configurazione del servizio:
+#   RISPOSTE_BASE=http://host.docker.internal:1235 RISPOSTE_MODELLO=...
+# si parla direttamente a llama-swap invece che a LiteLLM.
+BASE = os.environ.get("RISPOSTE_BASE", LITELLM).rstrip("/")
+MODELLO = os.environ.get("RISPOSTE_MODELLO", os.environ.get("LLM_RAGIONAMENTO", "ragionamento"))
+
+# Dove si CONGELANO i contesti. Con questo file la misura si spezza in due:
+#
+#   1. senza il file: si cerca (servono embedding e rerank) e si salva cio'
+#      che e' arrivato al modello;
+#   2. col file: si genera e basta, e i modelli della ricerca si possono
+#      SCARICARE.
+#
+# Due ragioni, e la seconda vale piu' della prima.
+#
+# La VRAM: un 27B, l'embedding e il reranker insieme non stanno in 16 GB.
+# Windows manda in memoria CONDIVISA quello che avanza senza dire niente, e il
+# 22/09/2026 il 27B girava a 1,8 token al secondo mentre nvidia-smi segnava il
+# 96 per cento di utilizzo — che sembra una scheda che lavora, ed e' una
+# scheda che aspetta il bus.
+#
+# La MISURA: confrontando due modelli sullo STESSO contesto congelato si
+# confrontano i modelli. Ricercando ogni volta si confronta anche il recupero,
+# che non e' cio' che si sta chiedendo.
+CONTESTI = os.environ.get("RISPOSTE_CONTESTI", "")
+
 
 def piatto(s):
     s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
@@ -53,9 +79,9 @@ def quanti(testo, riscontri):
 
 def rispondi(domanda, righe):
     """La stessa chiamata di main.py: system + contesto, niente storico."""
-    r = httpx.post(f"{LITELLM}/v1/chat/completions",
+    r = httpx.post(f"{BASE}/v1/chat/completions",
                    headers={"Authorization": "Bearer " + CHIAVE},
-                   json={"model": os.environ.get("LLM_RAGIONAMENTO", "ragionamento"),
+                   json={"model": MODELLO,
                          # ZERO, non il 0,2 di produzione: a 0,2 la stessa
                          # domanda sullo stesso contesto dava 19 riscontri in
                          # una corsa e 16 in quella dopo (22/09/2026), e con
@@ -79,6 +105,14 @@ def main():
     indice = dati.get("pagine_indice", [])
     conn = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
 
+    congelati, da_salvare = {}, bool(CONTESTI)
+    if CONTESTI and pathlib.Path(CONTESTI).is_file():
+        congelati = {int(k): v for k, v in
+                     json.loads(pathlib.Path(CONTESTI).read_text(encoding="utf-8")).items()}
+        da_salvare = False
+        print(f"contesti congelati: {CONTESTI} ({len(congelati)} domande) "
+              f"— non si cerca, si genera soltanto")
+    print(f"modello: {MODELLO}  ({BASE})")
     print(f"{'id':>3}  {'contesto':>8} {'risposta':>8}  {'righe':>5}  domanda corta")
     print("-" * 74)
     nc = nr = 0
@@ -87,7 +121,15 @@ def main():
         if not q.get("corta"):
             continue
         testo, ris = q["corta"], q["riscontro"]
-        righe, _ = recupero.cerca(conn, testo, gruppi, recupero.embedding(testo), limite=K)
+        if q["id"] in congelati:
+            righe = congelati[q["id"]]
+        else:
+            righe, _ = recupero.cerca(conn, testo, gruppi, recupero.embedding(testo), limite=K)
+            # Solo cio' che serve al prompt: documento, pagina, testo. Gli id e
+            # i punteggi cambiano a ogni reindicizzazione e renderebbero il
+            # file congelato illeggibile fra una settimana.
+            congelati[q["id"]] = [{"documento": r.get("documento"), "page": r.get("page"),
+                                   "content": r.get("content")} for r in righe]
         buoni = [r for r in righe
                  if r.get("documento") == documento and r.get("page") not in indice]
         nel_contesto = quanti(" ".join(r.get("content", "") for r in buoni), ris)
@@ -102,6 +144,10 @@ def main():
         print(f"{q['id']:>3}  {len(nel_contesto):>4}/{len(ris):<3} "
               f"{len(nella_risposta):>4}/{len(nel_contesto):<3}  "
               f"{len(risposta.splitlines()):>5}  {testo[:36]}")
+    if da_salvare:
+        pathlib.Path(CONTESTI).write_text(json.dumps(congelati, ensure_ascii=False),
+                                          encoding="utf-8")
+        print(f"\ncontesti salvati in {CONTESTI}: ora embedding e rerank si possono scaricare")
     print("-" * 74)
     print(f"riscontri nel contesto {nc}   riportati nella risposta {nr} "
           f"({nr/max(nc,1):.0%})")
