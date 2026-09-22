@@ -292,11 +292,53 @@ E coincide con il nostro modello: le ACL stanno su `sources`, mai duplicate sui
 pezzi. I backend che supportano l'isolamento comprendono quelli che abbiamo
 gia' (Postgres, PGVector); il grafo sarebbe l'unico pezzo nuovo (Kuzu, Neo4j).
 
-**Il percorso attraversa i confini fra dataset**: per la maggior parte dei tipi
-di ricerca l'ambito puo' contenere piu' dataset, e il contesto si raccoglie con
-vettori e percorso insieme. Quindi chi vede due cataloghi trova anche gli archi
-fra i due — che e' il caso «confronta i prezzi di EUROSAND e FLEURAMI» della
-D17.
+### Quello che Cognee NON da', e che e' il cuore dell'idea
+
+**ATTENZIONE.** Il 22/09 avevo scritto qui che «il percorso attraversa i
+confini fra dataset, quindi chi vede due cataloghi trova anche gli archi fra i
+due». **E' sbagliato**, e la smentita sta nel nostro stesso documento: il
+requisito 3 della D13, verificato il 19/09/2026, dice che i permessi sono a
+livello dataset con **grafi fisicamente separati per dataset**, e che gli archi
+trasversali fra aree diverse sono ESCLUSI.
+
+Avevo preso per buona una frase («i grafi combinati sono navigabili da una
+porzione all'altra») che veniva da un **brevetto generico** trovato cercando
+sul web, non dalla documentazione di Cognee. Due fonti mescolate.
+
+La distinzione che conta:
+
+| | Cognee |
+|---|---|
+| **cercare** su piu' dataset (unione dei risultati) | si' — e' la decisione 44 |
+| **archi FRA** un documento di un'area e uno di un'altra | **no**: grafi separati |
+
+Quindi la proposta dell'utente ha due parti, e Cognee ne copre una:
+
+| | Cognee |
+|---|---|
+| un grafo per area, scelto in base ai permessi | **si'**, e' il modello nativo |
+| **un grafo per un GRUPPO di aree**, con archi fra le aree | **no**, va costruito |
+
+### Perche' l'idea riapre una decisione gia' chiusa
+
+Il 19/09 gli archi trasversali erano stati esclusi con un argomento solido:
+metterci sopra le ACL richiederebbe di modificare il sorgente di Cognee, e un
+difetto li' significa **fuga di dati** — il costo peggiore.
+
+**L'idea dell'utente aggira proprio quell'obiezione**: non si mettono ACL sugli
+archi, si costruisce **un grafo separato per ogni combinazione di aree**. Ogni
+grafo e' interamente consentito a chi lo usa, quindi non serve nessun permesso
+a livello di arco — che era l'unica cosa impraticabile.
+
+E' il motivo per cui vale la pena riaprire la decisione, con il costo vero sul
+tavolo: N grafi da costruire e tenere aggiornati, e la sospensione di una fonte
+che smette di essere immediata (vedi il confronto qui sotto).
+
+Questo cambia anche il senso della variante «un grafo solo con la provenienza
+sugli archi»: quella tiene i permessi vivi ma, se gli archi trasversali non
+esistono, non aggiunge niente rispetto a oggi sul caso «confronta due
+cataloghi». Le due varianti non sono equivalenti — **servono a cose diverse**,
+e vanno scelte sapendo quale problema si vuole risolvere.
 
 Fonti: [Datasets](https://docs.cognee.ai/core-concepts/multi-user-mode/permissions-system/datasets),
 [Architecture](https://docs.cognee.ai/core-concepts/architecture),

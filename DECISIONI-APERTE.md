@@ -30,9 +30,19 @@ Aggiornato: 19/09/2026
 **Verificato il 22/09/2026** (documentazione Cognee, non ancora provato sul
 codice): un dataset contiene i documenti **e i loro grafi**; i permessi sono
 per dataset e mai per documento; `recall` cerca solo nei dataset consentiti, e
-il percorso nel grafo puo' attraversare piu' dataset — quindi chi vede due
-cataloghi trova anche gli archi fra i due. L'isolamento vale sui backend che
-abbiamo gia' (Postgres, PGVector); il grafo e' l'unico pezzo nuovo.
+si puo' cercare su piu' dataset in una volta (unione, decisione 44).
+L'isolamento vale sui backend che abbiamo gia' (Postgres, PGVector); il grafo
+e' l'unico pezzo nuovo.
+
+**Resta vero il requisito 3**: i grafi sono separati per dataset, quindi NON
+esistono archi fra documenti di aree diverse. Cercare su piu' dataset unisce i
+risultati, non i grafi.
+
+**Idea del 22/09/2026 (utente)**: costruire un grafo per ogni COMBINAZIONE di
+aree, scelto in base ai gruppi di chi chiede. Aggira l'obiezione che aveva
+chiuso il requisito 3 — non servono ACL sugli archi, perche' ogni grafo e'
+interamente consentito a chi lo usa. Costo: N grafi da tenere aggiornati, e la
+sospensione di una fonte non e' piu' immediata.
 
 **Punto in rosso**: `ENABLE_BACKEND_ACCESS_CONTROL` fallisce APERTO — se e'
 falso i parametri dataset sono ignorati e la ricerca gira su tutti i dati.
