@@ -84,6 +84,16 @@
 		reverse_proxy oauth2-proxy-immagini:4180
 	}
 
+	# Documenti originali, aperti alla pagina citata. STESSA sessione e stesso
+	# proxy delle immagini, per la stessa ragione: il browser segue un
+	# collegamento senza mandare identita', quindi l'identita' la mette
+	# oauth2-proxy e l'orchestratore ricontrolla il permesso sulla fonte.
+	# Chi puo' vedere quella fonte puo' aprire quel documento: e' lo stesso
+	# permesso che gli fa leggere le risposte che ne vengono.
+	handle /documenti* {
+		reverse_proxy oauth2-proxy-immagini:4180
+	}
+
 	# Ritorno da Keycloak per la sessione delle immagini. Percorso distinto da
 	# quello di LibreChat (/oauth/openid/callback): le due sessioni convivono
 	# sullo stesso dominio senza toccarsi.

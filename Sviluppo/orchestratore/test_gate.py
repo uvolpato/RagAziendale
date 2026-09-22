@@ -268,6 +268,24 @@ def main():
         righe, _ = recupero.cerca(conn, "garanzia serie X", ["tutti", "vendite", "direzione"])
         assert righe == [], f"utente senza aziende ha ottenuto {len(righe)} chunk"
 
+    @prova("T1.28", "il documento originale: permesso di ADESSO, niente percorsi dall'URL")
+    def _():
+        """Il collegamento alla pagina citata apre il file VERO. Vale quanto
+        un'immagine e deve costare quanto lei: permesso riletto da `sources`
+        al momento della consegna, e nessun pezzo di URL che diventi un
+        percorso fuori dalla radice."""
+        from orchestratore import documento as doc
+        luis = ["tutti", "azienda-luis"]
+        assert doc.visibile(conn, "t-manuali", luis), "la fonte consentita deve aprirsi"
+        # Le stesse due esclusioni della ricerca: sospesa e altra azienda.
+        assert not doc.visibile(conn, "t-sospesa", luis), "una fonte sospesa non si apre"
+        assert not doc.visibile(conn, "t-altra", luis), "un'altra azienda nemmeno"
+        assert not doc.visibile(conn, "t-manuali", []), "senza gruppi, niente"
+        # Il nome del documento arriva da un URL: e' l'unico punto del sistema
+        # in cui un pezzo di URL diventa un percorso di file.
+        for cattivo in ("../../etc/passwd", "..\\..\\segreti.txt", "/etc/passwd"):
+            assert doc.percorso(conn, "t-manuali", cattivo) is None, f"traversal: {cattivo}"
+
     print("\n--- Gate e contaminazione (T1.8, T1.9, T1.10) " + "-" * 22)
 
     @prova("T1.10", "turno interno senza rotta interna -> rifiuto esplicito, non risposta parziale")
@@ -443,12 +461,15 @@ def main():
         # La didascalia sta SOTTO la sua miniatura, nella riga dopo: serve a
         # dire di che prodotto e' la figura, che il testo della risposta da
         # solo non garantisce (22/09/2026: quattro figure per due prodotti).
+        # Niente HTML: LibreChat lo stampa letterale e <sub> compariva nella
+        # risposta (24/09/2026) — la didascalia e' testo piano in una cella.
         sotto = blocco.splitlines()[blocco.splitlines().index(corpo[0]) + 1]
-        assert sotto.count("<sub>") == PER_RIGA, f"manca la riga delle didascalie: {blocco}"
+        assert "<sub>" not in sotto, sotto
+        assert sotto.count("rosso") == PER_RIGA, f"manca la riga delle didascalie: {blocco}"
         assert "COD3 rosso" in sotto and sotto.index("COD1") < sotto.index("COD3"), sotto
         # Senza didascalie la riga non si aggiunge: niente celle vuote inutili.
         nude = _blocco_immagini({n: (f"https://x/{n}", "") for n in range(1, 3)})
-        assert "<sub>" not in nude, nude
+        assert "COD" not in nude and "rosso" not in nude, nude
         pulita = _senza_aggiunte({"role": "assistant", "content": "Ecco i vasi.\n\n" + blocco})["content"]
         assert pulita.strip() == "Ecco i vasi.", f"non deve restare impalcatura: {pulita!r}"
         # Una tabella scritta dal MODELLO ha testo nelle celle: non si tocca.
@@ -505,7 +526,10 @@ def main():
             scelte = _immagini_per_la_domanda(c, qvec, gruppi, righe_finte, "la figura")
             assert isinstance(scelte, list) and scelte, f"nessuna figura scelta: {scelte}"
             for voce in scelte:
-                assert isinstance(voce, tuple) and len(voce) == 2, f"serve (id, didascalia): {voce}"
+                assert isinstance(voce, tuple) and len(voce) == 3,                     f"serve (id, didascalia, riga): {voce}"
+                # La terza serve a costruire il collegamento alla PAGINA: da
+                # una figura che non convince si arriva alla pagina vera.
+                assert voce[2] is None or "page" in voce[2], voce[2]
             # QUANTE: mai un numero fisso, ma nemmeno tutte. Il 22/09/2026, a
             # «sassi rossi», tutte le candidate avevano la stessa rarita' e
             # ne uscivano 48: una rarita' uguale per tutti non distingue

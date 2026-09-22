@@ -831,3 +831,34 @@ c'e' gia' nell'ordine di lettura» dopo un'obiezione giusta, e infine i numeri
 hanno detto che vale per meta' delle figure. La prima risposta era quella
 giusta per il caso generale — ma l'obiezione ha fatto trovare una correzione
 che serviva comunque.
+
+---
+
+## 22/09/2026 — la citazione diventa un collegamento alla pagina
+
+Idea dell'utente: «e se linkassimo la posizione del pdf?». Risolve il problema
+da un'altra angolazione, e meglio di quello che stavo tentando.
+
+Il sistema non sa dire, per **468 figure su 891**, di che prodotto sono: il
+codice sta SOTTO la fotina e il testo estratto perde quella disposizione.
+Stavo cercando di far AFFERMARE al sistema qualcosa che non puo' sostenere. Il
+collegamento non afferma: dice «viene da pagina 7» — vero per costruzione — e
+lascia guardare la pagina impaginata dal fornitore.
+
+Nessuna reindicizzazione: i pezzi c'erano gia' (percorso della fonte, nome del
+documento, pagina di ogni pezzo e di ogni figura, firma e ACL delle immagini).
+
+| prova | esito |
+|---|---|
+| firma valida | **206**, `bytes 0-1023/61915790`, comincia con `%PDF` |
+| firma alterata | 403 |
+| firma emessa per un'altra persona | 403 |
+| fonte sospesa / altra azienda | 403 (T1.28) |
+| `../../etc/passwd` come nome documento | rifiutato (T1.28) |
+
+Il `Content-Range` e' la parte che rende l'idea praticabile: il browser scarica
+**1 KB** da un file di 62 MB.
+
+Quando l'etichetta della figura non c'e', la didascalia diventa «pagina 7»:
+non e' un ripiego povero, e' l'unica cosa che sappiamo con certezza, ed e'
+cliccabile.

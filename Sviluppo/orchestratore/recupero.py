@@ -298,7 +298,7 @@ WITH consentite AS (
        AND aziende && %(aziende)s::text[]
        AND stato = 'attiva'
 )
-SELECT i.id, i.documento, i.page, i.descrizione,
+SELECT i.id, i.source_id, i.documento, i.page, i.descrizione,
        (i.embedding <=> %(qvec)s::vector) AS distanza,
        -- Lo stesso punteggio di rarita' che ordina (vedi ORDER BY): serve
        -- FUORI da qui per decidere QUANTE figure mostrare. Se qualcuna

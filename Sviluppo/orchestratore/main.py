@@ -26,6 +26,7 @@ from psycopg.rows import dict_row
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from orchestratore import documento as documento_mod
 from orchestratore import egress, gate, identita, immagini, prompt, recupero, riformula
 
 app = FastAPI()
@@ -171,6 +172,7 @@ def _senza_aggiunte(messaggio: dict) -> dict:
     if messaggio.get("role") != "assistant":
         return messaggio
     righe = []
+    dopo_immagine = False
     for r in messaggio["content"].splitlines():
         if MARCA_OFFERTA in r or MARCA_FONTI in r:
             continue
@@ -181,14 +183,15 @@ def _senza_aggiunte(messaggio: dict) -> dict:
             # separatore di una tabella scritta dal modello, e quella resta.
             while righe and IMPALCATURA_TABELLA.match(righe[-1]):
                 righe.pop()
+            # La riga delle didascalie viene SUBITO dopo quella delle figure:
+            # la riconosce la posizione, non un marcatore — e' testo piano in
+            # una cella di tabella, e dal 24/09/2026 niente <sub> la segna.
+            dopo_immagine = True
             continue
-        # La riga delle didascalie sta SOTTO quella delle figure, quindi la
-        # riga di immagini e' gia' passata quando arriva: si riconosce da
-        # <sub>, che il sistema usa solo li'. Senza questo il modello se la
-        # ritrova in cronologia e la imita — lo stesso guasto delle fonti
-        # ricopiate del 21/09/2026, con un'impalcatura diversa.
-        if "<sub>" in r and r.lstrip().startswith("|"):
+        if dopo_immagine and r.lstrip().startswith("|"):
+            dopo_immagine = False
             continue
+        dopo_immagine = False
         righe.append(r)
     # Il filetto restava orfano dell'elenco che introduceva.
     while righe and righe[-1].strip() in ("---", ""):
@@ -279,7 +282,7 @@ def pezzi_da_recuperare(domanda: str) -> int:
     return PEZZI_ELENCO if ELENCO.search(domanda or "") else 8
 
 
-def _fonti_citate(righe) -> str:
+def _fonti_citate(righe, base: str = "", utente: str = "") -> str:
     """Documento e pagina di ogni pezzo citato, in coda alla risposta.
 
     Il modello cita «[7]» e basta: chi legge non ha modo di sapere che [7] e'
@@ -300,11 +303,22 @@ def _fonti_citate(righe) -> str:
         return ""
     per_pagina = {}
     for i, r in enumerate(righe, 1):
-        per_pagina.setdefault((r["documento"], r.get("page")), []).append(i)
+        per_pagina.setdefault((r["documento"], r.get("page"), r.get("source_id")), []).append(i)
     voci = []
-    for (documento, page), numeri in per_pagina.items():
+    for (documento, page, source_id), numeri in per_pagina.items():
         pagina = f", pagina {page}" if page is not None else ""
-        voci.append("".join(f"[{n}]" for n in numeri) + f" {documento}{pagina}")
+        etichetta = f"{documento}{pagina}"
+        # La citazione diventa un COLLEGAMENTO al documento, aperto alla
+        # pagina. E' la verifica che il disclaimer chiede: finora si poteva
+        # solo sfogliare a mano, e il 20/09/2026 un utente ha concluso «non
+        # c'e'» su un prodotto che stava a pagina 8. Ed e' anche la risposta
+        # onesta a «questa figura di che prodotto e'?»: il collegamento non
+        # afferma niente, mostra la pagina impaginata dal fornitore, dove il
+        # codice sta sotto la sua fotina.
+        if base and source_id:
+            url = documento_mod.firma_url(source_id, documento, page, base, utente)
+            etichetta = f"[{etichetta}]({url})"
+        voci.append("".join(f"[{n}]" for n in numeri) + f" {etichetta}")
     return "\n\n---\n" + MARCA_FONTI + " · ".join(voci) + "_"
 
 
@@ -312,6 +326,38 @@ PER_RIGA = 4        # quante figure affiancare
 # Quanto puo' essere lunga una didascalia: oltre, la riga della tabella va a
 # capo e le miniature si disallineano.
 DIDASCALIA = 44
+
+
+def _sotto_la_figura(riga, didascalia: str) -> str:
+    """Cosa c'e' scritto sotto una miniatura.
+
+    L'etichetta se l'abbiamo; altrimenti «pagina N», che sappiamo SEMPRE.
+    Per 468 figure su 891 un'etichetta nell'ordine di lettura non esiste
+    (misurato il 22/09/2026), e senza ripiego quelle resterebbero mute — senza
+    didascalia e, quel che conta, senza il collegamento per andare a vedere.
+
+    «pagina 7» non afferma niente su cosa mostri la figura: dice dove
+    guardare, ed e' vero per costruzione. E' la differenza fra un sistema che
+    tace e uno che si inventa un'etichetta per riempire la casella.
+    """
+    if didascalia:
+        return didascalia
+    n = (riga or {}).get("page") if riga else None
+    return f"pagina {n}" if n else ""
+
+
+def _pagina_url(riga, utente: str) -> str:
+    """Il collegamento alla pagina da cui viene una figura, o "" se non si sa.
+
+    `riga` e' la riga della ricerca delle immagini (documento, page,
+    source_id). Quando la figura arriva dal ripiego per pagina quella riga non
+    c'e': niente collegamento, e va bene — meglio nessun collegamento che uno
+    che apre la pagina sbagliata.
+    """
+    if not riga or not riga.get("source_id") or not riga.get("documento"):
+        return ""
+    return documento_mod.firma_url(riga["source_id"], riga["documento"], riga.get("page"),
+                                   f"https://{APP_HOST}", utente)
 
 
 def _didascalia(descrizione: str) -> str:
@@ -370,8 +416,16 @@ def _blocco_immagini(url_per_pos) -> str:
     metterle sulla stessa riga di markdown non basta — si impilerebbero lo
     stesso. Ogni cella invece e' un riquadro suo, e le celle stanno in fila.
     """
-    celle = [(f"[![immagine {n}]({u}&mini=1)]({u})", d)
-             for n, (u, d) in url_per_pos.items()]
+    # La miniatura porta all'immagine grande; la DIDASCALIA porta alla pagina
+    # del documento. Da una figura che non convince si arriva in un clic alla
+    # pagina impaginata dal fornitore, dove il codice sta sotto la sua fotina:
+    # e' la verifica che il sistema non sa fare da solo per meta' delle figure.
+    celle = []
+    for n, voce in url_per_pos.items():
+        u, d = voce[0], voce[1]
+        pagina = voce[2] if len(voce) > 2 else ""
+        celle.append((f"[![immagine {n}]({u}&mini=1)]({u})",
+                      f"[{d}]({pagina})" if d and pagina else d))
     if not celle:
         return ""
     righe = ["|" + "|".join(" " * 2 for _ in range(PER_RIGA)) + "|",
@@ -382,10 +436,11 @@ def _blocco_immagini(url_per_pos) -> str:
         righe.append("| " + " | ".join(c for c, _ in gruppo) + " |")
         # La didascalia sotto la sua miniatura, nella riga seguente della
         # STESSA tabella: cosi' resta incolonnata con l'immagine anche quando
-        # il testo va a capo. Si salta se nessuna delle quattro ne ha una.
+        # il testo va a capo. Niente HTML: LibreChat lo stampa letterale,
+        # quindi <sub> compariva nella risposta. Si salta se nessuna delle
+        # quattro ne ha una.
         if any(d for _, d in gruppo):
-            righe.append("| " + " | ".join(f"<sub>{d}</sub>" if d else " "
-                                           for _, d in gruppo) + " |")
+            righe.append("| " + " | ".join(d or " " for _, d in gruppo) + " |")
     return "\n".join(righe)
 
 
@@ -482,9 +537,8 @@ def _immagini_per_la_domanda(conn, qvec, gruppi, righe, domanda=""):
     trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI * 4,
                                            pagine=pagine, domanda=domanda)
     if trovate:
-        trovate = _scelte(trovate)
-        return [(r["id"], _didascalia(r.get("descrizione"))) for r in trovate]
-    return [(i, "") for i in _immagini_del_turno(righe)]
+        return [(r["id"], _didascalia(r.get("descrizione")), r) for r in _scelte(trovate)]
+    return [(i, "", None) for i in _immagini_del_turno(righe)]
 
 
 def _immagini_del_turno(righe):
@@ -621,8 +675,9 @@ async def chat(request: Request):
         conn.close()
         if not ids:
             return _risposta_unica("Non ho immagini da mostrare per quella risposta.")
-        urls = {i + 1: (immagini.firma_url(iid, f"https://{APP_HOST}", utente), d)
-                for i, (iid, d) in enumerate(ids)}
+        urls = {i + 1: (immagini.firma_url(iid, f"https://{APP_HOST}", utente),
+                        _sotto_la_figura(r, d), _pagina_url(r, utente))
+                for i, (iid, d, r) in enumerate(ids)}
         return _risposta_unica("Ecco le figure delle pagine citate:\n\n" + _blocco_immagini(urls))
 
     # 2. La domanda per la RICERCA: in una conversazione l'ultima frase da sola
@@ -647,8 +702,9 @@ async def chat(request: Request):
 
     # 5. Prompt: system + contesto + la cronologia dei messaggi.
     ids_immagini = _immagini_per_la_domanda(conn, qvec, gruppi, righe, cercata)
-    url_per_pos = {i + 1: (immagini.firma_url(iid, f"https://{APP_HOST}", utente), d)
-                   for i, (iid, d) in enumerate(ids_immagini)}
+    url_per_pos = {i + 1: (immagini.firma_url(iid, f"https://{APP_HOST}", utente),
+                           _sotto_la_figura(r, d), _pagina_url(r, utente))
+                   for i, (iid, d, r) in enumerate(ids_immagini)}
     messaggi = [{"role": "system",
                  "content": prompt.SYSTEM + "\n" + prompt.contesto(righe) + SUFFISSO_SISTEMA}]
     storico = [_senza_aggiunte(m) for m in corpo.get("messages", [])
@@ -681,7 +737,7 @@ async def chat(request: Request):
         try:
             for pezzo in _stream_litellm(messaggi, decisione["rotta"], uso):
                 yield pezzo
-            finale = _fonti_citate(righe) + _immagini_finali()
+            finale = _fonti_citate(righe, f"https://{APP_HOST}", utente) + _immagini_finali()
             if finale:
                 yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': finale}, 'index': 0}]})}\n\n"
             yield "data: [DONE]\n\n"
@@ -695,6 +751,39 @@ async def chat(request: Request):
             conn.close()
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/documenti")
+def servizio_documento(request: Request, f: str = "", d: str = "", scade: str = "",
+                       firma: str = "", u: str = ""):
+    """Il documento originale, per verificare una citazione.
+
+    Stesse due condizioni delle immagini, per la stessa ragione: firma valida
+    (il gate aveva approvato) E permesso ancora valido adesso (la fonte non e'
+    stata sospesa, la persona non e' uscita dal gruppo). La pagina sta dopo il
+    cancelletto e non arriva qui: non e' un permesso, e' dove guardare.
+
+    Si serve con FileResponse, che risponde alle richieste Range: il
+    visualizzatore del browser scarica la pagina che apri, non i 62 MB del
+    catalogo.
+    """
+    if not documento_mod.valida(f, d, scade, firma, u):
+        return JSONResponse({"error": "url non valido o scaduto"}, status_code=403)
+    conn = _conn()
+    try:
+        if not documento_mod.visibile(conn, f, _gruppi_della_richiesta(request, conn, u)):
+            return JSONResponse({"error": "non consentito"}, status_code=403)
+        p = documento_mod.percorso(conn, f, d)
+    finally:
+        conn.close()
+    if not p:
+        return JSONResponse({"error": "documento non trovato"}, status_code=404)
+    from fastapi.responses import FileResponse
+    # `inline`: si apre nel visualizzatore invece di scaricarsi. Il nome del
+    # file lo conosce gia' chi legge — sta nella citazione.
+    return FileResponse(p, media_type=documento_mod.tipo(p),
+                        headers={"Content-Disposition": f'inline; filename="{p.name}"',
+                                 "Cache-Control": "private, max-age=300"})
 
 
 @app.get("/immagini/{img_id}")

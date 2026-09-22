@@ -213,6 +213,34 @@ rispondevano alla domanda e stavano nel contesto, le risposte ne riportavano
 
 ---
 
+## 5-bis. Il documento originale, alla pagina citata
+
+`orchestratore/documento.py`. Ogni citazione e ogni didascalia sono un
+collegamento che apre il file vero alla pagina giusta (`#page=N`).
+
+**Perche' conta piu' di una comodita'.** Il sistema non sa dire, per meta'
+delle figure, di che prodotto sono: su una pagina di catalogo il codice sta
+SOTTO la sua fotina, e il testo estratto perde quella disposizione (468 figure
+su 891 non hanno nessuna etichetta ricavabile dall'ordine di lettura). Il
+collegamento non afferma niente: dice «viene da pagina 7», che e' vero per
+costruzione, e lascia guardare la pagina impaginata dal fornitore — dove
+l'occhio abbina codice e figura in mezzo secondo.
+
+Quando l'etichetta non c'e', la didascalia e' «pagina 7». Non e' un ripiego
+povero: e' l'unica cosa che sappiamo con certezza, ed e' cliccabile.
+
+Stessa sicurezza delle immagini, perche' e' la stessa:
+
+- URL firmato (HMAC su documento, scadenza e PERSONA), emesso solo quando il
+  gate ha gia' ammesso quel pezzo;
+- permesso riletto da `sources` al momento della consegna: una fonte sospesa
+  smette di rispondere subito;
+- il nome del documento arriva dall'URL e diventa un percorso di file — l'unico
+  punto del sistema in cui succede — quindi si verifica che stia DENTRO la
+  radice prima di aprirlo (T1.28);
+- si serve con `FileResponse`, che risponde alle richieste Range: su un
+  catalogo da 62 MB il browser scarica la pagina che apri, non il file.
+
 ## 6. I metri
 
 Non c'è un metro solo, perché non c'è un modo solo di sbagliare.
