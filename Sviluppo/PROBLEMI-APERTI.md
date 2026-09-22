@@ -29,7 +29,19 @@ Tutti su EUROSAND. Gli altri cataloghi non hanno un banco di prova.
 
 ---
 
-## 2. Il problema più grande: risponde bene a domande che non può rispondere
+## 2. Il problema più grande: interpreta su materiale scadente, e non dice che sta interpretando
+
+### Prima di tutto: interpretare è il mestiere del modello
+
+Un modello linguistico **deve** poter rispondere a «un omaggio economico e
+utile per i clienti di un fiorista». Un fiorista vende fiori: sassi decorativi
+da vaso, un vasetto, un cuore di vetro sono proposte sensate, e ricavarle da un
+catalogo che non ha nessun attributo «regalo» è precisamente il valore che
+questo progetto cerca. Se bastassero le ricerche esatte, il sistema sarebbe
+deterministico e non ci sarebbe un modello dentro.
+
+**Il difetto non è il ragionamento.** È il materiale su cui ragiona, e il modo
+in cui presenta il risultato.
 
 ### L'evidenza
 
@@ -48,36 +60,56 @@ Gli otto pezzi arrivati al modello:
 [7][8] IPURO FLORAL AMSTERDAM        <- prodotto
 ```
 
-Il modello ne ha ricavato **sette proposte regalo**, con i prezzi presi dalle
-righe dei formati, e ha chiuso con «queste opzioni sono economiche, utili e
-adatte». Nessuna delle due affermazioni — «utile», «adatta come omaggio» — sta
-da nessuna parte nei documenti.
+**Due prodotti veri su otto pezzi.** Il modello ha ragionato su quello che
+aveva, e aveva quasi niente.
 
-### Perché succede
+### I tre difetti, separati
 
-La domanda chiede un **giudizio** che il catalogo non contiene. Non esiste un
-attributo «utile», «da regalo», «adatto a un fiorista». Il recupero fa il suo
-mestiere (somiglianza semantica con «omaggio», «clienti», «poco costoso») e il
-modello veste il risultato da risposta.
+**2a. Il recupero sbaglia MODO su una domanda aperta.** «Dammi gli otto pezzi
+più somiglianti a questa frase» è giusto per «quanto costa il DST2040» e
+sbagliato per «cosa mi proponi»: qui servirebbe una PANORAMICA — prodotti di
+categorie diverse, in fascia di prezzo — non gli otto vicini di casa. È lo
+stesso difetto delle figure, dove i primi quattro per somiglianza erano quattro
+quasi-doppioni e si è dovuto distribuirli per soggetto (`_sparse`).
 
-**È la classe di guasto più pericolosa**: non sbaglia un dato, sbaglia la
-premessa, e suona bene. Un utente che non conosce il catalogo non ha modo di
-accorgersene.
+**2b. Ha proposto un contenitore.** `K0300 300 ml` è una misura di confezione.
+Non è interpretazione sbagliata: è non sapere cosa sia un articolo. Vedi §3.
+
+**2c. Ha attribuito ai documenti un giudizio suo.** La chiusura — «queste
+opzioni sono economiche, utili e adatte come omaggio» — suona come se il
+catalogo lo dicesse. «Economiche» è vero e verificabile; «utili e adatte» è una
+proposta del modello, ed è giusto che la faccia: deve **rivendicarla**, non
+farla passare per un dato. La forma onesta è «il catalogo non li classifica per
+uso; te li propongo io perché un fiorista li può abbinare ai bouquet».
+
+Solo così la sua interpretazione diventa un consiglio valutabile invece di
+un'affermazione non verificabile.
 
 ### Soluzioni candidate
 
 | | cosa | costo | rischio |
 |---|---|---|---|
-| **A** | Il prompt deve DICHIARARE il criterio: «il catalogo non indica l'uso; questi sono gli articoli sotto € 3,50» | mezz'ora | il modello può ignorare la regola, come ha già fatto con altre |
-| **B** | Usare la regola che c'è già e non usa: **una domanda di chiarimento** quando la domanda chiede un giudizio che i documenti non supportano | mezz'ora | distinguere «giudizio» da «ricerca» non è banale, e sbagliare significa chiedere chiarimenti sempre |
-| **C** | Un passaggio che CLASSIFICA i pezzi prima di rispondere (prodotto / formato / prosa) e scarta quelli che non sono articoli | mezza giornata | serve un criterio generale per «è un articolo», e finora ogni criterio del genere si è rotto sul catalogo successivo |
+| **A** (2a) | Per le domande aperte, recuperare in modo da COPRIRE: distribuire i pezzi fra documenti, categorie e fasce di prezzo invece di prendere i primi otto per somiglianza | un giorno | riconoscere una domanda «aperta» da una puntuale; e la copertura si paga in precisione sulle domande puntuali |
+| **B** (2c) | Il prompt separa esplicitamente **cosa dicono i documenti** da **cosa propone il modello** | mezz'ora | i divieti di prompt hanno già fallito due volte oggi; una regola in positivo può andare meglio |
+| **C** (2a) | Dare al modello un **indice delle categorie** della fonte (le intestazioni delle pagine ci sono già) invece dei soli pezzi, così ragiona sapendo cosa esiste | mezza giornata | non provato |
+
+La **C** ha un argomento: il modello oggi vede otto frammenti e non sa cosa
+contenga il catalogo. Un elenco delle categorie è esattamente il materiale su
+cui una persona formulerebbe una proposta.
 
 ### Cosa misurare per scegliere
 
-**Le 4 domande senza risposta esistono nel banco di prova dal 21/09 e non sono
-mai state misurate.** Sono esattamente questa classe: il sistema deve dire
-«non c'è». Prima di scegliere fra A, B e C, quel metro va costruito e fatto
-girare — altrimenti si sceglie a sensazione.
+Non esiste nessun metro per le domande aperte, ed è il buco più grande del
+banco di prova. Le 24 domande d'oro sono tutte **puntuali**: hanno un
+`riscontro`, cioè una stringa che deve comparire. Una domanda come quella del
+fiorista non ha un riscontro — ha risposte migliori e peggiori.
+
+Servirebbe un metro diverso, per esempio: *delle voci proposte, quante sono
+articoli veri (non formati), di quante categorie diverse, e in che fascia di
+prezzo*. Sono tutte cose misurabili dall'indice, senza giudizio umano.
+
+Le 4 domande **senza risposta** restano da misurare e sono un'altra classe
+ancora: lì la risposta giusta è «non c'è».
 
 ---
 
