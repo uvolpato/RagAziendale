@@ -219,3 +219,71 @@ domanda descrittiva viaggia insieme ai dati che servono a rispondere.
 `TESTO_DOCLING=no` rimette le descrizioni staccate: e' la forma di prima, e
 serve a rimisurare questa stessa tabella se un altro PDF si comportasse
 diversamente. Non e' un'opzione da esporre, e' il banco di prova.
+
+---
+
+## 22/09/2026 pomeriggio — il metro misurava il caso facile
+
+Una chat vera: «ho bisogno di sassi rossi» → una riga con un codice solo,
+mentre il metro segnava 18/20. Le domande d'oro sono **lunghe** (tre righe,
+scritte da chi conosce il dominio); in chat si scrivono **tre parole**. Il
+18/20 non diceva niente su quelle.
+
+Aggiunta al file delle domande la colonna `corta`: la stessa domanda come la
+scriverebbe una persona, ricavata usando **solo parole gia' presenti nella
+domanda lunga**, mai dalla risposta attesa.
+
+| | trovate |
+|---|---|
+| domanda lunga | 18/20 (90%) |
+| **domanda corta** | **14/20 (70%)** |
+
+Perdono la 1, la 6, la 9 e la 14. La 5 invece migliora (#4 → #1).
+
+### Tre ipotesi, due smentite
+
+1. **La riscrittura della domanda le recupera?** 14 → 15. Una sola, e intanto
+   INVENTA: «secchio piu' grande in litri» → «Secchio da 10 litri»,
+   «Marrakesch» → «sfere in resina» (sono metallo), «amfori» → «amfora in
+   ceramica». Quarta bocciatura, e stavolta anche pericolosa: mette nella
+   ricerca attributi che nessuno ha detto. **Resta spenta.**
+
+2. **I pezzi sono troppo grossi e si somigliano tutti?** Misurata la banda fra
+   il 1o e il 50o risultato: **0,095 con la domanda corta contro 0,078 con
+   quella lunga**. E' piu' LARGA, non piu' stretta. Ipotesi sbagliata.
+
+3. **E' la catena (fusione, rerank) a buttarle fuori?** Ablazione: vettore
+   14/20, fusione 14/20, completa 14/20. Il rerank sposta (perde la 1,
+   recupera la 15) ma il totale e' identico. **Non e' la catena.**
+
+Le 6, 9 e 14 non si trovano nemmeno col solo vettore. Cosa aggiunge la
+domanda lunga: il vocabolario che fa da ponte. La 6 lunga dice «effetto molto
+lucido, quasi a **specchio**» e i pezzi giusti sono SPIEGELSAND, SPIEGEL
+GRANULAT — *mirror sand*. «Ciottoli neri lucidi» quel ponte non ce l'ha.
+Resta aperto.
+
+## 22/09/2026 — il metro che mancava: la RISPOSTA
+
+Fino a qui si misurava solo il RECUPERO. La chat rotta mostrava l'altra meta':
+otto brani da sette pagine arrivati al modello, e una riga in uscita.
+
+`valutazione/risposte.py`: per ogni domanda corta conta quanti dei riscontri
+stanno **nel contesto** e quanti di quelli arrivano **nella risposta**. Conta
+solo quelli che erano nel contesto: un dato che compare nella risposta e non
+nel contesto non e' merito, e' invenzione.
+
+| | riscontri riportati |
+|---|---|
+| prompt di prima | 12 su 26 — **46%** |
+| **con la regola di completezza** | **19 su 26 — 73%** |
+
+La differenza e' UNA riga aggiunta al prompt. Le altre otto regole erano
+tutte divieti (non inventare, non produrre numeri, non ripetere): nessuna
+diceva *quanto* riportare. La 18 passa da 1/4 a 4/4.
+
+La regola e' scritta per non gonfiare le risposte corte: «se la risposta e'
+una sola, una frase basta — non lasciare fuori niente, non allungare».
+
+**Da tenere d'occhio**: la completezza puo' diventare prolissita', e questo
+metro non la vedrebbe (conta i riscontri, non la lunghezza). La colonna
+`righe` e' li' per quello.

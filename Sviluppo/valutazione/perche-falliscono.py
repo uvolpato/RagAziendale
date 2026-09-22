@@ -25,7 +25,12 @@ sys.path.insert(0, "/app")
 from orchestratore import recupero      # noqa: E402
 
 QUI = pathlib.Path(__file__).parent
-FALLITE = [1, 4, 5, 6, 8, 16, 18, 7, 12]
+# Le quattro che la domanda CORTA perde pur trovandole con quella lunga
+# (misurato il 22/09/2026), piu' le due che non si trovano mai.
+FALLITE = [1, 6, 9, 14, 8, 16]
+# La domanda com'e' scritta nella casella della chat, non quella lunga: e' la'
+# che il recupero cade da 18/20 a 14/20.
+CORTA = True
 
 
 def piatto(s):
@@ -41,9 +46,10 @@ def main():
     for d in dati["domande"]:
         if d["id"] not in FALLITE:
             continue
-        q = recupero.embedding(d["domanda"])
+        testo = (d.get("corta") if CORTA else None) or d["domanda"]
+        q = recupero.embedding(testo)
         print(f"\n=== {d['id']}  {d['categoria']}")
-        print(f"    {d['domanda'][:96]}")
+        print(f"    {testo[:96]}")
         # Il confronto si fa in Python, non con ILIKE: nel testo estratto le
         # due parole di «Nachhaltige Verpackung» possono essere separate da un
         # a capo, e ILIKE non lo vede. Con il confronto sbagliato una pagina

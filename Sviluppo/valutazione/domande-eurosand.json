@@ -1,9 +1,15 @@
 {
   "fonte": "acquisti-decobrands",
   "documento": "EUROSAND CATALOGO 2024 (1).pdf",
-  "gruppi": ["acquisti", "azienda-decobrands"],
+  "gruppi": [
+    "acquisti",
+    "azienda-decobrands"
+  ],
   "nota": "Domande fornite dall'azienda il 21/09/2026. Il campo `riscontro` NON viene dall'azienda: sono le stringhe distintive che ho estratto io dalla risposta attesa, e servono a dire automaticamente se il recupero ha trovato la pagina giusta. Vanno riviste: un riscontro troppo generico fa passare per buono un risultato sbagliato, uno troppo specifico boccia una pagina giusta per colpa dell'OCR. Il confronto ignora maiuscole e spazi ripetuti; basta UN riscontro presente in UNO dei pezzi recuperati, ma il pezzo deve venire da QUESTO documento e non dalle pagine dell'indice.",
-  "pagine_indice": [2, 3],
+  "pagine_indice": [
+    2,
+    3
+  ],
   "nota_indice": "L'indice del catalogo elenca ogni nome di prodotto: un riscontro trovato li' non prova niente. Il 21/09/2026 la domanda 15 (microplastiche) risultava trovata a pagina 2, mentre l'informazione vera sta alle pagine 28, 29 e 79; e la 17 risultava trovata su un ALTRO catalogo perche' il riscontro era la parola 'outdoor'.",
   "nota_senza_risposta": "Le domande con `senza_risposta: true` non hanno un `riscontro`: non si misura il recupero (qualcosa torna sempre) ma la RISPOSTA, che deve dire che l'informazione non c'e'. Serve la catena completa, non solo la ricerca.",
   "domande": [
@@ -13,7 +19,13 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Avremmo bisogno di capire quali tipologie di confezioni offrite per la rivendita: avete formati piccoli in boccette o flaconi, oppure fornite direttamente secchi industriali per grandi quantità?",
       "risposta": "Il catalogo offre diverse opzioni di imballaggio per soddisfare entrambe le esigenze. Si passa da flaconi e bottiglie di piccolo taglio pensati per i negozi (da 250 ml, 370 ml, 400 ml, 500 ml e 550 ml) fino a secchi industriali per grandi volumi da 2.5, 3.5, 5 e 5.5 litri.",
-      "riscontro": ["370 ml", "550 ml", "E5500", "E2500"]
+      "riscontro": [
+        "370 ml",
+        "550 ml",
+        "E5500",
+        "E2500"
+      ],
+      "corta": "che formati di confezione avete"
     },
     {
       "id": 2,
@@ -21,7 +33,12 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Gestiamo principalmente canali di e-commerce e cerchiamo prodotti che abbiano già un imballo rinforzato per le spedizioni tramite corriere. Avete linee di merci confezionate appositamente per la vendita online?",
       "risposta": "Sì, è presente a catalogo una linea di confezionamento specifica denominata 'Online Verpackung' (ad esempio nei formati B02G1 da 1000g o F0801 da 550 ml), strutturata appositamente per proteggere il prodotto durante il trasporto e la distribuzione logistica.",
-      "riscontro": ["Online Verpackung", "B02G1", "F0801"]
+      "riscontro": [
+        "Online Verpackung",
+        "B02G1",
+        "F0801"
+      ],
+      "corta": "imballo per e-commerce"
     },
     {
       "id": 3,
@@ -29,7 +46,11 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Un nostro cliente della grande distribuzione ci chiede articoli con certificazione ecologica o packaging a basso impatto. C'è una gamma di articoli forniti con un imballaggio sostenibile?",
       "risposta": "Certamente. Gran parte della gamma di sabbie e granulati è disponibile con l'opzione 'Nachhaltige Verpackung' (Imballaggio Sostenibile), segnalata chiaramente nel catalogo per i formati flacone da 250 ml, 370 ml e 500 ml.",
-      "riscontro": ["Nachhaltige Verpackung", "sustainable packaging"]
+      "riscontro": [
+        "Nachhaltige Verpackung",
+        "sustainable packaging"
+      ],
+      "corta": "imballaggio sostenibile"
     },
     {
       "id": 4,
@@ -37,7 +58,11 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Per ottimizzare i costi di spedizione dei prodotti pesanti, qual è il quantitativo massimo in litri che riuscite a inserire in un singolo secchio di granulato di pietra?",
       "risposta": "Per i sassi e la ghiaia decorativa, i recipienti più capienti della linea industriale (secchi dotati di manico) arrivano a una volumetria massima di 5.5 litri (formato contrassegnato dalla siglia E5500).",
-      "riscontro": ["E5500", "5.5 l"]
+      "riscontro": [
+        "E5500",
+        "5.5 l"
+      ],
+      "corta": "secchio piu' grande in litri"
     },
     {
       "id": 5,
@@ -45,7 +70,12 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Quando acquistiamo le sfere metalliche giganti da 10 o 15 centimetri, la quotazione che ci fornite si riferisce al pezzo singolo sfuso o sono imballate in scatole assortite con un minimo d'ordine?",
       "risposta": "Le sfere d'acciaio inox da 100 mm e 150 mm possono essere acquistate singolarmente sfuse ('lose / loose'). Per le sfere decorative di design da 100 mm (come le linee Spring o Antique), l'imballo standard ('VE/MP') prevede invece scatole da 6 pezzi complessivi, contenenti internamente 2 unità per ciascun modello assortito.",
-      "riscontro": ["EDELSTAHL", "150 mm", "lose"]
+      "riscontro": [
+        "EDELSTAHL",
+        "150 mm",
+        "lose"
+      ],
+      "corta": "sfere metalliche giganti prezzo"
     },
     {
       "id": 6,
@@ -53,7 +83,14 @@
       "profilo_utente": "Commerciale",
       "domanda": "Stiamo sviluppando un progetto di vetrinistica per un brand di lusso e cerchiamo del pietrisco o dei ciottoli neri o scuri, ma che abbiano un effetto molto lucido, quasi a specchio. Cosa potete offrirci?",
       "risposta": "Potete valutare la linea 'Brillant Dekosteine' o 'Brillant Granulat' nella colorazione antracite/nero (codice DST1094..BR o GRA1094..BR), che presentano una finitura lucida e riflettente. In alternativa, è disponibile il 'Premium Spiegelsand' o lo 'Spiegelgranulat' nero (SPG2094 / SPG3094) composto da vero e proprio vetro specchiato frantumato.",
-      "riscontro": ["DST1094", "GRA1094", "SPG2094", "SPG3094", "SPIEGELSAND"]
+      "riscontro": [
+        "DST1094",
+        "GRA1094",
+        "SPG2094",
+        "SPG3094",
+        "SPIEGELSAND"
+      ],
+      "corta": "ciottoli neri lucidi"
     },
     {
       "id": 7,
@@ -61,7 +98,12 @@
       "profilo_utente": "Commerciale",
       "domanda": "Un nostro cliente del settore allestimenti floreali cerca delle sfere trasparenti idroretentrici (che trattengono l'acqua) per mantenere idratate le piante nei vasi trasparenti. Avete questo genere di articolo a catalogo?",
       "risposta": "Sì, la gamma 'Aqualinos' risponde esattamente a questa esigenza: si tratta di perle di gel idroassorbenti ('Wasserspeichernde Gelperlen') disponibili sia pronte all'uso nei diametri 8-12 mm e 20 mm, sia in grani disidratati nella versione 'DIY' da preparare autonomamente.",
-      "riscontro": ["AQUALINOS", "Gelperlen", "gel pearls"]
+      "riscontro": [
+        "AQUALINOS",
+        "Gelperlen",
+        "gel pearls"
+      ],
+      "corta": "sfere trasparenti che trattengono l'acqua"
     },
     {
       "id": 8,
@@ -69,7 +111,12 @@
       "profilo_utente": "Commerciale",
       "domanda": "Per l'allestimento di un evento estivo ci servono elementi decorativi da terra di colore fucsia ed evidenziatore che reagiscano forte alla luce. Avete materiali con pigmenti fluorescenti?",
       "risposta": "Sì, la sezione 'Neon Basics' include sabbia fine (0,5 mm) e graniglia (2-3 mm) in colorazioni ad alta visibilità. Le tinte disponibili includono il rosa neon, il verde neon, l'arancione neon e il giallo neon.",
-      "riscontro": ["NEON", "neonpink", "neongrün"]
+      "riscontro": [
+        "NEON",
+        "neonpink",
+        "neongrün"
+      ],
+      "corta": "pigmenti fluorescenti fucsia"
     },
     {
       "id": 9,
@@ -77,7 +124,10 @@
       "profilo_utente": "Commerciale",
       "domanda": "Avremmo bisogno di pietre decorative totalmente bianche, ma non calcaree che fanno polvere. Avete una selezione di sassi bianchi lavati e puliti di varie dimensioni?",
       "risposta": "La linea ideale è la 'Pure White', che include sia i 'Pure White Pebbles' (ciottoli levigati da 15-25 mm) sia i 'Pure White Rocks' (frammenti di roccia puliti distribuiti in tre selezioni di misura: 5-8 mm, 8-16 mm e 16-32 mm).",
-      "riscontro": ["PURE WHITE"]
+      "riscontro": [
+        "PURE WHITE"
+      ],
+      "corta": "sassi bianchi lavati"
     },
     {
       "id": 10,
@@ -85,7 +135,11 @@
       "profilo_utente": "Commerciale",
       "domanda": "Piuttosto che sassi o sabbia, stiamo cercando dei piccoli componenti metallici geometrici tridimensionali (tipo stelle o rombi) da usare come riempitivi per dei vasi di design in vetro. Avete qualcosa del genere?",
       "risposta": "Sì, la serie 'Brillant Metal Shapes' comprende forme metalliche geometriche tridimensionali con all'interno un cristallo decorativo incastonato. Sono disponibili modelli a stella (42 mm), a rombo (25 mm), a sfera-stella (28 mm) e a foglia (45 mm), sia in finitura argento che oro.",
-      "riscontro": ["METAL SHAPES", "Brillant Metal"]
+      "riscontro": [
+        "METAL SHAPES",
+        "Brillant Metal"
+      ],
+      "corta": "stelle metalliche per vasi"
     },
     {
       "id": 11,
@@ -93,7 +147,10 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Abbiamo la necessità di acquistare della sabbia colorata per un'applicazione di precisione. Qual è lo spessore esatto dei granelli che fornite e che tolleranza c'è?",
       "risposta": "La sabbia colorata standard ('Farbsand') presente a catalogo garantisce una granulometria fissa e calibrata con una dimensione dei granelli di 0,5 mm.",
-      "riscontro": ["FARBSAND"]
+      "riscontro": [
+        "FARBSAND"
+      ],
+      "corta": "spessore dei granelli di sabbia colorata"
     },
     {
       "id": 12,
@@ -101,7 +158,12 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Per un riempimento di sicurezza sul fondo di alcune teche, cerchiamo dei frammenti di vetro che non siano microscopici ma nemmeno dei blocchi enormi. Avete una misura intermedia, intorno ai 5 millimetri?",
       "risposta": "Sì, nella sezione 'Glassteine' (frammenti di vetro) offriamo una granulometria intermedia perfetta per questa esigenza, con uno spessore compreso tra i 4 e i 10 mm.",
-      "riscontro": ["GLASSTEINE", "glass stones", "4 - 10 mm"]
+      "riscontro": [
+        "GLASSTEINE",
+        "glass stones",
+        "4 - 10 mm"
+      ],
+      "corta": "frammenti di vetro 5 millimetri"
     },
     {
       "id": 13,
@@ -109,7 +171,12 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Se volessimo ordinare dei ciottoli di pietra standard non lucidi, quali sono le opzioni di dimensioni (espresse in millimetri) che avete solitamente a magazzino?",
       "risposta": "I sassi decorativi standard ('Dekosteine') sono disponibili a magazzino in due pezzature principali: la selezione piccola con grana da 5-8 mm e la selezione media con grana da 9-13 mm.",
-      "riscontro": ["DEKOSTEINE", "9 - 13 mm", "5 - 8 mm"]
+      "riscontro": [
+        "DEKOSTEINE",
+        "9 - 13 mm",
+        "5 - 8 mm"
+      ],
+      "corta": "ciottoli misure in millimetri"
     },
     {
       "id": 14,
@@ -117,7 +184,11 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Stiamo valutando l'acquisto di perle decorative lucide. Qual è il diametro delle vostre sfere e che differenza c'è a livello di finitura tra la linea 'Brillant' e la linea 'Metallic'?",
       "risposta": "Entrambe le linee di perle decorative ('Dekoperlen') condividono lo stesso diametro di 4-8 mm. La differenza risiede nella finitura superficiale: la linea 'Brillant' ha un riflesso perlato/madreperlato (tinte nacre, rosa, lilla, ecc.), mentre la linea 'Metallic' offre una copertura metallica specchiata pura in oro giallo o argento.",
-      "riscontro": ["DEKOPERLEN", "4 - 8 mm"]
+      "riscontro": [
+        "DEKOPERLEN",
+        "4 - 8 mm"
+      ],
+      "corta": "differenza Brillant e Metallic"
     },
     {
       "id": 15,
@@ -125,7 +196,12 @@
       "profilo_utente": "Commerciale",
       "domanda": "Dal momento che dobbiamo esportare questi articoli e i nostri clienti sono molto attenti all'ambiente, i vostri prodotti in gel o plastica sono conformi alle ultime direttive europee sull'inquinamento da microplastiche?",
       "risposta": "Sì, i prodotti potenzialmente impattanti (come i gel idroassorbenti) sono esplicitamente certificati 'Microplastic Free' e sono totalmente conformi alla direttiva comunitaria (Regolamento UE 2023/2055 sulla restrizione delle microplastiche).",
-      "riscontro": ["Microplastic", "2023/2055", "mikroplastik"]
+      "riscontro": [
+        "Microplastic",
+        "2023/2055",
+        "mikroplastik"
+      ],
+      "corta": "microplastiche direttive europee"
     },
     {
       "id": 16,
@@ -133,7 +209,10 @@
       "profilo_utente": "Commerciale",
       "domanda": "Siamo un'azienda associata ad Amfori e compriamo solo da partner che rispettano gli standard di commercio etico e sostenibile. La vostra capogruppo aderisce a questa organizzazione?",
       "risposta": "Sì, l'azienda (Eurosand, membro del Ziegler Group) dichiara ufficialmente a catalogo di essere membro di amfori, l'associazione globale leader per il commercio aperto, etico e sostenibile.",
-      "riscontro": ["amfori"]
+      "riscontro": [
+        "amfori"
+      ],
+      "corta": "amfori"
     },
     {
       "id": 17,
@@ -141,7 +220,13 @@
       "profilo_utente": "Commerciale",
       "domanda": "Dobbiamo rifornire un hotel che vuole posizionare delle sfere giganti lucide nei vasi del parco esterno. C'è il rischio che la finitura si rovini o si arrugginisca sotto la pioggia e il sole?",
       "risposta": "No, le sfere di acciaio inossidabile (disponibili sia in versione satinata 'Matt' che specchiata 'Glanz') riportano la specifica tecnica 'Adatto per esterni' (Suitable for outdoors), garantendo totale resistenza agli agenti atmosferici.",
-      "riscontro": ["KUGEL", "Suitable for outdoors", "für den Aussenbereich", "Aussenbereich geeignet"]
+      "riscontro": [
+        "KUGEL",
+        "Suitable for outdoors",
+        "für den Aussenbereich",
+        "Aussenbereich geeignet"
+      ],
+      "corta": "sfere lucide da esterno si arrugginiscono"
     },
     {
       "id": 18,
@@ -149,7 +234,13 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Per non fare magazzino su decine di codici diversi, vendete dei kit misti di palline decorative di filo in modo da avere più colori o più misure dentro un unico cartone?",
       "risposta": "Sì, per le palline di filo metallico ('Drahtbälle') forniamo sia il 'Set' (confezione da 7 pezzi con misure assortite 30/50 mm) sia il 'Mix Set' (confezione da 10 pezzi che include tre misure: 30, 50 e 80 mm), permettendo di avere più varietà in un unico imballo.",
-      "riscontro": ["DRAHTBÄLLE", "DRAHTBALLE", "wire balls", "MIX SET"]
+      "riscontro": [
+        "DRAHTBÄLLE",
+        "DRAHTBALLE",
+        "wire balls",
+        "MIX SET"
+      ],
+      "corta": "kit misti palline di filo"
     },
     {
       "id": 19,
@@ -157,7 +248,11 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Nel caso in cui ordinassimo i diamanti di vetro da tavolo, la confezione contiene un'unica misura gigante o include un mix di gemme grandi e piccole?",
       "risposta": "La scatola standard (codice OP001) è un assortimento predefinito composto da 6 gemme di tre misure diverse: 3 pezzi da 20 mm, 2 pezzi da 31 mm e 1 pezzo da 42 mm.",
-      "riscontro": ["OP001", "42 mm"]
+      "riscontro": [
+        "OP001",
+        "42 mm"
+      ],
+      "corta": "diamanti di vetro mix di misure"
     },
     {
       "id": 20,
@@ -165,7 +260,12 @@
       "profilo_utente": "Ufficio Acquisti",
       "domanda": "Per le sfere decorative di metallo intagliato modello 'Marrakesch', vendete confezioni mono-colore oppure scatole che contengono un mix assortito delle varie finiture (oro, argento, rame)?",
       "risposta": "Sono disponibili entrambe le opzioni. È possibile acquistare le confezioni standard da 9 pezzi in un unico colore a scelta, oppure optare per le 'Mixed Boxes' (es. codici MAK9018, MAK9092, ecc.) che contengono un assortimento misto di tonalità.",
-      "riscontro": ["MARRAKESCH", "MAK9018", "MAK9092"]
+      "riscontro": [
+        "MARRAKESCH",
+        "MAK9018",
+        "MAK9092"
+      ],
+      "corta": "sfere Marrakesch mix di colori"
     },
     {
       "id": 21,
@@ -199,5 +299,6 @@
       "domanda": "Abbiamo un cliente che vorrebbe personalizzare le sfere giganti in acciaio da 150 mm facendo incidere al laser il logo della propria catena di hotel. Effettuate questo servizio di personalizzazione direttamente in fabbrica e quali sono i costi?",
       "risposta": "Il catalogo mostra unicamente i prodotti standard pronti a magazzino con i relativi codici e prezzi di listino. Non viene fatta alcuna menzione a servizi di personalizzazione, branding aziendale o lavorazioni su misura (come l'incisione laser)."
     }
-  ]
+  ],
+  "nota_corta": "Il campo `corta` e' la stessa domanda come la scriverebbe una persona nella casella della chat: due o cinque parole. NON viene dall'azienda, l'ho ricavato io usando SOLO parole gia' presenti nella domanda lunga, mai dalla risposta attesa. Serve perche' le domande d'oro sono lunghe e ben formate, mentre in chat si scrive «ho bisogno di sassi rossi»: un 18/20 sulle lunghe non dice niente sulle corte."
 }

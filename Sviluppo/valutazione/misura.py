@@ -14,15 +14,22 @@ Si misura il RECUPERO, non la risposta: se il pezzo giusto non arriva al
 modello, nessun prompt lo salva. Una domanda e' «trovata» se almeno uno dei
 pezzi recuperati contiene almeno uno dei `riscontro` della domanda.
 
-Due colonne, perche' la decisione aperta e' quella (fase 1 di
-VALUTAZIONE-ORCHESTRATORE-AGENTE.md):
+Due colonne, perche' e' li' che il metro mentiva:
 
-    base       la domanda com'e', cioe' il comportamento di oggi
-    riscritta  la domanda riscritta dal modello in registro di catalogo
+    lunga   la domanda come l'ha scritta l'azienda, tre righe e ben formata
+    corta   la stessa domanda come la scrive una persona nella casella della
+            chat, due o cinque parole
 
-Misurato il 21/09/2026 su una domanda sola: la riscrittura porta il pezzo
-giusto dalla posizione 29 su 4571 alla 4. Qui si vede se vale in generale o
-se era fortuna.
+Il 22/09/2026 una chat vera ha chiesto «ho bisogno di sassi rossi» e ha avuto
+una risposta di una riga con un codice solo, mentre il metro segnava 18/20.
+Le domande d'oro sono LUNGHE: portano dentro il contesto, i sinonimi e il
+dominio. Nessuno scrive cosi' in una chat. Questa colonna misura quello che
+succede davvero.
+
+La riscrittura della domanda stava qui fino al 22/09/2026: bocciata tre volte
+(21/09 guadagno zero, 22/09 15/20 e 17/20 contro 17 e 18). Il racconto e' in
+RISULTATI.md; la colonna e' andata via perche' una decisione chiusa non si
+rimisura a ogni giro.
 """
 import json
 import os
@@ -43,18 +50,11 @@ K = int(os.environ.get("VALUTAZIONE_K", "8"))       # quanti pezzi arrivano al m
 LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
 CHIAVE = os.environ.get("LITELLM_MASTER_KEY", "")
 
-# Il prompt che ha misurato meglio il 21/09/2026 (0,3901 contro 0,5030 della
-# domanda cruda, e meglio anche della riscrittura fatta a mano). Trasforma il
-# parlato in una voce di catalogo: NON traduce e NON aggiunge sinonimi.
+# Bocciata tre volte sulle domande LUNGHE, dove toglie contesto invece di
+# aggiungerne. Qui torna per rispondere a un'altra domanda: sulle domande
+# CORTE, dove il contesto manca davvero, lo aggiunge?
 RISCRITTURA = ("Riscrivi la richiesta come la scriverebbe un catalogo di prodotti per la casa e il "
                "giardino. Usa i termini merceologici, non il parlato. UNA riga, solo i termini. /no_think")
-
-
-def piatto(s: str) -> str:
-    """Per il confronto: minuscole, senza accenti, spazi normalizzati. L'OCR
-    dei cataloghi sbaglia gli accenti e raddoppia gli spazi."""
-    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
-    return " ".join(s.lower().split())
 
 
 def riscrivi(domanda: str) -> str:
@@ -66,7 +66,14 @@ def riscrivi(domanda: str) -> str:
                                       {"role": "user", "content": domanda}]},
                    timeout=300.0)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip().replace("\n", " ") or domanda
+    return r.json()["choices"][0]["message"]["content"].strip().replace('\n', " ") or domanda
+
+
+def piatto(s: str) -> str:
+    """Per il confronto: minuscole, senza accenti, spazi normalizzati. L'OCR
+    dei cataloghi sbaglia gli accenti e raddoppia gli spazi."""
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    return " ".join(s.lower().split())
 
 
 def trovata(conn, testo: str, gruppi: list, riscontri: list, documento: str, indice: list):
@@ -100,32 +107,36 @@ def main():
 
     print(f"{len(con_risposta)} domande con risposta · primi {K} pezzi · gruppi {gruppi}")
     print(f"(e {len(senza)} senza risposta, che si misurano sulla risposta, non sul recupero)\n")
-    print(f"{'id':>3}  {'base':>6}  {'riscr':>6}  categoria / domanda")
-    print("-" * 100)
+    print(f"{'id':>3}  {'lunga':>6}  {'corta':>6}  {'c+ris':>6}  domanda corta -> riscritta")
+    print("-" * 110)
 
     esiti = []
     for d in con_risposta:
         ok_base, pos_base, _ = trovata(conn, d["domanda"], gruppi, d["riscontro"], documento, indice)
-        testo = riscrivi(d["domanda"])
+        testo = d.get("corta") or d["domanda"]
         ok_ris, pos_ris, _ = trovata(conn, testo, gruppi, d["riscontro"], documento, indice)
-        esiti.append((d, ok_base, ok_ris, testo))
+        risc = riscrivi(testo)
+        ok_cr, pos_cr, _ = trovata(conn, risc, gruppi, d["riscontro"], documento, indice)
+        esiti.append((d, ok_base, ok_ris, ok_cr))
         segno = lambda ok, pos: (f"#{pos}" if ok else "no")     # noqa: E731
         print(f"{d['id']:>3}  {segno(ok_base, pos_base):>6}  {segno(ok_ris, pos_ris):>6}  "
-              f"{d['categoria'][:26]:26} {d['domanda'][:44]}")
+              f"{segno(ok_cr, pos_cr):>6}  {testo[:30]:30} -> {risc[:42]}")
 
     b = sum(1 for _, ok, _, _ in esiti if ok)
     r = sum(1 for _, _, ok, _ in esiti if ok)
+    c = sum(1 for _, _, _, ok in esiti if ok)
     n = len(esiti)
-    print("-" * 100)
-    print(f"trovate: base {b}/{n} ({b/n:.0%})   riscritta {r}/{n} ({r/n:.0%})")
+    print("-" * 110)
+    print(f"trovate: lunga {b}/{n} ({b/n:.0%})   corta {r}/{n} ({r/n:.0%})   "
+          f"corta riscritta {c}/{n} ({c/n:.0%})")
 
-    meglio = [d["id"] for d, ob, orr, _ in esiti if orr and not ob]
-    peggio = [d["id"] for d, ob, orr, _ in esiti if ob and not orr]
-    mai = [d["id"] for d, ob, orr, _ in esiti if not ob and not orr]
+    meglio = [d["id"] for d, _, oc, ocr in esiti if ocr and not oc]
+    peggio = [d["id"] for d, _, oc, ocr in esiti if oc and not ocr]
+    mai = [d["id"] for d, ob, oc, ocr in esiti if not ob and not oc and not ocr]
     if meglio:
-        print(f"la riscrittura RECUPERA: {meglio}")
+        print(f"la riscrittura RECUPERA:   {meglio}")
     if peggio:
-        print(f"la riscrittura PERDE:    {peggio}")
+        print(f"la riscrittura PERDE:      {peggio}")
     if mai:
         print(f"non trovate mai:         {mai}")
         print("  (o il pezzo non e' nell'indice, o il `riscontro` e' scritto male: vanno guardate a mano)")

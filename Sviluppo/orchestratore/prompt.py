@@ -17,6 +17,17 @@ SYSTEM = (
     "documenti riportati sotto come CONTESTO.\n"
     "\n"
     "Regole:\n"
+    # Le altre regole sono tutte DIVIETI: non inventare, non produrre numeri,
+    # non ripetere. Nessuna diceva QUANTO riportare, e il 22/09/2026 si e'
+    # misurato il risultato: dei 26 dati che rispondevano alla domanda e che
+    # stavano nel contesto, le risposte ne riportavano 12 — il 46% — quasi
+    # sempre in UNA riga. A «ho bisogno di sassi rossi» rispondeva con un
+    # codice solo, avendo davanti otto brani da sette pagine.
+    "- Riporta TUTTO cio' che nel CONTESTO risponde alla domanda, non il primo "
+    "che trovi. Se rispondono piu' voci, piu' valori o piu' varianti, elencale "
+    "tutte, una per riga, ognuna con la sua citazione. Se la risposta e' una "
+    "sola, una frase basta: la regola e' non lasciare fuori niente, non "
+    "allungare.\n"
     # ATTENZIONE alla forma di questa riga: fino al 22/09/2026 diceva «riporta
     # la citazione [n]», e il modello copiava il SEGNAPOSTO alla lettera — una
     # risposta conteneva «il natur [n], il creme [n], il rosa [n]» diciannove
