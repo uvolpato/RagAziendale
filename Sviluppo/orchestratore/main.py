@@ -314,7 +314,7 @@ def _blocco_immagini(url_per_pos) -> str:
     return "\n".join(righe)
 
 
-def _immagini_per_la_domanda(conn, qvec, gruppi, righe):
+def _immagini_per_la_domanda(conn, qvec, gruppi, righe, domanda=""):
     """Gli id delle figure che rispondono alla domanda.
 
     Si cerca fra le DESCRIZIONI delle immagini (prodotte dal modello visivo,
@@ -333,8 +333,10 @@ def _immagini_per_la_domanda(conn, qvec, gruppi, righe):
     # (pagina 31), ciottoli di fiume (63) e stelline natalizie (92) — sotto la
     # frase «Ecco le figure delle pagine citate», che quindi era falsa.
     pagine = sorted({r["page"] for r in righe if r.get("page") is not None}) if righe else None
+    # La domanda serve anche come TESTO, non solo come vettore: sui codici
+    # articolo il vettoriale non distingue GRA1040 da GRA1041.
     trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI,
-                                           pagine=pagine)
+                                           pagine=pagine, domanda=domanda)
     if trovate:
         return [r["id"] for r in trovate]
     return _immagini_del_turno(righe)
@@ -470,7 +472,7 @@ async def chat(request: Request):
         precedente = _domanda_precedente(storico_messaggi)
         qvec_prec = recupero.embedding(precedente)
         righe, _ = recupero.cerca(conn, precedente, gruppi, qvec=qvec_prec)
-        ids = _immagini_per_la_domanda(conn, qvec_prec, gruppi, righe)
+        ids = _immagini_per_la_domanda(conn, qvec_prec, gruppi, righe, precedente)
         conn.close()
         if not ids:
             return _risposta_unica("Non ho immagini da mostrare per quella risposta.")
@@ -498,7 +500,7 @@ async def chat(request: Request):
             {"error": {"message": str(e), "type": "risposta_rifiutata"}}, status_code=403)
 
     # 5. Prompt: system + contesto + la cronologia dei messaggi.
-    ids_immagini = _immagini_per_la_domanda(conn, qvec, gruppi, righe)
+    ids_immagini = _immagini_per_la_domanda(conn, qvec, gruppi, righe, cercata)
     url_per_pos = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}", utente)
                    for i, iid in enumerate(ids_immagini)}
     messaggi = [{"role": "system",

@@ -583,3 +583,82 @@ modifiche che non le toccavano.
 
 `descrizioni-<impronta>.json`, chiave il nome del file immagine, impronta
 quella del prompt: stesso schema del Markdown.
+
+---
+
+## 22/09/2026 notte — la chat dopo la reindicizzazione: due difetti nuovi
+
+Chat vera, due turni.
+
+**«mi servono dei sassi rossi»** — migliorata: italiano leggibile, tre codici
+con colore e citazione, niente righe di tabella ricopiate. Restano una
+chiusura che non dice nulla («disponibili in diverse dimensioni e confezioni,
+come indicato nei documenti») e un codice in meno di stamattina.
+
+**«hai delle foto?»** — sbagliata, e in modo grave.
+
+### Difetto 1: il modello nega le immagini che il sistema mostra
+
+Risposta: «Non e' presente alcuna immagine... potresti contattare il
+fornitore». Sotto, il sistema ha allegato **quattro immagini**. Il testo
+diceva il contrario di quello che l'utente vedeva.
+
+Il modello non puo' saperlo: le figure le sceglie e le allega il sistema DOPO
+che lui ha scritto. Il prompt gli vietava di annunciarle, non di negarle.
+Regola aggiunta.
+
+### Difetto 2: la riscrittura aggiungeva i nomi dei cataloghi
+
+«hai delle foto?» → «foto sassi rossi disponibili nel catalogo IPURO 2025.pdf
+e EUROSAND CATALOGO 2024 (1).pdf». Nomi che **nessuno aveva nominato**: il
+prompt della riformulazione diceva «conserva marche, linee di prodotto e nomi
+di documento», e il modello li ha aggiunti di sua iniziativa.
+
+| query | pagine recuperate |
+|---|---|
+| con i nomi dei cataloghi | 1, 28, 1, 22, 4, 39 — copertine e retro |
+| «foto sassi rossi» | **73, 7, 49, 24, 7, 42** — pagine dei prodotti |
+
+Il nome del catalogo e' scritto davvero sulla copertina: la ricerca ha fatto
+il suo mestiere su una domanda sbagliata. Conservare un nome che l'utente ha
+detto e' utile; aggiungerne uno che non ha detto restringe la ricerca a una
+cosa che non ha chiesto.
+
+### Una diagnosi sbagliata prima di quella giusta
+
+Avevo incolpato l'IDF: «pdf» compare in 3 pezzi su 3112, sotto la soglia di
+rarita', quindi il ramo lessicale lo trattava come il termine piu' informativo
+della domanda. Plausibile, misurabile — e **falso**. Ho scritto la correzione
+(il ramo lessicale cerca le parole della PERSONA, non quelle della
+riscrittura), l'ho provata, e il risultato era **identico riga per riga**. A
+portare le copertine era il VETTORE, non il lessicale.
+
+Correzione buttata, come l'OR di stamattina: una modifica che non sposta un
+numero e' complessita' senza contropartita.
+
+### E la riformulazione falliva in silenzio
+
+Mentre correggevo il prompt, la riscrittura ha smesso di funzionare: `content`
+vuoto. Stessa trappola dell'agente — Qwen3 ragiona se non gli si dice di no e
+il ragionamento finisce in `reasoning_content`.
+
+`riformula.py` non ha mai avuto «/no_think». Quando capita, **fallisce senza
+dirlo**: torna la domanda originale, e il seguito della conversazione cerca
+«hai delle foto?», che non contiene niente. Nessun errore nei log, solo
+risposte peggiori.
+
+Aggiunto, insieme a due cose che erano rotte allo stesso modo: le scorie si
+tolgono PRIMA di scegliere la riga (altrimenti «/no_think» in cima svuota la
+riscrittura), e `LLM_VELOCE` ora e' vuoto per difetto — puntava a una rotta
+commentata in litellm-config e produceva un 400 con due righe di errore a ogni
+avvio, che sembrano un guasto e non lo sono.
+
+### Dopo
+
+| | prima | dopo |
+|---|---|---|
+| «hai delle foto?» → riscrittura | «...IPURO 2025.pdf e EUROSAND CATALOGO 2024 (1).pdf» | «foto sassi rossi DST1001 DST2001 FSA1001» |
+| pagine recuperate | 1, 28, 1, 22, 4, 39 | **7, 6, 4, 4, 24, 73** |
+
+Metri invariati (17/20, 14/20, figure 11/12, codici 10-10-11): nessuno di loro
+passa dalla riformulazione. E' un buco del banco di prova, non una conferma.

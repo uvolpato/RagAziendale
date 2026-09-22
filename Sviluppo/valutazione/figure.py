@@ -107,7 +107,7 @@ def main():
             # 12 su 12 e non vedeva il guasto che si vedeva in chat.
             figure = recupero.immagini_pertinenti(
                 conn, recupero.embedding(testo), GRUPPI, limite=QUANTE,
-                pagine=sorted({pagina} | set(ALTRE)))
+                pagine=sorted({pagina} | set(ALTRE)), domanda=testo)
             pos[nome] = next((i for i, f in enumerate(figure, 1)
                               if c.lower() in (f.get("descrizione") or "").lower()), None)
             conta[nome] += 1 if pos[nome] else 0

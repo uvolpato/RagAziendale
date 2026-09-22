@@ -188,7 +188,12 @@ services:
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       LLM_RAGIONAMENTO: ragionamento
-      LLM_VELOCE: veloce
+      # Vuoto finche' non c'e' davvero un modello economico: la rotta `veloce`
+      # e' COMMENTATA in litellm-config.yaml, quindi valorizzarla faceva
+      # chiamare una rotta inesistente e ripiegare sul modello principale dopo
+      # un 400 — due righe di errore nei log a ogni avvio, che sembrano un
+      # guasto e non lo sono (22/09/2026). Si riempie insieme a litellm-config.
+      LLM_VELOCE: ${LLM_VELOCE-}
       LLM_EMBEDDING: embedding
       # Fase 1b: i dati 'interno' rispondono solo su questa rotta (gate). In
       # sviluppo punta allo stesso modello locale (GUIDA-MODELLI.md §4).

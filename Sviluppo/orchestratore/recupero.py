@@ -319,14 +319,39 @@ SELECT i.id, i.documento, i.page, i.descrizione,
    -- natalizie (92), mentre il testo citava le pagine 4, 6 e 7 — e la frase
    -- sopra le immagini diceva «le figure delle pagine citate».
    AND (%(pagine)s::int[] IS NULL OR i.page = ANY(%(pagine)s::int[]))
- ORDER BY (i.embedding IS NULL),          -- prima quelle che sappiamo leggere
+ ORDER BY
+          -- Prima chi contiene i termini RARI della domanda, pesati per
+          -- rarita' come nel ramo lessicale del testo (vedi RAMO_LESSICALE).
+          --
+          -- Il vettoriale sui codici non puo' funzionare: GRA1040 e GRA1041
+          -- sono due prodotti diversi e due punti quasi coincidenti. Misurato
+          -- il 22/09/2026: chiedendo la figura di GRA1041 usciva GRA1040, di
+          -- FSA1043 usciva FSA1081, di EKM6099 usciva EKM2099 — sempre il
+          -- vicino di casa. Mettere il codice nella descrizione non bastava:
+          -- il dato c'era e la ricerca non sapeva vederlo. Con questo, da
+          -- 7 su 12 a 11 su 12, tutte in prima posizione.
+          --
+          -- Se la domanda non ha termini rari il punteggio e' zero per tutte
+          -- e l'ordine torna quello di prima, il vettoriale: e' il caso di
+          -- «sassi rossi», dove il codice non c'e' e non deve contare nulla.
+          (SELECT COALESCE(SUM(ln(GREATEST(COALESCE(
+                      (SELECT pezzi_totali FROM lessemi_stato), 0), 2)::float
+                    / GREATEST(COALESCE(l.pezzi, 1), 1))), 0)
+             FROM unnest(tsvector_to_array(to_tsvector('italian', %(domanda)s))) AS t(parola)
+             LEFT JOIN lessemi l ON l.parola = t.parola
+            WHERE l.pezzi IS NULL OR l.pezzi <= GREATEST(COALESCE(
+                      (SELECT pezzi_totali FROM lessemi_stato), 0), 2) / """ + str(PEZZI_SU) + """
+              AND t.parola = ANY(tsvector_to_array(to_tsvector('italian', i.descrizione)))
+          ) DESC,
+          (i.embedding IS NULL),          -- poi quelle che sappiamo leggere
           i.embedding <=> %(qvec)s::vector,
-          i.page, i.id                    -- poi le altre, nell'ordine della pagina
+          i.page, i.id                    -- e infine nell'ordine della pagina
  LIMIT %(limite)s;
 """
 
 
-def immagini_pertinenti(conn, qvec, gruppi, documenti=None, limite: int = 4, pagine=None):
+def immagini_pertinenti(conn, qvec, gruppi, documenti=None, limite: int = 4,
+                        pagine=None, domanda: str = ""):
     """Le figure che RISPONDONO alla domanda, non quelle che stanno vicino al
     testo che ha risposto.
 
@@ -347,7 +372,7 @@ def immagini_pertinenti(conn, qvec, gruppi, documenti=None, limite: int = 4, pag
     aziende = aziende_di(gruppi)
     if not gruppi or not aziende:
         return []
-    par = {"gruppi": gruppi, "aziende": aziende, "qvec": qvec,
+    par = {"gruppi": gruppi, "aziende": aziende, "qvec": qvec, "domanda": domanda or "",
            "documenti": documenti or None, "pagine": pagine or None, "limite": limite}
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(SQL_IMMAGINI, par)

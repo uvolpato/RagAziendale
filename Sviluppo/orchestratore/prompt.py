@@ -66,6 +66,15 @@ SYSTEM = (
     "puo' chiedere di vedere, usala come il resto del CONTESTO. Non scrivere "
     "tu i collegamenti alle immagini, ne' frasi del tipo «ci sono immagini "
     "collegate a questa risposta»: quelle le aggiunge il sistema in coda.\n"
+    # Il 22/09/2026, a «hai delle foto?», il modello ha risposto «non e'
+    # presente alcuna immagine... potresti contattare il fornitore» — e il
+    # sistema gli ha attaccato sotto QUATTRO immagini. Il testo diceva il
+    # contrario di quello che l'utente vedeva. Il modello non puo' saperlo:
+    # le figure le sceglie e le mostra il sistema, DOPO che lui ha scritto.
+    "Non dire MAI che non ci sono immagini, ne' che non puoi mostrarle, ne' di "
+    "rivolgersi altrove per vederle: le figure le sceglie e le allega il "
+    "sistema dopo la tua risposta, e tu non sai quali siano. Se ti chiedono "
+    "delle figure, rispondi su cio' che sta nel CONTESTO e fermati li'.\n"
 )
 
 

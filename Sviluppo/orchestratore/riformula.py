@@ -30,7 +30,12 @@ MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 # Rotta veloce se c'e', altrimenti il modello principale: la riscrittura e' un
 # lavoro corto e meccanico, non merita il modello grosso, ma non vale la pena
 # rinunciarci se il veloce non e' configurato.
-VELOCE = os.environ.get("LLM_VELOCE", "veloce")
+#
+# Vuoto per difetto: `veloce` non e' configurato in litellm-config.yaml e
+# rispondeva 400 a ogni primo turno di ogni processo, con due righe di errore
+# nei log che sembrano un guasto e non lo sono. Quando ci sara' un modello
+# economico basta valorizzare la variabile.
+VELOCE = os.environ.get("LLM_VELOCE", "")
 PRINCIPALE = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
 SECONDI = float(os.environ.get("RIFORMULA_TIMEOUT", "15"))
 # Oltre questa lunghezza la domanda si regge da sola: riscriverla costa un
@@ -41,7 +46,17 @@ BATTUTE = 4          # quante battute precedenti bastano a sciogliere un "ne"
 ISTRUZIONI = (
     "Riscrivi l'ultima domanda in UNA domanda autonoma per un motore di ricerca documentale.\n"
     "Sostituisci i riferimenti impliciti (ne, quello, questo, la seconda) con i nomi espliciti "
-    "presi dalla conversazione; conserva marche, linee di prodotto e nomi di documento.\n"
+    "presi dalla conversazione; conserva marche e linee di prodotto.\n"
+    # Diceva anche «e nomi di documento». Il 22/09/2026, a «hai delle foto?»,
+    # ha prodotto «foto sassi rossi disponibili nel catalogo IPURO 2025.pdf e
+    # EUROSAND CATALOGO 2024 (1).pdf» — nomi che NESSUNO aveva nominato. La
+    # ricerca e' finita su copertina e retro (pagine 1, 106, 107), dove il
+    # nome del catalogo e' scritto davvero, invece che sulle pagine dei
+    # prodotti. Con «foto sassi rossi» tornavano le pagine 73, 7, 49.
+    # Conservare il nome che l'utente ha detto e' utile; aggiungerne uno che
+    # non ha detto e' restringere la ricerca a una cosa che non ha chiesto.
+    "NON aggiungere nomi di file o di cataloghi che l'utente non ha nominato: "
+    "se li ha nominati lui, tienili; altrimenti non inventarli.\n"
     "Rispondi SOLO con la domanda riscritta: una riga, niente virgolette, niente spiegazioni.\n"
     "\n"
     "Esempio\n"
@@ -49,7 +64,20 @@ ISTRUZIONI = (
     "Utente: quali fragranze ha la linea IPURO Essentials?\n"
     "Assistente: Offre fragranze floreali e fruttate.\n"
     "Ultima domanda: ne ho bisogno in auto\n"
-    "Riscrittura: fragranze IPURO Essentials per auto"
+    "Riscrittura: fragranze IPURO Essentials per auto\n"
+    "\n"
+    "Esempio\n"
+    "Conversazione:\n"
+    "Utente: mi servono dei sassi rossi\n"
+    "Assistente: Sono disponibili DST1001, DST2001 e FSA1001.\n"
+    "Ultima domanda: hai delle foto?\n"
+    "Riscrittura: foto sassi rossi DST1001 DST2001 FSA1001\n"
+    # Qwen3 ragiona se non gli si dice di no, e il ragionamento finisce in
+    # `reasoning_content`: `content` torna VUOTO, la riscrittura risulta
+    # fallita e si cerca la domanda originale. In silenzio — nessun errore,
+    # solo un seguito di conversazione che non trova niente. Riscrivere una
+    # domanda e' un lavoro corto e meccanico: non serve pensarci.
+    "/no_think"
 )
 
 
@@ -86,7 +114,7 @@ def per_la_ricerca(domanda: str, storico: list, suffisso: str = "") -> tuple[str
                 {"role": "user",
                  "content": f"Conversazione:\n{conversazione}\n\nUltima domanda: {domanda}\nRiscrittura:"}]
     for rotta in (VELOCE, PRINCIPALE):
-        if rotta in _rotte_rotte:
+        if not rotta or rotta in _rotte_rotte:
             continue
         try:
             testo = _chiedi(rotta, messaggi)
@@ -94,11 +122,15 @@ def per_la_ricerca(domanda: str, storico: list, suffisso: str = "") -> tuple[str
             print(f"riformulazione non riuscita su {rotta}: {type(e).__name__}: {e}", flush=True)
             _rotte_rotte.add(rotta)
             continue
-        testo = testo.strip().strip('"').strip()
+        # Le scorie PRIMA di scegliere la riga: il modello ricopia «/no_think»
+        # in cima, e prendendo la prima riga non vuota si leggerebbe quella —
+        # la riscrittura risulterebbe vuota e si cercherebbe la domanda
+        # originale, in silenzio.
+        for scoria in ("/no_think", "/think", "Riscrittura:"):
+            testo = testo.replace(scoria, "")
         # Una riga sola: se il modello si dilunga si tiene la prima frase utile.
         testo = next((r.strip() for r in testo.splitlines() if r.strip()), "")
-        for scoria in ("/no_think", "/think", "Riscrittura:"):
-            testo = testo.replace(scoria, "").strip()
+        testo = testo.strip('"').strip()
         if testo and len(testo) <= 300:
             return testo, testo.lower() != domanda.strip().lower()
         return domanda, False
