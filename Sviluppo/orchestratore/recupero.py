@@ -11,25 +11,19 @@ Due regole non negoziabili:
    domande in linguaggio naturale, il vettoriale le prende. La fusione costa
    zero servizi in piu'.
 
-   MA il ramo full-text vale solo quando la domanda E' un codice.
-   `plainto_tsquery` mette i termini in AND, quindi «ciottoli neri lucidi»
-   chiede 'ciottol' & 'ner' & 'lucid' e in tutto l'indice i pezzi con tutte e
-   tre sono ZERO (misurato il 22/09/2026). Su ogni domanda di piu' di una
-   parola il ramo torna vuoto e la fusione fonde il vettoriale con niente:
-   l'ablazione dava «vettore 14/20» e «fusione 14/20» perche' erano la stessa
-   ricerca. `DST2040` da solo funziona, ed e' il caso per cui il ramo esiste.
+   Il ramo full-text NON usa piu' `plainto_tsquery`, e la ragione e' scritta
+   sopra RAMO_LESSICALE. In breve: metteva i termini in AND, quindi «ciottoli
+   neri lucidi» pretendeva tutte e tre le parole nello stesso pezzo e in tutto
+   l'indice non ce n'era nessuno. Per mesi, su ogni domanda di piu' di una
+   parola, il ramo ha restituito l'insieme vuoto e la fusione ha fuso il
+   vettoriale con niente: l'ibrida era vettoriale travestita.
 
-   Provato l'OR al posto dell'AND, lo stesso giorno, e RIMESSO com'era:
-   neutro sui due metri (recupero 14/20, risposte 73% identici) e peggiore
-   dove doveva aiutare. «quanto costa il DST2040» in OR trova 31 pezzi e i
-   primi cinque non contengono il codice: `ts_rank_cd` NON pesa la rarita',
-   quindi «quanto» e «costa» valgono come «DST2040».
-
-   La correzione vera e' pesare i termini per quanto sono rari (IDF), che
-   Postgres non fa da solo: serve una tabella delle frequenze dei lessemi
-   aggiornata quando si indicizza. Non e' una riga, ed e' il prossimo passo
-   di questo ramo. Fino ad allora l'ibrida, sulle domande in italiano, e'
-   vettoriale — e va saputo leggendo i numeri.
+   Oggi cerca solo i termini RARI (un pezzo su mille o meno: i codici
+   articolo, i nomi propri) e li ordina per rarita'. Su una domanda normale
+   nessun termine e' cosi' raro, il ramo tace e la ricerca resta vettoriale —
+   che su quelle domande e' la cosa giusta. Misurato: chiedere un articolo per
+   codice dentro una frase passa da 19/24 a 21/24, e le risposte alle domande
+   d'oro non cambiano.
 
 Se l'host di inferenza non risponde non si puo' calcolare l'embedding della
 domanda: si degrada al solo full-text con un avviso, invece di restare muti.
@@ -50,6 +44,110 @@ RERANK_MODELLO = os.environ.get("RERANK_MODELLO", "text-embedding-bge-reranker-v
 # piu' fedele ma 150 pezzi interi superano il contesto del reranker.
 RERANK_CARATTERI = int(os.environ.get("RERANK_CARATTERI", "900"))
 
+# Quanto dev'essere RARA una parola perche' il ramo lessicale la cerchi: al
+# massimo un pezzo su MILLE. Con l'archivio di oggi (3112 pezzi) vuol dire al
+# massimo 3 pezzi — che e' la definizione di un codice articolo o di un nome
+# proprio. Nessuna parola italiana normale ci arriva, quindi su una domanda
+# normale il ramo tace e resta la sola ricerca vettoriale: e' quello che
+# faceva prima, e su quelle domande faceva bene.
+#
+# La soglia e' stata scelta misurando, non a occhio (22/09/2026, confronto
+# appaiato sugli stessi tre metri):
+#
+#   soglia    codici (36 prove)   risposte (26 riscontri)
+#   nessuna         29                    19
+#   1 su 10         31                    17
+#   1 su 100        31                    17
+#   1 su 1000       31                    19
+#
+# A 1 su 10 il ramo si sveglia anche per parole come «palline» e cambia la
+# composizione del contesto: gli stessi riscontri ci sono, ma il modello ne
+# riporta due di meno. A 1 su 1000 il guadagno sui codici resta e la perdita
+# sparisce.
+#
+# ATTENZIONE: misurata su 3112 pezzi. Su un archivio molto piu' grande «un
+# pezzo su mille» sono centinaia di pezzi, e la soglia va rimisurata — non
+# dedotta. Per questo e' una variabile e non un numero scritto nella query.
+PEZZI_SU = int(os.environ.get("LESSEMA_COMUNE_SU", "1000"))
+
+# Il ramo LESSICALE, pesato per rarita' (IDF).
+#
+# Prima ordinava con `ts_rank_cd`, che conta quante volte una parola compare
+# DENTRO il pezzo e non si chiede quanto quella parola sia rara nell'archivio.
+# Il 22/09/2026, su «quanto costa il DST2040», i primi cinque risultati non
+# contenevano il codice: per Postgres «costa» (29 pezzi) valeva quanto
+# «DST2040» (2 pezzi su 3112). Con l'IDF il codice torna in posizione 1.
+#
+# La formula e' quella di sempre: ogni parola vale ln(totale / in quanti pezzi
+# compare), e il punteggio di un pezzo e' la somma delle parole che contiene.
+# Una parola in 2 pezzi su 3112 vale 7,3; una in 1500 vale 0,7.
+#
+# I conteggi stanno in `lessemi`, riscritta quando si indicizza (migrazione
+# 016). Non e' un elenco di parole da ignorare scritto a mano: nessuno decide
+# che «costa» conta poco, lo decide l'archivio contando. Su un archivio di
+# ricette «forno» sarebbe comune e «bergamotto» raro, senza toccare niente.
+#
+# `%(domanda)s` resta un parametro: il testo dell'utente non entra mai
+# nell'SQL. I lessemi che finiscono nella tsquery li ha prodotti Postgres da
+# quel parametro, e ci tornano passati da quote_literal.
+def _ramo_lessicale(ripiego: bool) -> str:
+    """Il frammento SQL del ramo lessicale.
+
+    `ripiego`: cosa fare quando la domanda non contiene NESSUN termine raro.
+        False (ricerca ibrida) il ramo tace. Il vettoriale c'e' e su quelle
+              domande fa meglio da solo: misurato, aggiungere i termini comuni
+              faceva riportare due riscontri in meno.
+        True  (solo testo, host dei modelli spento) si cercano tutti i
+              termini. Qui il lessicale e' l'UNICA ricerca: tacere vorrebbe
+              dire non rispondere, e la modalita' degradata esiste per
+              rispondere qualcosa. Scoperto dai test T1.15/T1.16, che girano
+              senza vettore: con la regola stretta anche per loro, una fonte
+              attiva smetteva di rispondere.
+    """
+    rari = ("SELECT string_agg(quote_literal(t.parola), ' | ')"
+            "  FROM termini t, totale WHERE t.pezzi <= totale.n / {soglia}")
+    tutti = "SELECT string_agg(quote_literal(t.parola), ' | ') FROM termini t"
+    scelti = (f"COALESCE(({rari}), ({tutti}))" if ripiego else f"({rari})")
+    return SCHELETRO_LESSICALE.format(soglia=PEZZI_SU, scelti=scelti.format(soglia=PEZZI_SU))
+
+
+SCHELETRO_LESSICALE = """
+termini AS (
+    -- Le parole della domanda ridotte a radice da Postgres («ciottoli» e
+    -- «ciottolo» sono lo stesso lessema), ognuna col suo conteggio.
+    -- Sconosciuta = 1, cioe' rarissima: una parola mai vista e' informativa,
+    -- non trascurabile (succede fra un'indicizzazione e la successiva).
+    SELECT t.parola, COALESCE(l.pezzi, 1) AS pezzi
+      FROM unnest(tsvector_to_array(to_tsvector('italian', %(domanda)s))) AS t(parola)
+      LEFT JOIN lessemi l ON l.parola = t.parola
+),
+totale AS (
+    -- Scalare, non una riga di tabella: se `lessemi_stato` fosse vuota — un
+    -- impianto nuovo, una migrazione a meta' — la CTE non darebbe nessuna
+    -- riga e la ricerca tornerebbe MUTA invece che imprecisa.
+    -- GREATEST(...,2) perche' con l'archivio vuoto ln(1/1) sarebbe zero per
+    -- tutti e l'ordine diventerebbe casuale invece di essere assente.
+    SELECT GREATEST(COALESCE((SELECT pezzi_totali FROM lessemi_stato), 0), 2) AS n
+),
+scelti AS (
+    -- Quali termini cercare: lo decide _ramo_lessicale (vedi la sua
+    -- spiegazione). Niente segno di percentuale nei commenti di questo
+    -- frammento: psycopg lo legge come un segnaposto e la query non parte.
+    SELECT ({scelti})::tsquery AS q
+),
+punteggiati AS (
+    SELECT c.id,
+           (SELECT COALESCE(SUM(ln(totale.n::float / t.pezzi)), 0)
+              FROM termini t, totale
+             WHERE t.parola = ANY(tsvector_to_array(to_tsvector('italian', c.content)))
+           ) AS punti
+      FROM chunks c
+      JOIN consentite s ON s.id = c.source_id
+      CROSS JOIN scelti
+     WHERE scelti.q IS NOT NULL
+       AND to_tsvector('italian', c.content) @@ scelti.q
+)
+"""
 
 
 SQL_IBRIDA = """
@@ -63,6 +161,7 @@ WITH consentite AS (
        AND aziende && %(aziende)s::text[]
        AND stato = 'attiva'
 ),
+""" + _ramo_lessicale(ripiego=False).rstrip() + "," + """
 vett AS (
     SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> %(qvec)s::vector) AS r
     FROM chunks c
@@ -72,15 +171,10 @@ vett AS (
     LIMIT %(cand)s
 ),
 testo AS (
-    SELECT c.id,
-           row_number() OVER (
-               ORDER BY ts_rank_cd(to_tsvector('italian', c.content), q) DESC
-           ) AS r
-    FROM chunks c
-    JOIN consentite s ON s.id = c.source_id
-    CROSS JOIN plainto_tsquery('italian', %(domanda)s) q
-    WHERE to_tsvector('italian', c.content) @@ q
-    LIMIT %(cand)s
+    SELECT id, row_number() OVER (ORDER BY punti DESC, id) AS r
+      FROM punteggiati WHERE punti > 0
+     ORDER BY punti DESC, id
+     LIMIT %(cand)s
 ),
 fusi AS (
     SELECT id, SUM(punti) AS punteggio FROM (
@@ -108,21 +202,18 @@ WITH consentite AS (
      WHERE acl_groups && %(gruppi)s::text[]
        AND aziende && %(aziende)s::text[]
        AND stato = 'attiva'
-)
+),
+""" + _ramo_lessicale(ripiego=True).strip().rstrip(",") + """
 SELECT c.id, c.source_id, c.documento, c.page, c.content,
-       s.residency,
-       ts_rank_cd(to_tsvector('italian', c.content), q) AS punteggio,
+       s.residency, p.punti AS punteggio,
        (SELECT array_agg(i.id ORDER BY i.id) FROM immagini i
          WHERE i.source_id = c.source_id AND i.documento = c.documento
            AND i.page IS NOT DISTINCT FROM c.page) AS immagini
--- Attenzione all'ordine: una virgola dopo `chunks c` legherebbe il JOIN
--- successivo a plainto_tsquery invece che a chunks, e Postgres risponde
--- "invalid reference to FROM-clause entry". CROSS JOIN esplicito, sempre.
-FROM chunks c
+FROM punteggiati p
+JOIN chunks c ON c.id = p.id
 JOIN consentite s ON s.id = c.source_id
-CROSS JOIN plainto_tsquery('italian', %(domanda)s) q
-WHERE to_tsvector('italian', c.content) @@ q
-ORDER BY punteggio DESC
+WHERE p.punti > 0
+ORDER BY p.punti DESC, c.id
 LIMIT %(limite)s;
 """
 

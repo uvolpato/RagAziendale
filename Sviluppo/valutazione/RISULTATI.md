@@ -330,3 +330,78 @@ da una fluttuazione, e per poco non attribuivo al cambio dell'OR un calo che
 era del modello. `risposte.py` ora misura a **temperatura 0**: misura una
 configurazione un po' diversa da quella vera, ed e' il prezzo per avere un
 numero confrontabile con quello di ieri.
+
+---
+
+## 22/09/2026 — l'IDF: il ramo lessicale comincia a esistere
+
+Tabella `lessemi` (migrazione 016): per ogni parola dell'archivio, in quanti
+pezzi compare. Riscritta quando si indicizza, un secondo su 3112 pezzi.
+13405 lessemi. Nessun elenco di parole scritto a mano: conta l'archivio.
+
+Il ramo lessicale ora cerca **solo i termini rari** e li ordina per rarita'
+(IDF: ogni parola vale ln(totale / in quanti pezzi compare)).
+
+### Il metro che mancava: chiedere un articolo per CODICE
+
+Le 24 domande d'oro non contengono nessun codice, ed e' giusto — chi compra
+non li sa a memoria. Ma chi li sa li scrive, ed e' l'unico caso per cui il
+ramo lessicale esiste: sui codici il vettoriale non puo' funzionare, DST2040 e
+DST2043 sono due prodotti diversi e due punti vicinissimi.
+
+`valutazione/codici.py` PESCA i codici dall'indice — non li scrivo io — fra
+quelli che compaiono in pochissimi pezzi, e costruisce tre forme di domanda.
+Cambia da solo quando cambia l'archivio.
+
+| forma | prima | dopo |
+|---|---|---|
+| `DST2040` | 10/12 | 10/12 |
+| «quanto costa il DST2040» | 9/12 | **10/12** |
+| «avete ancora disponibile il DST2040?» | 10/12 | **11/12** |
+
+### La soglia di rarita' e' stata misurata, non scelta
+
+| soglia | codici (36 prove) | risposte (26 riscontri) |
+|---|---|---|
+| nessuna (prima) | 29 | 19 |
+| 1 pezzo su 10 | 31 | **17** |
+| 1 pezzo su 100 | 31 | **17** |
+| **1 pezzo su 1000** | **31** | **19** |
+
+A 1 su 10 il ramo si sveglia anche per parole come «palline»: gli stessi
+riscontri restano nel contesto, ma il modello ne riporta due di meno. A 1 su
+1000 — cioe' al massimo 3 pezzi su 3112, la definizione di un codice — il
+guadagno sui codici resta e la perdita sparisce.
+
+Avevo previsto che a togliere il ripiego su «tutti i termini» le risposte
+sarebbero tornate al 73%. **Sbagliato**: restavano al 65%. A spostarle e'
+stata la soglia, non il ripiego.
+
+### Cosa NON e' cambiato
+
+Recupero 18/20 (lunghe) e 14/20 (corte), risposte 73%. L'IDF non tocca le
+domande in italiano, e non doveva: li' il ramo lessicale tace.
+
+**ATTENZIONE**: la soglia e' misurata su 3112 pezzi. Su un archivio molto piu'
+grande «un pezzo su mille» sono centinaia di pezzi, e va rimisurata — non
+dedotta. Per questo e' `LESSEMA_COMUNE_SU` e non un numero nella query.
+
+### Il ramo tace, ma non quando e' solo
+
+I test T1.15 e T1.16 hanno bocciato la prima versione, e avevano ragione:
+girano SENZA vettore (modalita' degradata, host dei modelli spento) e li' il
+lessicale e' l'unica ricerca. Con la regola stretta anche per loro, una fonte
+attiva smetteva di rispondere del tutto.
+
+Quindi la regola e' doppia, e la differenza e' di sostanza:
+
+- **ricerca ibrida**: nessun termine raro → il ramo tace. Il vettoriale c'e'
+  e su quelle domande fa meglio da solo.
+- **solo testo**: nessun termine raro → si cercano tutti. Tacere vorrebbe dire
+  non rispondere, e quella modalita' esiste per rispondere qualcosa.
+
+Corretto anche un guasto che nessun metro avrebbe visto: `totale` leggeva
+`lessemi_stato` come una riga di tabella. Su un impianto nuovo, con quella
+tabella vuota, la CTE non avrebbe dato nessuna riga e **la ricerca sarebbe
+tornata muta** — non imprecisa, muta. Ora e' uno scalare con un valore di
+ripiego.

@@ -1330,6 +1330,41 @@ BLOCCO = 7_310_061      # pg_advisory_lock: un giro alla volta, in tutto il data
 BLOCCO_LLM = 7_310_062
 
 
+def conta_lessemi(conn, esiti=None):
+    """Riscrive `lessemi`: in quanti pezzi compare ogni parola dell'archivio.
+
+    Serve al ramo lessicale della ricerca, che pesa i termini per quanto sono
+    rari (recupero.py). Senza questo conteggio una parola nuova risulta
+    sconosciuta e viene trattata come rarissima: non e' un guasto — e' il
+    valore prudente — ma le parole diventate comuni resterebbero sopravvalutate.
+
+    Si fa QUI e non a ogni ricerca perche' l'archivio cambia solo qui, e
+    contarlo vuol dire rileggere tutto l'indice: un secondo su 3112 pezzi,
+    inaccettabile moltiplicato per ogni domanda.
+
+    Si salta se il giro non ha cambiato niente: su quattro cartelle ferme sono
+    288 riletture inutili dell'indice al giorno.
+    """
+    if esiti is not None and not any(e.get("nuovi") or e.get("cambiati") or e.get("tolti")
+                                     for e in esiti):
+        return
+    try:
+        with conn.transaction():
+            conn.execute("TRUNCATE lessemi")
+            conn.execute(
+                "INSERT INTO lessemi (parola, pezzi) "
+                "SELECT word, ndoc FROM ts_stat($$SELECT to_tsvector('italian', content) "
+                "FROM chunks$$) ON CONFLICT (parola) DO UPDATE SET pezzi = EXCLUDED.pezzi")
+            conn.execute("UPDATE lessemi_stato SET pezzi_totali = (SELECT count(*) FROM chunks),"
+                         " aggiornato_il = now()")
+        n = conn.execute("SELECT count(*) FROM lessemi").fetchone()[0]
+        print(f"  frequenze delle parole: {n} lessemi", flush=True)
+    except psycopg.Error as e:
+        # Un conteggio vecchio fa cercare un po' peggio; fallire il giro
+        # perderebbe tutto il lavoro di lettura che c'e' appena stato.
+        print(f"  frequenze delle parole non aggiornate ({type(e).__name__}: {e})", flush=True)
+
+
 def giro(aspetta=False, forza=False, solo=None):
     """Un giro su tutte le cartelle. Uno solo alla volta (servizio e giri a
     mano insieme leggerebbero due volte gli stessi file): il servizio salta il
@@ -1360,6 +1395,7 @@ def giro(aspetta=False, forza=False, solo=None):
                  if PERCORSO_VALIDO.match(f[1]) and ".." not in f[1]]
         esiti = [indicizza_fonte(conn, f, lettore, stato_vettori, solo, forza) for f in fonti]
         completati = completa_vettori(conn, stato_vettori)
+        conta_lessemi(conn, esiti)
     del lettore
     gc.collect()
     return esiti, completati
