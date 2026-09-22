@@ -662,3 +662,49 @@ avvio, che sembrano un guasto e non lo sono.
 
 Metri invariati (17/20, 14/20, figure 11/12, codici 10-10-11): nessuno di loro
 passa dalla riformulazione. E' un buco del banco di prova, non una conferma.
+
+---
+
+## 22/09/2026 — le figure dicono cosa mostrano
+
+Chat: «ho bisogno di sassi rossi» → quattro codici, tutti giusti, leggibili.
+«posso vedere delle immagini?» → quattro figure. Ma erano **due prodotti**:
+due di FSA1001 e due di RAD1001, mentre il testo ne elencava quattro. Nessuna
+figura sbagliata; insieme raccontavano meta' della risposta.
+
+### Due difetti generali, non un caso
+
+**1. Il testo e le figure sono due selezioni indipendenti.** Il modello scrive
+la risposta, il sistema sceglie le immagini: niente garantisce che parlino
+delle stesse cose. Finche' le miniature erano anonime, il disaccordo era
+INVISIBILE.
+
+Ora ogni figura porta sotto il testo del catalogo che le sta accanto —
+la prima meta' della sua descrizione (vedi `attorno_ai_segnaposti`). Non dice
+«questa e' FSA1001», dice cosa c'e' scritto vicino: l'ordine di lettura puo'
+mettere una figura una riga prima o dopo il suo articolo, quindi il codice
+resta un indizio. Il testo vero lascia giudicare chi guarda; un'etichetta sola
+sarebbe un'affermazione che non possiamo sostenere.
+
+**2. Quattro risultati per somiglianza sono quattro quasi-doppioni.** Le prime
+posizioni di una ricerca vettoriale descrivono spesso la stessa cosa. `_sparse`
+fa un giro tenendo una figura per soggetto (la pagina) e poi riempie con le
+altre: da 2 pagine coperte a 3, senza toccare l'ordine della ricerca.
+
+Metro delle figure invariato — **11/12** — quindi distribuire non costa nulla.
+
+### Il test ha trovato un difetto che avrei spedito
+
+T1.24 e' fallito: la riga delle didascalie sopravviveva a `_senza_aggiunte`,
+la funzione che toglie dalla cronologia tutto cio' che scrive il SISTEMA.
+Sarebbe tornata al modello nei turni successivi, che l'avrebbe imitata — lo
+stesso guasto delle fonti ricopiate del 21/09, con un'impalcatura nuova.
+
+### Cosa resta aperto, detto per nome
+
+Le didascalie rendono il disaccordo **visibile**, non lo tolgono: se la
+risposta parla di quattro prodotti e le figure ne coprono tre, ora si vede.
+Garantire la corrispondenza vorrebbe dire una ricerca di figure PER PRODOTTO
+invece di una per domanda. Si puo' fare, ma prima serve un metro che misuri la
+COPERTURA («quante delle cose nominate hanno una figura»), e quel metro non
+esiste: `figure.py` misura se la figura giusta c'e', non se ci sono tutte.

@@ -167,6 +167,13 @@ def _senza_aggiunte(messaggio: dict) -> dict:
             while righe and IMPALCATURA_TABELLA.match(righe[-1]):
                 righe.pop()
             continue
+        # La riga delle didascalie sta SOTTO quella delle figure, quindi la
+        # riga di immagini e' gia' passata quando arriva: si riconosce da
+        # <sub>, che il sistema usa solo li'. Senza questo il modello se la
+        # ritrova in cronologia e la imita — lo stesso guasto delle fonti
+        # ricopiate del 21/09/2026, con un'impalcatura diversa.
+        if "<sub>" in r and r.lstrip().startswith("|"):
+            continue
         righe.append(r)
     # Il filetto restava orfano dell'elenco che introduceva.
     while righe and righe[-1].strip() in ("---", ""):
@@ -287,6 +294,37 @@ def _fonti_citate(righe) -> str:
 
 
 PER_RIGA = 4        # quante figure affiancare
+# Quanto puo' essere lunga una didascalia: oltre, la riga della tabella va a
+# capo e le miniature si disallineano.
+DIDASCALIA = 44
+
+
+def _didascalia(descrizione: str) -> str:
+    """Cosa scrivere sotto una miniatura.
+
+    La descrizione di una figura e' «<testo del catalogo attorno alla figura>
+    — <descrizione del modello visivo>» (vedi attorno_ai_segnaposti in
+    ingestion). La didascalia usa la PRIMA meta': sono le parole del catalogo,
+    con i codici articolo.
+
+    Non dice «questa e' FSA1001», dice cosa c'e' scritto accanto. La
+    differenza non e' pedanteria: l'ordine di lettura puo' mettere una figura
+    una riga prima o dopo il suo articolo, quindi il codice e' un INDIZIO.
+    Scrivere il testo vero lascia giudicare chi guarda; un'etichetta sola
+    sarebbe un'affermazione che non possiamo sostenere.
+
+    La seconda meta' — il testo del modello visivo, in inglese — non si
+    mostra: serve a cercare, non a leggere.
+    """
+    testo = " ".join((descrizione or "").split())
+    if not testo:
+        return ""
+    testo = testo.split(" — ")[0]
+    # «nessun testo» e' quello che il modello scrive quando nel ritaglio non
+    # c'e' niente da trascrivere: come didascalia non dice nulla.
+    if testo.lower().startswith("nessun testo"):
+        return ""
+    return testo[:DIDASCALIA].rstrip(" ,;-") + ("…" if len(testo) > DIDASCALIA else "")
 
 
 def _blocco_immagini(url_per_pos) -> str:
@@ -302,16 +340,50 @@ def _blocco_immagini(url_per_pos) -> str:
     metterle sulla stessa riga di markdown non basta — si impilerebbero lo
     stesso. Ogni cella invece e' un riquadro suo, e le celle stanno in fila.
     """
-    celle = [f"[![immagine {n}]({u}&mini=1)]({u})" for n, u in url_per_pos.items()]
+    celle = [(f"[![immagine {n}]({u}&mini=1)]({u})", d)
+             for n, (u, d) in url_per_pos.items()]
     if not celle:
         return ""
     righe = ["|" + "|".join(" " * 2 for _ in range(PER_RIGA)) + "|",
              "|" + "|".join("---" for _ in range(PER_RIGA)) + "|"]
     for i in range(0, len(celle), PER_RIGA):
         gruppo = celle[i:i + PER_RIGA]
-        gruppo += [" "] * (PER_RIGA - len(gruppo))      # celle vuote in coda
-        righe.append("| " + " | ".join(gruppo) + " |")
+        gruppo += [(" ", "")] * (PER_RIGA - len(gruppo))    # celle vuote in coda
+        righe.append("| " + " | ".join(c for c, _ in gruppo) + " |")
+        # La didascalia sotto la sua miniatura, nella riga seguente della
+        # STESSA tabella: cosi' resta incolonnata con l'immagine anche quando
+        # il testo va a capo. Si salta se nessuna delle quattro ne ha una.
+        if any(d for _, d in gruppo):
+            righe.append("| " + " | ".join(f"<sub>{d}</sub>" if d else " "
+                                           for _, d in gruppo) + " |")
     return "\n".join(righe)
+
+
+def _sparse(trovate, quante=None):
+    """Le figure scelte COPRENDO cose diverse, non le quattro piu' vicine.
+
+    Prendere i primi quattro risultati di una ricerca a somiglianza da'
+    quattro quasi-doppioni: il 22/09/2026, a «immagini dei sassi rossi», sono
+    uscite due figure di FSA1001 e due di RAD1001 mentre la risposta parlava
+    di QUATTRO prodotti. Nessuna era sbagliata, e insieme raccontavano meta'
+    della risposta.
+
+    Non e' un difetto di questo catalogo: e' come si comporta una ricerca a
+    somiglianza quando le prime posizioni descrivono la stessa cosa. Si fa un
+    giro tenendo una figura per «soggetto» — qui la PAGINA, che e' quanto di
+    piu' vicino a «di che prodotto parla» si abbia senza inventare — e poi, se
+    restano posti, si riempie con le altre nell'ordine di punteggio.
+
+    L'ordine dentro ogni giro resta quello della ricerca: non si riordina
+    niente, si sceglie CHI passa.
+    """
+    quante = quante or MAX_IMMAGINI
+    prime, resto, viste = [], [], set()
+    for r in trovate:
+        chiave = (r.get("documento"), r.get("page"))
+        (resto if chiave in viste else prime).append(r)
+        viste.add(chiave)
+    return (prime + resto)[:quante]
 
 
 def _immagini_per_la_domanda(conn, qvec, gruppi, righe, domanda=""):
@@ -335,11 +407,12 @@ def _immagini_per_la_domanda(conn, qvec, gruppi, righe, domanda=""):
     pagine = sorted({r["page"] for r in righe if r.get("page") is not None}) if righe else None
     # La domanda serve anche come TESTO, non solo come vettore: sui codici
     # articolo il vettoriale non distingue GRA1040 da GRA1041.
-    trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI,
+    trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI * 4,
                                            pagine=pagine, domanda=domanda)
     if trovate:
-        return [r["id"] for r in trovate]
-    return _immagini_del_turno(righe)
+        trovate = _sparse(trovate)
+        return [(r["id"], _didascalia(r.get("descrizione"))) for r in trovate]
+    return [(i, "") for i in _immagini_del_turno(righe)]
 
 
 def _immagini_del_turno(righe):
@@ -476,7 +549,8 @@ async def chat(request: Request):
         conn.close()
         if not ids:
             return _risposta_unica("Non ho immagini da mostrare per quella risposta.")
-        urls = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}", utente) for i, iid in enumerate(ids)}
+        urls = {i + 1: (immagini.firma_url(iid, f"https://{APP_HOST}", utente), d)
+                for i, (iid, d) in enumerate(ids)}
         return _risposta_unica("Ecco le figure delle pagine citate:\n\n" + _blocco_immagini(urls))
 
     # 2. La domanda per la RICERCA: in una conversazione l'ultima frase da sola
@@ -501,8 +575,8 @@ async def chat(request: Request):
 
     # 5. Prompt: system + contesto + la cronologia dei messaggi.
     ids_immagini = _immagini_per_la_domanda(conn, qvec, gruppi, righe, cercata)
-    url_per_pos = {i + 1: immagini.firma_url(iid, f"https://{APP_HOST}", utente)
-                   for i, iid in enumerate(ids_immagini)}
+    url_per_pos = {i + 1: (immagini.firma_url(iid, f"https://{APP_HOST}", utente), d)
+                   for i, (iid, d) in enumerate(ids_immagini)}
     messaggi = [{"role": "system",
                  "content": prompt.SYSTEM + "\n" + prompt.contesto(righe) + SUFFISSO_SISTEMA}]
     storico = [_senza_aggiunte(m) for m in corpo.get("messages", [])

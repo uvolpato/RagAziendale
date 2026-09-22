@@ -433,12 +433,22 @@ def main():
     @prova("T1.24", "le figure stanno quattro per riga e l'impalcatura non torna al modello")
     def _():
         from orchestratore.main import PER_RIGA, _blocco_immagini, _senza_aggiunte
-        blocco = _blocco_immagini({n: f"https://x/immagini/{n}?firma=y" for n in range(1, 5)})
+        blocco = _blocco_immagini(
+            {n: (f"https://x/immagini/{n}?firma=y", f"COD{n} rosso") for n in range(1, 5)})
         corpo = [r for r in blocco.splitlines() if "![immagine" in r]
         assert len(corpo) == 1, f"quattro figure stanno su una riga sola: {blocco}"
         assert corpo[0].count("![immagine") == PER_RIGA, corpo[0]
         # LibreChat mette display:block su ogni img: senza tabella si impilano.
         assert blocco.splitlines()[1].startswith("|---"), "serve la riga di separazione, o non e' una tabella"
+        # La didascalia sta SOTTO la sua miniatura, nella riga dopo: serve a
+        # dire di che prodotto e' la figura, che il testo della risposta da
+        # solo non garantisce (22/09/2026: quattro figure per due prodotti).
+        sotto = blocco.splitlines()[blocco.splitlines().index(corpo[0]) + 1]
+        assert sotto.count("<sub>") == PER_RIGA, f"manca la riga delle didascalie: {blocco}"
+        assert "COD3 rosso" in sotto and sotto.index("COD1") < sotto.index("COD3"), sotto
+        # Senza didascalie la riga non si aggiunge: niente celle vuote inutili.
+        nude = _blocco_immagini({n: (f"https://x/{n}", "") for n in range(1, 3)})
+        assert "<sub>" not in nude, nude
         pulita = _senza_aggiunte({"role": "assistant", "content": "Ecco i vasi.\n\n" + blocco})["content"]
         assert pulita.strip() == "Ecco i vasi.", f"non deve restare impalcatura: {pulita!r}"
         # Una tabella scritta dal MODELLO ha testo nelle celle: non si tocca.
