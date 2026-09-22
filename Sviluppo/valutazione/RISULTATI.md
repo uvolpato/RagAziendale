@@ -287,3 +287,46 @@ una sola, una frase basta — non lasciare fuori niente, non allungare».
 **Da tenere d'occhio**: la completezza puo' diventare prolissita', e questo
 metro non la vedrebbe (conta i riscontri, non la lunghezza). La colonna
 `righe` e' li' per quello.
+
+---
+
+## 22/09/2026 — l'ibrida non era ibrida (e l'OR non e' la cura)
+
+L'ablazione diceva «vettore 14/20, fusione 14/20» e l'avevo letta come «la
+catena non c'entra». La lettura giusta era un'altra: **meta' della catena non
+e' mai partita**.
+
+`plainto_tsquery` mette i termini in AND. Per «ciottoli neri lucidi» chiede
+`'ciottol' & 'ner' & 'lucid'`, e in tutto l'indice i pezzi con tutte e tre le
+parole sono **zero**. Il ramo lessicale torna vuoto, la RRF fonde il
+vettoriale con niente, e i due numeri erano uguali perche' erano la stessa
+ricerca. Su ogni domanda in italiano di piu' di una parola, l'ibrida e'
+vettoriale.
+
+### L'OR: provato e rimesso com'era
+
+| | recupero (corte) | risposte |
+|---|---|---|
+| AND (oggi) | 14/20 | 73% |
+| OR | 14/20 | 73% |
+
+Neutro. E **peggiore dove doveva aiutare**: «quanto costa il DST2040» in OR
+trova 31 pezzi e i primi cinque non contengono il codice — sono pezzi pieni di
+«quanto» e «costa», piu' tre pagine di una cheat sheet sulle password.
+`ts_rank_cd` non pesa la rarita': un termine raro vale come uno comune.
+
+`DST2040` cercato da solo funziona gia' benissimo, ed e' il caso per cui il
+ramo lessicale esiste. Un termine solo: AND e OR sono la stessa cosa.
+
+**La correzione vera e' l'IDF**: pesare i termini per quanto sono rari.
+Postgres non lo fa, serve una tabella delle frequenze dei lessemi aggiornata
+quando si indicizza. Non e' una riga, ed e' il prossimo passo di questo ramo.
+
+### Il metro delle risposte non era ripetibile
+
+A temperatura 0,2 (quella di produzione) due corse sullo STESSO contesto
+davano 19 riscontri e 16. Con quel rumore non si distingue un miglioramento
+da una fluttuazione, e per poco non attribuivo al cambio dell'OR un calo che
+era del modello. `risposte.py` ora misura a **temperatura 0**: misura una
+configurazione un po' diversa da quella vera, ed e' il prezzo per avere un
+numero confrontabile con quello di ieri.

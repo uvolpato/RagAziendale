@@ -11,6 +11,26 @@ Due regole non negoziabili:
    domande in linguaggio naturale, il vettoriale le prende. La fusione costa
    zero servizi in piu'.
 
+   MA il ramo full-text vale solo quando la domanda E' un codice.
+   `plainto_tsquery` mette i termini in AND, quindi «ciottoli neri lucidi»
+   chiede 'ciottol' & 'ner' & 'lucid' e in tutto l'indice i pezzi con tutte e
+   tre sono ZERO (misurato il 22/09/2026). Su ogni domanda di piu' di una
+   parola il ramo torna vuoto e la fusione fonde il vettoriale con niente:
+   l'ablazione dava «vettore 14/20» e «fusione 14/20» perche' erano la stessa
+   ricerca. `DST2040` da solo funziona, ed e' il caso per cui il ramo esiste.
+
+   Provato l'OR al posto dell'AND, lo stesso giorno, e RIMESSO com'era:
+   neutro sui due metri (recupero 14/20, risposte 73% identici) e peggiore
+   dove doveva aiutare. «quanto costa il DST2040» in OR trova 31 pezzi e i
+   primi cinque non contengono il codice: `ts_rank_cd` NON pesa la rarita',
+   quindi «quanto» e «costa» valgono come «DST2040».
+
+   La correzione vera e' pesare i termini per quanto sono rari (IDF), che
+   Postgres non fa da solo: serve una tabella delle frequenze dei lessemi
+   aggiornata quando si indicizza. Non e' una riga, ed e' il prossimo passo
+   di questo ramo. Fino ad allora l'ibrida, sulle domande in italiano, e'
+   vettoriale — e va saputo leggendo i numeri.
+
 Se l'host di inferenza non risponde non si puo' calcolare l'embedding della
 domanda: si degrada al solo full-text con un avviso, invece di restare muti.
 Non e' resilienza di lusso — l'host di inferenza in sviluppo e' LM Studio su
@@ -29,7 +49,6 @@ RERANK_MODELLO = os.environ.get("RERANK_MODELLO", "text-embedding-bge-reranker-v
 # Quanto testo di ogni pezzo si manda a riordinare. Tutto il pezzo sarebbe
 # piu' fedele ma 150 pezzi interi superano il contesto del reranker.
 RERANK_CARATTERI = int(os.environ.get("RERANK_CARATTERI", "900"))
-
 
 
 

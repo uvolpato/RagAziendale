@@ -56,7 +56,14 @@ def rispondi(domanda, righe):
     r = httpx.post(f"{LITELLM}/v1/chat/completions",
                    headers={"Authorization": "Bearer " + CHIAVE},
                    json={"model": os.environ.get("LLM_RAGIONAMENTO", "ragionamento"),
-                         "temperature": float(os.environ.get("TEMPERATURA", "0.2")),
+                         # ZERO, non il 0,2 di produzione: a 0,2 la stessa
+                         # domanda sullo stesso contesto dava 19 riscontri in
+                         # una corsa e 16 in quella dopo (22/09/2026), e con
+                         # quel rumore non si distingue un miglioramento da
+                         # una fluttuazione. Misura una configurazione un po'
+                         # diversa da quella vera: e' il prezzo per avere un
+                         # numero che si puo' confrontare con quello di ieri.
+                         "temperature": 0,
                          "messages": [
                              {"role": "system",
                               "content": prompt.SYSTEM + "\n" + prompt.contesto(righe)},
