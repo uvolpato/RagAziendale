@@ -35,7 +35,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 sys.path.insert(0, "/app")
-from orchestratore import recupero      # noqa: E402
+from orchestratore import main as m, recupero      # noqa: E402
 
 QUANTE = 4           # quante figure si mostrano in chat
 QUANTI = 12          # quanti codici si provano
@@ -94,32 +94,44 @@ def main():
     ALTRE = [p for _, p in elenco][:5]
     print(f"{len(elenco)} figure pescate dall'archivio · prime {QUANTE} figure\n")
     print(f"{'codice':>12}  " + "  ".join(f"{n:>9}" for n, _ in FORME)
-          + "   cosa esce al primo posto")
-    print("-" * 86)
+          + "   uscite  c'entrano   cosa esce al primo posto")
+    print("-" * 100)
     conta = {n: 0 for n, _ in FORME}
+    tot_uscite = tot_giuste = 0
     for c, pagina in elenco:
-        pos, primo = {}, ""
+        pos, primo, uscite, giuste = {}, "", 0, 0
         for nome, forma in FORME:
             testo = forma.format(c=c)
             # Le pagine che il TESTO ha citato, non una sola: in chat sono
             # sei, e la sola pagina 4 di EUROSAND ha 37 figure — oltre cento
             # candidate per quattro posti. Con una pagina sola il metro dava
             # 12 su 12 e non vedeva il guasto che si vedeva in chat.
-            figure = recupero.immagini_pertinenti(
-                conn, recupero.embedding(testo), GRUPPI, limite=QUANTE,
-                pagine=sorted({pagina} | set(ALTRE)), domanda=testo)
+            figure = m._scelte(recupero.immagini_pertinenti(
+                conn, recupero.embedding(testo), GRUPPI, limite=QUANTE * 4,
+                pagine=sorted({pagina} | set(ALTRE)), domanda=testo))
             pos[nome] = next((i for i, f in enumerate(figure, 1)
                               if c.lower() in (f.get("descrizione") or "").lower()), None)
             conta[nome] += 1 if pos[nome] else 0
-            if nome == FORME[-1][0] and figure:
-                primo = " ".join((figure[0].get("descrizione") or "").split())[:34]
+            if nome == FORME[-1][0]:
+                # QUANTE ne escono e quante c'entrano davvero: una figura
+                # mostrata e' un'affermazione, e riempire fino a un numero
+                # fisso significa farne di false.
+                uscite = len(figure)
+                giuste = sum(1 for f in figure
+                             if c.lower() in (f.get("descrizione") or "").lower())
+                tot_uscite += uscite
+                tot_giuste += giuste
+                if figure:
+                    primo = " ".join((figure[0].get("descrizione") or "").split())[:30]
         segno = lambda v: (f"#{v}" if v else "no")      # noqa: E731
         print(f"{c:>12}  " + "  ".join(f"{segno(pos[n]):>9}" for n, _ in FORME)
-              + f"   {primo}")
-    print("-" * 86)
+              + f"   {uscite:>6}  {giuste:>9}   {primo}")
+    print("-" * 100)
     n = len(elenco)
     for nome, _ in FORME:
         print(f"  {nome:9} {conta[nome]}/{n} ({conta[nome]/n:.0%})")
+    print(f"  figure mostrate {tot_uscite}, di cui c'entrano {tot_giuste} "
+          f"({tot_giuste/max(tot_uscite,1):.0%})")
     print("\nSi cerca dentro la PAGINA giusta: se sbaglia qui, sbaglia a maggior")
     print("ragione su tutto il documento.")
 

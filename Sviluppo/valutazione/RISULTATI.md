@@ -708,3 +708,41 @@ Garantire la corrispondenza vorrebbe dire una ricerca di figure PER PRODOTTO
 invece di una per domanda. Si puo' fare, ma prima serve un metro che misuri la
 COPERTURA («quante delle cose nominate hanno una figura»), e quel metro non
 esiste: `figure.py` misura se la figura giusta c'e', non se ci sono tutte.
+
+### Quante figure: non quattro, quelle che servono
+
+Il numero era FISSO a quattro, e il sistema riempiva con le piu' vicine che
+trovava. Nel testo non si vede — il modello scarta cio' che non serve — ma una
+figura mostrata e' un'affermazione: «questa c'entra». Riempire significa
+farne di false.
+
+Il criterio c'era gia' e non l'avevo usato: il punteggio di RARITA' che la
+ricerca calcola per ogni figura. Misurato:
+
+| domanda | rarita' delle figure |
+|---|---|
+| «immagine del prodotto GLA3094» | **7,3** la prima, **0,0** tutte le altre |
+| «sassi rossi» | 8,0 per tutte — pari |
+
+Quando la domanda nomina qualcosa di preciso, una sola figura lo contiene:
+mostrarne quattro vuol dire dire tre cose false. Quando e' descrittiva sono
+tutte pari, e allora si tengono quelle vicine alla migliore, non piu' di
+quattro — **quando non si sa si mostra MENO, non di piu'**.
+
+| | prima | dopo |
+|---|---|---|
+| figure mostrate (12 domande) | 48 | **19** |
+| di cui pertinenti | al piu' 31% | **79%** |
+| figura giusta trovata | 11/12 | 11/12 |
+
+### Un meccanismo provato e tolto
+
+Avevo aggiunto `termini_rari()` per distinguere «non hai nominato niente di
+preciso» da «hai nominato qualcosa e non ce l'ho», e nel secondo caso tacere.
+Misurato subito: «sassi rossi» da' `['sass']` — nell'archivio, che e' in
+tedesco, la parola italiana «sassi» e' rara quanto un codice articolo.
+
+Distinguere un codice da una parola rara vorrebbe dire una regola sulla FORMA
+dei codici: funziona su un catalogo e si rompe sul successivo. Meccanismo
+tolto, e al suo posto un tetto sul caso incerto — meno codice e lo stesso
+risultato (79%).

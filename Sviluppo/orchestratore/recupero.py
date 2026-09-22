@@ -299,7 +299,20 @@ WITH consentite AS (
        AND stato = 'attiva'
 )
 SELECT i.id, i.documento, i.page, i.descrizione,
-       (i.embedding <=> %(qvec)s::vector) AS distanza
+       (i.embedding <=> %(qvec)s::vector) AS distanza,
+       -- Lo stesso punteggio di rarita' che ordina (vedi ORDER BY): serve
+       -- FUORI da qui per decidere QUANTE figure mostrare. Se qualcuna
+       -- contiene i termini rari della domanda — un codice articolo — quelle
+       -- sono le figure chieste, e le altre non vanno mostrate per riempire.
+       (SELECT COALESCE(SUM(ln(GREATEST(COALESCE(
+                   (SELECT pezzi_totali FROM lessemi_stato), 0), 2)::float
+                 / GREATEST(COALESCE(l.pezzi, 1), 1))), 0)
+          FROM unnest(tsvector_to_array(to_tsvector('italian', %(domanda)s))) AS t(parola)
+          LEFT JOIN lessemi l ON l.parola = t.parola
+         WHERE l.pezzi IS NULL OR l.pezzi <= GREATEST(COALESCE(
+                   (SELECT pezzi_totali FROM lessemi_stato), 0), 2) / """ + str(PEZZI_SU) + """
+           AND t.parola = ANY(tsvector_to_array(to_tsvector('italian', i.descrizione)))
+       ) AS rarita
   FROM immagini i
  WHERE i.source_id IN (SELECT id FROM consentite)
    -- La descrizione e' un criterio di ORDINAMENTO, non un biglietto

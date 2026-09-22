@@ -43,7 +43,22 @@ TEMPERATURA = float(os.environ.get("TEMPERATURA", "0.2"))
 # numeri e ha scritto «il natur [n], il creme [n], il rosa [n]».
 # Contro la degenerazione agisce `--repeat-penalty 1.1` sul server
 # (modelli/llama-swap.yaml): finestra corta, non tocca le citazioni.
-MAX_IMMAGINI = 4          # quante immagini citare in fondo alla risposta: oltre appesantisce
+
+# Quante figure si mostrano: NON un numero fisso. Il tetto esiste per non
+# allagare la chat, ma quante mostrarne lo decide la domanda (vedi _scelte).
+# Fino al 22/09/2026 erano sempre quattro, riempite con le piu' vicine che
+# c'erano: nel testo non si vede, perche' il modello scarta cio' che non
+# serve, ma una figura mostrata e' un'affermazione — «questa c'entra» — e
+# riempire significa dirne tre false.
+MAX_IMMAGINI = 12
+# Quanto puo' essere peggiore di quella buona una figura perche' valga la pena
+# mostrarla lo stesso, quando la domanda NON nomina niente di preciso: il 25
+# per cento di distanza in piu'. Serve solo per le domande descrittive, dove
+# non c'e' un criterio esatto e il numero giusto non lo sa nessuno.
+QUOTA_PEGGIO = float(os.environ.get("IMMAGINI_QUOTA_PEGGIO", "0.25"))
+# Quante se ne mostrano quando la domanda non permette di sceglierle con
+# esattezza: un campione, non un catalogo.
+CAMPIONE = int(os.environ.get("IMMAGINI_CAMPIONE", "4"))
 # Coda del prompt di sistema, per le stranezze del modello del momento: sta in
 # configurazione perche' cambia col modello, e cambiare modello non deve voler
 # dire toccare il codice. Oggi serve per Qwen3, che ragiona a voce alta: senza
@@ -359,6 +374,43 @@ def _blocco_immagini(url_per_pos) -> str:
     return "\n".join(righe)
 
 
+def _scelte(trovate):
+    """QUANTE figure mostrare, non solo quali.
+
+    Due casi, e la differenza la dice il punteggio di RARITA' che la ricerca
+    calcola gia' (`rarita`: la somma dei termini rari della domanda che
+    compaiono nella descrizione della figura).
+
+    1. Qualcuna contiene cio' che la domanda NOMINA. Allora sono quelle, e
+       basta. Il 22/09/2026 «immagine del prodotto GLA3094» dava una figura
+       con rarita' 7,3 e tutte le altre a zero: mostrarne quattro voleva dire
+       affermare che anche le altre tre c'entravano.
+
+    2. Nessuna, o tutte allo stesso modo — una domanda descrittiva come
+       «sassi rossi», dove il criterio esatto non c'e'. Allora si tengono
+       quelle vicine alla migliore (QUOTA_PEGGIO) e si smette quando il salto
+       e' netto: non e' una verita', e' un campione onesto che si ferma da
+       solo invece di riempire.
+
+    In entrambi i casi si passa da `_sparse`, che copre soggetti diversi
+    invece di dare quattro quasi-doppioni.
+    """
+    if not trovate:
+        return []
+    massimo = max(r.get("rarita") or 0 for r in trovate)
+    if massimo > 0:
+        pari = [r for r in trovate if (r.get("rarita") or 0) >= massimo]
+        return _sparse(pari, len(pari))
+    # Qui NON si sa quante servano, e il numero giusto non lo sa nessuno: si
+    # tengono quelle vicine alla migliore e non piu' di CAMPIONE. Il tetto
+    # serve perche' l'incertezza non diventi abbondanza — il 22/09/2026
+    # «immagine del prodotto GRA1041», che figura non ha, ne faceva uscire
+    # otto di altri prodotti: quando non si sa si mostra MENO, non di piu'.
+    vicine = [r for r in trovate
+              if (r.get("distanza") or 0) <= (trovate[0].get("distanza") or 0) * (1 + QUOTA_PEGGIO)]
+    return _sparse(vicine or trovate[:1], min(len(vicine) or 1, CAMPIONE))
+
+
 def _sparse(trovate, quante=None):
     """Le figure scelte COPRENDO cose diverse, non le quattro piu' vicine.
 
@@ -410,7 +462,7 @@ def _immagini_per_la_domanda(conn, qvec, gruppi, righe, domanda=""):
     trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI * 4,
                                            pagine=pagine, domanda=domanda)
     if trovate:
-        trovate = _sparse(trovate)
+        trovate = _scelte(trovate, esigente=bool(recupero.termini_rari(conn, domanda)))
         return [(r["id"], _didascalia(r.get("descrizione"))) for r in trovate]
     return [(i, "") for i in _immagini_del_turno(righe)]
 
