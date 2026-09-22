@@ -405,3 +405,45 @@ Corretto anche un guasto che nessun metro avrebbe visto: `totale` leggeva
 tabella vuota, la CTE non avrebbe dato nessuna riga e **la ricerca sarebbe
 tornata muta** — non imprecisa, muta. Ora e' uno scalare con un valore di
 ripiego.
+
+---
+
+## 22/09/2026 — l'agente sulla ricerca (D17): spento, con un numero dietro
+
+`orchestratore/ricerca_agente.py`: cerca, GUARDA cosa e' tornato, riprova con
+altre parole. Al massimo tre ricerche. Sceglie le PAROLE, mai i permessi: i
+gruppi restano nella WHERE.
+
+| | trova | costo |
+|---|---|---|
+| ricerca sola | 14/20 | **1,1 s a domanda** |
+| agente, 3 giri | 14/20 | 11,7 s a domanda |
+
+Dieci volte il costo, zero guadagno.
+
+### Due guasti trovati per strada, tutti e due miei
+
+**Il primo: l'agente misurava se stesso.** Prima versione senza «/no_think» e
+con 60 token di budget. Qwen3 e' un modello a ragionamento ibrido: se non gli
+si dice di non pensare, pensa, e il pensiero finisce in `reasoning_content` —
+`content` torna VUOTO. L'agente leggeva «niente da cercare» e si fermava al
+primo giro. Venti domande misurate: 14/20 identici alla ricerca sola, due
+secondi in piu' a domanda, e ZERO seconde ricerche. Il numero sembrava una
+risposta e non era nemmeno una misura.
+
+**Il secondo: senza ragionare non giudica.** Messo «/no_think» come si deve,
+rispondeva — e rispondeva BASTA anche davanti a risultati palesemente
+sbagliati. Non si accorgeva di aver fallito. Lasciandolo ragionare distingue:
+propone «ciottoli neri brillanti» dove aveva sbagliato e dice BASTA dove
+aveva trovato. Ma costa undici secondi, su OGNI domanda, anche su quelle che
+andavano bene al primo colpo.
+
+### Cosa NON dimostra
+
+La D17 nasceva per le domande a PIU' PASSI — «confronta i prezzi di EUROSAND e
+FLEURAMI» — e fra le 24 domande d'oro non ce n'e' nessuna cosi'. Qui e' stato
+provato sul ponte di vocabolario, che e' un altro problema. Per il suo scopo
+dichiarato resta **non misurato**, e il metro non esiste ancora.
+
+Il modulo resta, spento (`RICERCA_AGENTE=si` per accenderlo). Si accende
+quando i numeri lo diranno.
