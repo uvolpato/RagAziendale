@@ -735,20 +735,22 @@ class Lettore:
                 return lambda fatte, totali: progresso(round(offset * totali + fatte / 2), totali)
 
             testi = self._pagine_col_vlm(p, meta(0), dentro)
-            # Docling descrive le figure come sempre, e NON si tocca: le sue
-            # descrizioni finiscono dentro il TESTO dei pezzi (il suo chunker
-            # le include), e sono la prosa che fa funzionare le domande
-            # descrittive — 159 pezzi su EUROSAND. Toglierle avrebbe migliorato
-            # le immagini rompendo il testo, e il 17/20 delle domande vere e'
-            # stato misurato con quelle dentro.
+            # Le figure le descriviamo NOI, con davanti il titolo della pagina
+            # da cui vengono: Docling usa un prompt unico per tutto il
+            # documento e non puo' saperlo. Senza contesto un ritaglio di
+            # 221x149 px di sassi rossi diventa «possibly dried fruit or
+            # processed food» (misurato il 22/09/2026).
             #
-            # Noi descriviamo IN PIU', solo per la tabella delle immagini,
-            # dicendo al modello da che pagina viene il ritaglio. Costa un
-            # secondo a figura (~9 minuti a catalogo) e si paga una volta per
-            # versione del documento.
-            altri, immagini = self._con_docling(p, meta(0.5), solo_gpu, dentro)
-            immagini = _descrivi_col_titolo(immagini, _titoli_di_pagina(dentro))
-            return testi + altri, immagini
+            # E le nostre descrizioni entrano anche nel TESTO, prendendo il
+            # posto di quelle di Docling: il suo chunker le includeva nei pezzi
+            # — 159 su EUROSAND — quindi l'indice conteneva quelle sbagliate.
+            # Lasciarle avrebbe voluto dire cercare fra descrizioni che
+            # sappiamo false. Nessun doppione, perche' Docling qui non ne
+            # produce piu' (descrivi=False), e una chiamata invece di due.
+            titoli = _titoli_di_pagina(dentro)
+            altri, immagini = self._con_docling(p, meta(0.5), solo_gpu, dentro, descrivi=False)
+            immagini = _descrivi_col_titolo(immagini, titoli)
+            return testi + altri + _pezzi_dalle_figure(immagini, titoli), immagini
         return self._con_docling(p, progresso, solo_gpu, dentro)
 
     def _pagine_col_vlm(self, p, progresso=None, dentro=None):
@@ -1565,6 +1567,28 @@ def _pezzi_da_markdown(md, pagina):
     return fuori
 
 
+def _pezzi_dalle_figure(immagini, titoli):
+    """Le descrizioni delle figure come pezzi di testo, una per figura.
+
+    Finora ce le metteva il chunker di Docling; da quando le scriviamo noi
+    (con il titolo della pagina davanti) le mettiamo noi, altrimenti la prosa
+    che descrive le figure sparirebbe dall'indice del testo — ed e' quella che
+    fa funzionare le domande descrittive: «ciottoli neri con effetto specchio»
+    non combacia con nessun codice articolo.
+
+    Il titolo davanti serve come a ogni altro pezzo: «Immagine:» da sola non
+    dice di che prodotto si parla.
+    """
+    fuori = []
+    for _percorso, pagina, descr in immagini:
+        if not descr:
+            continue
+        titolo = titoli.get(pagina or 0, "")
+        testo = " ".join(descr.split())
+        fuori.append((f"{titolo} | Immagine: {testo}" if titolo else f"Immagine: {testo}", pagina))
+    return fuori
+
+
 def _titoli_di_pagina(dentro):
     """{pagina: titolo} dal Markdown che il VLM ha gia' prodotto per ogni
     pagina. Non costa niente: i file sono gia' sul disco."""
@@ -1600,7 +1624,6 @@ def _descrivi_col_titolo(immagini, titoli):
     figura resta senza descrizione e il documento entra lo stesso.
     """
     import base64
-    import io
     import json
     import urllib.request
     if VLM_DESCRIZIONI != "api" or not VLM_MODELLO or not VLM_URL:
@@ -1610,15 +1633,19 @@ def _descrivi_col_titolo(immagini, titoli):
     if chiave:
         testa["Authorization"] = f"Bearer {chiave}"
     fuori, falliti = [], 0
-    for img, pagina, vecchia in immagini:
+    for percorso, pagina, vecchia in immagini:
+        # ATTENZIONE: qui le figure sono gia' SU DISCO. _scrivi_immagini le ha
+        # salvate blocco per blocco e ha sostituito l'immagine con il suo
+        # percorso — tenerle in memoria fino a fine documento costava 3,3 GB su
+        # un catalogo da 107 pagine. Trattarle come immagini PIL fallirebbe
+        # dentro la `except` qui sotto, e sembrerebbe che non risponda il
+        # modello (quasi successo il 22/09/2026).
         titolo = titoli.get(pagina or 0)
         if not titolo:
-            fuori.append((img, pagina, vecchia))
+            fuori.append((percorso, pagina, vecchia))
             continue
         try:
-            buf = io.BytesIO()
-            _riduci(img).save(buf, "PNG")
-            b64 = base64.b64encode(buf.getvalue()).decode()
+            b64 = base64.b64encode((RADICE / percorso).read_bytes()).decode()
             corpo = json.dumps({
                 "model": VLM_MODELLO, "max_tokens": 160, "temperature": 0,
                 "messages": [{"role": "user", "content": [
@@ -1629,10 +1656,12 @@ def _descrivi_col_titolo(immagini, titoli):
                                          data=corpo, headers=testa, method="POST")
             with urllib.request.urlopen(req, timeout=SECONDI_PER_FIGURA) as r:
                 descr = json.load(r)["choices"][0]["message"]["content"].strip()
-            fuori.append((img, pagina, descr or vecchia))
-        except Exception:
+            fuori.append((percorso, pagina, descr or vecchia))
+        except Exception as e:
             falliti += 1
-            fuori.append((img, pagina, vecchia))
+            if falliti == 1:      # il primo con il motivo, gli altri solo contati
+                print(f"    figura non descritta ({type(e).__name__}: {e})", flush=True)
+            fuori.append((percorso, pagina, vecchia))
     if falliti:
         print(f"    {falliti} figure senza descrizione (il modello non ha risposto)", flush=True)
     return fuori

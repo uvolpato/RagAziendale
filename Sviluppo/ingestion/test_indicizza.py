@@ -399,6 +399,29 @@ def test_senza_vlm_le_figure_restano_come_sono():
         indicizza.VLM_MODELLO = vero
 
 
+
+def test_le_descrizioni_delle_figure_entrano_nel_testo_col_prodotto():
+    """La prosa che descrive le figure e' quella che fa funzionare le domande
+    descrittive — «ciottoli neri con effetto specchio» non combacia con nessun
+    codice articolo. Finora ce la metteva il chunker di Docling; da quando le
+    descrizioni le scriviamo noi, dobbiamo metterla noi, altrimenti sparisce
+    dall'indice del testo.
+
+    Con il titolo davanti: «Immagine: pietre rosse» da sola non dice di che
+    prodotto si parla."""
+    immagini = [("f/7_67.png", 7, "red decorative stones, 9-13 mm"),
+                ("f/7_99.png", 7, ""),                     # senza descrizione: si salta
+                ("f/9_10.png", 9, "una scatola di cartone")]
+    titoli = {7: "# DEKOSTEINE pietre decorative 9 - 13 mm"}
+    pezzi = indicizza._pezzi_dalle_figure(immagini, titoli)
+    assert len(pezzi) == 2, pezzi
+    testo, pagina = pezzi[0]
+    assert pagina == 7
+    assert "DEKOSTEINE" in testo and "red decorative stones" in testo, testo
+    # Una pagina senza titolo non inventa: la descrizione entra da sola.
+    assert pezzi[1][0].startswith("Immagine:") and "cartone" in pezzi[1][0]
+
+
 if __name__ == "__main__":
     import tempfile
     esiti = []
