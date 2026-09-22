@@ -802,7 +802,7 @@ class Lettore:
                 print("    VLM scaricato: la VRAM va a Docling", flush=True)
             _, immagini, markdown = self._con_docling(p, meta(0.5), solo_gpu, dentro,
                                                       descrivi=False)
-            immagini = _descrivi_col_titolo(immagini, titoli)
+            immagini = _descrivi_col_titolo(immagini, titoli, dentro)
             # Le descrizioni vanno NEI SEGNAPOSTO del Markdown di Docling, che
             # li mette dove stanno le figure: cosi' ogni descrizione resta
             # accanto al suo codice articolo invece di galleggiare nella
@@ -810,8 +810,11 @@ class Lettore:
             # si salva su disco: quello che leggi e' quello che viene cercato.
             # Senza il testo di Docling restano le sole descrizioni, staccate:
             # e' la forma di prima, e serve a misurare se quel testo aiuti.
-            figure = (_pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli)
-                      if TESTO_DOCLING else _pezzi_dalle_figure(immagini, titoli))
+            if TESTO_DOCLING:
+                figure, immagini = _pezzi_dal_markdown_figure(dentro, markdown,
+                                                              immagini, titoli)
+            else:
+                figure = _pezzi_dalle_figure(immagini, titoli)
             return testi + figure, immagini
         return self._con_docling(p, progresso, solo_gpu, dentro)
 
@@ -1674,6 +1677,34 @@ def _pezzi_da_markdown(md, pagina):
 
 
 SEGNAPOSTO = "<!-- image -->"
+# Quanto testo attorno al segnaposto si tiene, per lato.
+INTORNO = 120
+
+
+def attorno_ai_segnaposti(markdown: str) -> list:
+    """Il testo che CIRCONDA ogni segnaposto, uno per segnaposto, in ordine.
+
+    Serve a dare un'identita' alla figura. Il modello visivo descrive un
+    RITAGLIO, e nel ritaglio il codice articolo c'e' solo se il layout della
+    pagina ce l'ha messo dentro: misurato il 22/09/2026, le descrizioni di
+    EUROSAND contengono FSA1043 e FSA1041 ma non FSA1001, DST2001, RAD1001.
+    Chiedendo la figura di FSA1001 uscivano quattro prodotti diversi della
+    stessa pagina — la ricerca non sbagliava a cercare, mancava proprio il
+    dato.
+
+    Nel Markdown della pagina, invece, il codice sta sempre: e' la riga
+    accanto al segnaposto. Non e' un'associazione certa — l'ordine di lettura
+    puo' mettere la figura una riga prima o dopo il suo articolo — e per
+    questo si tiene il testo di ENTRAMBI i lati e si usa per CERCARE, non per
+    etichettare. Un indizio in piu', non una verita'.
+    """
+    pezzi = (markdown or "").split(SEGNAPOSTO)
+    fuori = []
+    for i in range(len(pezzi) - 1):
+        prima = " ".join(pezzi[i].split())[-INTORNO:]
+        dopo = " ".join(pezzi[i + 1].split())[:INTORNO]
+        fuori.append(" ".join(f"{prima} {dopo}".split()))
+    return fuori
 
 
 def nei_segnaposti(markdown: str, descrizioni: list) -> str:
@@ -1705,21 +1736,35 @@ def _pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli):
     Un artefatto solo per pagina, leggibile da una persona e identico a quello
     che finisce nell'indice: quando una risposta sara' sbagliata si apre quel
     file invece di dedurre.
+
+    Torna anche le immagini con la descrizione ARRICCHITA del testo che
+    circonda il loro segnaposto — il codice articolo, quando nel ritaglio non
+    c'e' (vedi attorno_ai_segnaposti).
     """
     per_pagina = {}
-    for _percorso, pagina, descr in immagini:
-        per_pagina.setdefault(pagina, []).append(descr or "")
+    for i, (_percorso, pagina, descr) in enumerate(immagini):
+        per_pagina.setdefault(pagina, []).append((i, descr or ""))
+    arricchite = list(immagini)
     fuori = []
     for pagina, md in sorted(markdown.items()):
-        completo = nei_segnaposti(md, per_pagina.get(pagina, []))
+        qui = per_pagina.get(pagina, [])
+        completo = nei_segnaposti(md, [d for _, d in qui])
         if not completo:
             continue
+        # Il testo attorno al segnaposto si mette DAVANTI alla descrizione:
+        # e' quello che identifica la figura, e quel che viene dal modello
+        # visivo resta a descriverla. Va nell'indice delle IMMAGINI, non nel
+        # Markdown, dove sarebbe la stessa riga scritta due volte.
+        for (i, descr), intorno in zip(qui, attorno_ai_segnaposti(md)):
+            percorso, pag, _ = immagini[i]
+            unita = " — ".join(x for x in (intorno, descr) if x)
+            arricchite[i] = (percorso, pag, unita)
         titolo = titoli.get(pagina, "")
         if titolo:
             completo = titolo + '\n\n' + completo
         _salva_markdown(dentro, "figure", pagina, completo)
         fuori += _pezzi_da_markdown(completo, pagina)
-    return fuori
+    return fuori, arricchite
 
 
 def _salva_markdown(dentro, quale, pagina, testo):
@@ -1777,7 +1822,45 @@ def _titoli_di_pagina(dentro):
     return titoli
 
 
-def _descrivi_col_titolo(immagini, titoli):
+IMPRONTA_FIGURA = hashlib.sha256(ISTRUZIONI_FIGURA.encode()).hexdigest()[:8]
+
+
+def _descrizioni_salvate(dentro):
+    """{nome del file immagine: descrizione} dal giro precedente.
+
+    Le descrizioni sono il COSTO di un'indicizzazione: 891 chiamate al modello
+    visivo su EUROSAND, mezz'ora. Il Markdown delle pagine era gia' in cache
+    per la stessa ragione; le descrizioni no, e il 22/09/2026 le ho ripagate
+    TRE volte per tre modifiche che non le toccavano — l'ultima solo per
+    cambiare il testo che si mette davanti.
+
+    La chiave e' il nome del file (`0007_12.png`), che dipende da pagina e
+    ordine: finche' il PDF e' lo stesso, la stessa figura ha lo stesso nome.
+    L'impronta nel nome del file e' quella del PROMPT: cambiarlo invalida
+    tutto, come per il Markdown.
+    """
+    if not dentro:
+        return {}
+    f = RADICE / dentro / f"descrizioni-{IMPRONTA_FIGURA}.json"
+    try:
+        return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+    except (OSError, ValueError) as e:
+        print(f"    descrizioni salvate non rilette ({type(e).__name__}: {e})", flush=True)
+        return {}
+
+
+def _salva_descrizioni(dentro, mappa):
+    if not dentro or not mappa:
+        return
+    try:
+        f = RADICE / dentro / f"descrizioni-{IMPRONTA_FIGURA}.json"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(mappa, ensure_ascii=False), encoding="utf-8")
+    except OSError as e:
+        print(f"    descrizioni non salvate ({type(e).__name__}: {e})", flush=True)
+
+
+def _descrivi_col_titolo(immagini, titoli, dentro=None):
     """Le figure descritte da NOI, dicendo al modello da che pagina vengono.
 
     Un ritaglio di 221x149 px senza contesto inganna: il 22/09/2026 un primo
@@ -1801,8 +1884,14 @@ def _descrivi_col_titolo(immagini, titoli):
     testa = {"Content-Type": "application/json"}
     if chiave:
         testa["Authorization"] = f"Bearer {chiave}"
-    fuori, falliti = [], 0
+    salvate = _descrizioni_salvate(dentro)
+    fuori, falliti, riusate = [], 0, 0
     for percorso, pagina, vecchia in immagini:
+        nome = pathlib.PurePath(percorso).name
+        if nome in salvate:
+            riusate += 1
+            fuori.append((percorso, pagina, salvate[nome]))
+            continue
         # ATTENZIONE: qui le figure sono gia' SU DISCO. _scrivi_immagini le ha
         # salvate blocco per blocco e ha sostituito l'immagine con il suo
         # percorso — tenerle in memoria fino a fine documento costava 3,3 GB su
@@ -1825,14 +1914,18 @@ def _descrivi_col_titolo(immagini, titoli):
                                          data=corpo, headers=testa, method="POST")
             with urllib.request.urlopen(req, timeout=SECONDI_PER_FIGURA) as r:
                 descr = json.load(r)["choices"][0]["message"]["content"].strip()
+            salvate[nome] = descr or vecchia
             fuori.append((percorso, pagina, descr or vecchia))
         except Exception as e:
             falliti += 1
             if falliti == 1:      # il primo con il motivo, gli altri solo contati
                 print(f"    figura non descritta ({type(e).__name__}: {e})", flush=True)
             fuori.append((percorso, pagina, vecchia))
+    if riusate:
+        print(f"    {riusate} descrizioni riprese da disco (niente VLM)", flush=True)
     if falliti:
         print(f"    {falliti} figure senza descrizione (il modello non ha risposto)", flush=True)
+    _salva_descrizioni(dentro, salvate)
     return fuori
 
 

@@ -25,9 +25,20 @@ SYSTEM = (
     # codice solo, avendo davanti otto brani da sette pagine.
     "- Riporta TUTTO cio' che nel CONTESTO risponde alla domanda, non il primo "
     "che trovi. Se rispondono piu' voci, piu' valori o piu' varianti, elencale "
-    "tutte, una per riga, ognuna con la sua citazione. Se la risposta e' una "
-    "sola, una frase basta: la regola e' non lasciare fuori niente, non "
-    "allungare.\n"
+    "tutte, ognuna con la sua citazione. Se la risposta e' una sola, una frase "
+    "basta: la regola e' non lasciare fuori niente, non allungare.\n"
+    # Prima diceva «una per riga», e il modello l'ha intesa come «ricopia la
+    # riga della tabella»: a «ho bisogno di sassi rossi» rispondeva
+    # «FSA1001 | rot | red | [1]», quattro volte, senza una parola in italiano
+    # (22/09/2026). Completo e illeggibile: il difetto che la regola di
+    # completezza ha introdotto mentre ne correggeva un altro.
+    "- Scrivi in italiano, con parole tue: NON ricopiare le righe delle tabelle "
+    "cosi' come stanno. Di ogni voce di' che cos'e', con il suo codice e i dati "
+    "che servono a riconoscerla.\n"
+    # Le descrizioni delle figure sono in inglese e cominciano con «Immagine:»
+    # o «nessun testo»: incollate nella risposta sono rumore.
+    "- Non ricopiare mai il testo della descrizione di una figura: serve a te "
+    "per capire cosa mostra, non e' una frase da mostrare all'utente.\n"
     # ATTENZIONE alla forma di questa riga: fino al 22/09/2026 diceva «riporta
     # la citazione [n]», e il modello copiava il SEGNAPOSTO alla lettera — una
     # risposta conteneva «il natur [n], il creme [n], il rosa [n]» diciannove

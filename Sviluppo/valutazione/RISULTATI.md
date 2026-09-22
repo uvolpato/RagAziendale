@@ -503,3 +503,83 @@ E una previsione sbagliata di stima: avevo detto «venti minuti» per venti
 domande moltiplicando tutto per 2,6 token/s. Ce ne sono voluti sette: le
 risposte sono corte e l'elaborazione del prompt e' molto piu' veloce della
 generazione.
+
+---
+
+## 22/09/2026 sera — le figure: un metro che si mentiva
+
+Chat vera: «ho bisogno di sassi rossi» → quattro codici giusti. «Puoi darmi le
+immagini di questi prodotti?» → **quattro prodotti sbagliati** (crema, oro,
+rosa neon, arancio neon).
+
+La riformulazione aveva funzionato («immagini dei prodotti FSA1001, DST2001,
+DST1001 e RAD1001»). A mancare era il dato:
+
+| | occorrenze nelle descrizioni delle figure |
+|---|---|
+| FSA1001 | **0** |
+| DST2001 | **0** |
+| RAD1001 | **0** |
+| FSA1043, FSA1041 | presenti |
+
+Il modello visivo descrive un RITAGLIO: il codice ci finisce dentro solo se il
+layout della pagina ce l'ha messo. Per alcune figure si', per altre no — a
+caso. Chiedendo una figura che non esiste come descritta, la ricerca non puo'
+dire «non ce l'ho»: restituisce le quattro piu' vicine, che sono altri
+prodotti della stessa pagina. **Non ha sbagliato a cercare: ha sbagliato a non
+tacere.**
+
+### Il primo metro misurava i casi che funzionano
+
+`figure.py`, prima versione: pescava i codici dalle **descrizioni** delle
+figure. Risultato **12/12**, mentre in chat il guasto era sotto gli occhi.
+
+Per costruzione non poteva pescare un codice che nelle descrizioni non c'era —
+cioe' esattamente quelli che sbagliavano. Riscritto per pescare dal **TESTO**,
+sulle pagine che hanno figure. Stesso indice, stesso codice:
+
+| | primo metro | metro onesto |
+|---|---|---|
+| `DST2001` | 12/12 (100%) | **6/12 (50%)** |
+| «immagine del prodotto X» | 12/12 (100%) | **5/12 (42%)** |
+
+E' la terza volta oggi che un metro misura il caso facile: le domande lunghe
+invece di quelle corte, i codici presenti invece di tutti. Il segnale e'
+sempre lo stesso — **un metro che passa al primo colpo va guardato con
+sospetto, non festeggiato.**
+
+### La correzione
+
+`attorno_ai_segnaposti()`: il testo che circonda ogni `<!-- image -->` nel
+Markdown della pagina — dove il codice c'e' SEMPRE — si mette davanti alla
+descrizione, nell'indice delle immagini.
+
+Due scelte deliberate, perche' l'associazione posizionale non e' certa (la
+figura puo' stare una riga prima o dopo il suo articolo):
+
+- si tiene il testo di **entrambi i lati**;
+- serve a **cercare**, non a etichettare: e' un indizio pesato, non un
+  cartellino. Sbagliare lato costa una posizione in classifica, non
+  un'etichetta falsa.
+
+### E le risposte erano illeggibili
+
+`FSA1001 | rot | red | [1]`, quattro volte, senza una parola in italiano. La
+regola di completezza aggiunta stamattina diceva «elencale tutte, una per
+riga» e il modello l'ha intesa come «ricopia la riga della tabella». Nella
+seconda risposta ha incollato anche le descrizioni inglesi delle figure.
+
+Due regole in piu': scrivere in italiano con parole proprie invece di
+ricopiare le tabelle, e non ricopiare mai il testo di una descrizione.
+**Rimisurato: 73%, invariato** — la leggibilita' non e' costata completezza.
+
+### Le descrizioni ora si tengono
+
+Il Markdown delle pagine era in cache dal 21/09 con la motivazione scritta nel
+codice: «trenta minuti di VLM per catalogo, e se cambia il modo di spezzare i
+pezzi si riscrive l'indice senza rileggere». Le descrizioni delle figure no —
+891 chiamate su EUROSAND — e il 22/09 le ho ripagate TRE volte per tre
+modifiche che non le toccavano.
+
+`descrizioni-<impronta>.json`, chiave il nome del file immagine, impronta
+quella del prompt: stesso schema del Markdown.

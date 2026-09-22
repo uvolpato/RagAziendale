@@ -400,6 +400,35 @@ def test_senza_vlm_le_figure_restano_come_sono():
 
 
 
+def test_la_figura_prende_il_codice_dal_testo_attorno():
+    """Il modello visivo descrive un RITAGLIO, e il codice articolo ci finisce
+    dentro solo se il layout della pagina ce l'ha messo. Il 22/09/2026 le
+    descrizioni di EUROSAND contenevano FSA1043 e FSA1041 ma NON FSA1001: chi
+    chiedeva la figura di FSA1001 riceveva quattro prodotti diversi della
+    stessa pagina, e la ricerca non poteva fare di meglio perche' il dato non
+    c'era.
+
+    Nel Markdown il codice c'e' sempre, accanto al segnaposto."""
+    md = """| EK-9915 | nero |
+<!-- image -->
+
+| EK-9916 | rosso |
+<!-- image -->
+"""
+    intorni = indicizza.attorno_ai_segnaposti(md)
+    assert len(intorni) == 2, intorni
+    assert "EK-9915" in intorni[0]
+    assert "EK-9916" in intorni[1]
+    # Si tengono ENTRAMBI i lati: l'ordine di lettura puo' mettere la figura
+    # una riga prima o dopo il suo articolo, e sbagliare lato vorrebbe dire
+    # attaccarla all'articolo sbagliato.
+    assert "EK-9916" in intorni[0], "manca il lato dopo"
+
+    # Nessun segnaposto: nessun intorno, e non deve esplodere.
+    assert indicizza.attorno_ai_segnaposti("solo testo") == []
+    assert indicizza.attorno_ai_segnaposti("") == []
+
+
 def test_le_descrizioni_finiscono_dove_stava_la_figura():
     """Il punto di tutto: la descrizione deve restare ACCANTO al suo codice.
 
