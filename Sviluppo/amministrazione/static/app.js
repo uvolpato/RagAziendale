@@ -480,51 +480,94 @@
                     errore: ['err', 'Non leggibile', 'b-stato-errore'], escluso: ['neut', 'Escluso', 'b-stato-neutro'] };
   function peso(b) { return b < 1024 ? b + ' B' : b < 1048576 ? Math.round(b / 1024) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
   function documentiFonte(f, p) {
+    var improntaCorrente = '';
     p.innerHTML = '<div class="sk-row"><span class="sk" style="width:60%"></span></div>';
-    api('GET', '/fonti/' + encodeURIComponent(f.id) + '/documenti').then(function (d) {
-      var l = d.documenti;
-      if (d.provenienza !== 'cartella') { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Questa fonte non è una cartella: i suoi contenuti arrivano da ' + esc(PROVENIENZA[d.provenienza] || d.provenienza) + ', non file per file.</span></div>'; return; }
-      if (!l.length) { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Nessun documento ancora. La cartella si legge ogni pochi minuti: se resta vuota, controlla il percorso e le anomalie.</span></div>'; return; }
-      var n = { indicizzato: 0, errore: 0, vuoto: 0, escluso: 0 }, doppi = 0, senza = 0, pezzi = 0, inLettura = 0;
-      /* Un file in lettura NON si conta fra i non leggibili: prima di leggerlo
-         l'indicizzazione lo segna cosi' apposta (se il servizio muore a meta',
-         al riavvio risulta illeggibile invece di ripartire in ciclo), ma
-         finche' sta leggendo e' «in elaborazione», non un errore. */
-      l.forEach(function (x) { if (x.in_lettura) inLettura++; else n[x.stato] = (n[x.stato] || 0) + 1; if (x.doppione) doppi++; if (x.senza_vettori) senza++; pezzi += x.pezzi; });
-      p.innerHTML =
-        '<p style="font-size:13.5px;margin-top:0">' + l.length + (l.length === 1 ? ' file' : ' file') + ', ' + pezzi + ' pezzi di testo. ' +
-          (n.indicizzato ? badge(['ok', n.indicizzato + ' indicizzati', 'b-stato-ok']) + ' ' : '') +
-          (n.errore ? badge(['err', n.errore + ' non leggibili', 'b-stato-errore']) + ' ' : '') +
-          (n.vuoto ? badge(['neut', n.vuoto + ' senza testo', 'b-stato-neutro']) + ' ' : '') +
-          (n.escluso ? badge(['neut', n.escluso + ' esclusi', 'b-stato-neutro']) + ' ' : '') +
-          (doppi ? badge(['warn', doppi + ' doppioni', 'b-stato-attenzione']) + ' ' : '') +
-          (senza ? badge(['warn', senza + ' senza vettori', 'b-stato-attenzione']) + ' ' : '') +
-          (inLettura ? badge(['info', 'In elaborazione…', 'b-stato-info']) : '') + '</p>' +
-        '<p class="ro-note">' + ic('info') + 'Non compaiono, di proposito, le sottocartelle <span class="mono">_bozze</span> e <span class="mono">_archivio</span>. I fogli di calcolo con i prezzi restano fuori («Escluso», con il motivo): i prezzi vengono dal gestionale.' +
-          (senza ? ' «Senza vettori»: il servizio dei modelli non rispondeva; si completano da soli al giro dopo, intanto la ricerca testuale li trova.' : '') + '</p>' +
-        '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">File</th><th scope="col">Stato</th><th scope="col" class="num-col">Pezzi</th><th scope="col">Elaborato</th>' +
-        (can('fonti') ? '<th scope="col"></th>' : '') + '</tr></thead><tbody>' +
-        l.map(function (x) {
-          var el = '';
-          if (x.in_lettura) {
-            el = badge(['info', 'In elaborazione', 'b-stato-info']);
+    function carica() {
+      return api('GET', '/fonti/' + encodeURIComponent(f.id) + '/documenti').then(function (d) {
+        var l = d.documenti;
+        if (d.provenienza !== 'cartella') { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Questa fonte non è una cartella: i suoi contenuti arrivano da ' + esc(PROVENIENZA[d.provenienza] || d.provenienza) + ', non file per file.</span></div>'; return false; }
+        if (!l.length) { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Nessun documento ancora. La cartella si legge ogni pochi minuti: se resta vuota, controlla il percorso e le anomalie.</span></div>'; return false; }
+        var n = { indicizzato: 0, errore: 0, vuoto: 0, escluso: 0 }, doppi = 0, senza = 0, pezzi = 0, inLettura = 0;
+        l.forEach(function (x) { if (x.in_lettura) inLettura++; else n[x.stato] = (n[x.stato] || 0) + 1; if (x.doppione) doppi++; if (x.senza_vettori || x.senza_vettori_immagini) senza++; pezzi += x.pezzi; });
+        /* L'IMPRONTA decide se ridisegnare: la LISTA (quali file, quali stati)
+           cambia di rado; l'avanzamento delle barre (pagine_fatte, figure_fatte)
+           cambia ogni pochi secondi mentre un file è in lettura. Se ridisegniamo
+           tutto a ogni poll, il DOM si ricostruisce e si perdono scroll e focus
+           (difetto visto il 24/09/2026). Ridisegnamo SOLO quando la struttura
+           cambia; le barre si aggiornano in-place nelle celle già esistenti. */
+        var impronta = JSON.stringify(l.map(function (x) {
+          return [x.documento, x.stato, x.errore, x.doppione, x.senza_vettori, x.senza_vettori_immagini, x.pezzi, x.in_lettura ? 1 : 0,
+                  x.pagine_totali ? 1 : 0, x.figure_totali ? 1 : 0].join('|');
+        }));
+        if (impronta !== improntaCorrente) {
+          improntaCorrente = impronta;
+          p.innerHTML =
+            '<p style="font-size:13.5px;margin-top:0">' + l.length + ' file, ' + pezzi + ' pezzi di testo. ' +
+              (n.indicizzato ? badge(['ok', n.indicizzato + ' indicizzati', 'b-stato-ok']) + ' ' : '') +
+              (n.errore ? badge(['err', n.errore + ' non leggibili', 'b-stato-errore']) + ' ' : '') +
+              (n.vuoto ? badge(['neut', n.vuoto + ' senza testo', 'b-stato-neutro']) + ' ' : '') +
+              (n.escluso ? badge(['neut', n.escluso + ' esclusi', 'b-stato-neutro']) + ' ' : '') +
+              (doppi ? badge(['warn', doppi + ' doppioni', 'b-stato-attenzione']) + ' ' : '') +
+              (senza ? badge(['warn', senza + ' senza vettori', 'b-stato-attenzione']) + ' ' : '') +
+              (inLettura ? badge(['info', 'In elaborazione…', 'b-stato-info']) : '') + '</p>' +
+            '<p class="ro-note">' + ic('info') + 'Non compaiono, di proposito, le sottocartelle <span class="mono">_bozze</span> e <span class="mono">_archivio</span>. I fogli di calcolo con i prezzi restano fuori («Escluso», con il motivo): i prezzi vengono dal gestionale.' +
+              (senza ? ' «Senza vettori»: il servizio dei modelli non rispondeva; si completano da soli al giro dopo, intanto la ricerca testuale li trova.' : '') + '</p>' +
+            '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">File</th><th scope="col">Stato</th><th scope="col" class="num-col">Pezzi</th><th scope="col">Elaborato</th>' +
+            (can('fonti') ? '<th scope="col"></th>' : '') + '</tr></thead><tbody>' +
+            l.map(function (x, riga) {
+              var el = '';
+              if (x.in_lettura) {
+                el = badge(['info', 'In elaborazione', 'b-stato-info']);
+                if (x.pagine_totali) {
+                  var pc = Math.round(100 * x.pagine_fatte / x.pagine_totali);
+                  el += '<div class="bar-avanz" data-riga="' + riga + '" data-tipo="pagine" style="margin-top:5px;width:120px;height:6px;background:var(--campo);border-radius:3px;overflow:hidden"><div style="width:' + pc + '%;height:100%;background:var(--marchio)"></div></div>' +
+                        '<span class="sub sub-pagine" data-riga="' + riga + '" style="margin-top:2px">' + pc + '% · pagina ' + x.pagine_fatte + ' di ' + x.pagine_totali + '</span>';
+                  if (x.figure_totali) {
+                    var fc = Math.round(100 * x.figure_fatte / x.figure_totali);
+                    el += '<div class="bar-avanz" data-riga="' + riga + '" data-tipo="figure" style="margin-top:5px;width:120px;height:6px;background:var(--campo);border-radius:3px;overflow:hidden"><div style="width:' + fc + '%;height:100%;background:var(--marchio)"></div></div>' +
+                          '<span class="sub sub-figure" data-riga="' + riga + '" style="margin-top:2px">' + fc + '% · ' + x.figure_fatte + ' di ' + x.figure_totali + ' figure</span>';
+                  }
+                }
+              }
+              return '<tr><td class="mono nome-file">' + esc(x.documento) + '<span class="sub">' + peso(x.dimensione) + ' · file del ' + esc(dataOra(x.modificato_il)) + '</span>' +
+                (x.errore && !x.in_lettura ? '<span class="sub"' + (x.stato === 'errore' ? ' style="color:var(--stato-critico)"' : '') + '>' + esc(x.errore) + '</span>' : '') + '</td>' +
+                '<td>' + (el || badge(STATO_DOC[x.stato]) + (x.doppione ? ' ' + badge(['warn', 'Doppione', 'b-stato-attenzione']) : '') +
+                  ((x.senza_vettori || x.senza_vettori_immagini) ? ' ' + badge(['warn', 'Senza vettori', 'b-stato-attenzione']) : '')) + '</td>' +
+                '<td class="num-col">' + x.pezzi + '</td><td>' + esc(dataOra(x.indicizzato_il)) + '</td>' +
+                (can('fonti') ? '<td><button class="btn btn-secondary btn-sm btn-rielabora" data-doc="' + esc(x.documento) + '"' +
+                  (x.in_lettura ? ' disabled' : '') + '>Rielabora</button></td>' : '') + '</tr>';
+            }).join('') + '</tbody></table></div>';
+          $$('#f-panel .btn-rielabora').forEach(function (b) { b.onclick = function () { rielaboraDocumento(f, this.dataset.doc, p); }; });
+        } else {
+          /* Stessa lista: aggiorno SOLO le barre in-place, senza toccare il resto.
+             Cercando le celle per data-riga (indice della riga), i nuovi valori
+             entrano dove già stanno, e scroll/focus restano intatti. */
+          l.forEach(function (x, riga) {
+            if (!x.in_lettura) return;
             if (x.pagine_totali) {
               var pc = Math.round(100 * x.pagine_fatte / x.pagine_totali);
-              el += '<div style="margin-top:5px;width:120px;height:6px;background:var(--campo);border-radius:3px;overflow:hidden"><div style="width:' + pc + '%;height:100%;background:var(--marchio)"></div></div>' +
-                    '<span class="sub" style="margin-top:2px">' + pc + '% · pagina ' + x.pagine_fatte + ' di ' + x.pagine_totali + '</span>';
+              $$('.bar-avanz[data-riga="' + riga + '"][data-tipo="pagine"]', p).forEach(function (bar) {
+                bar.firstChild.style.width = pc + '%';
+              });
+              $$('.sub-pagine[data-riga="' + riga + '"]', p).forEach(function (s) {
+                s.textContent = pc + '% · pagina ' + x.pagine_fatte + ' di ' + x.pagine_totali;
+              });
             }
-          }
-          return '<tr><td class="mono nome-file">' + esc(x.documento) + '<span class="sub">' + peso(x.dimensione) + ' · file del ' + esc(dataOra(x.modificato_il)) + '</span>' +
-            (x.errore && !x.in_lettura ? '<span class="sub"' + (x.stato === 'errore' ? ' style="color:var(--stato-critico)"' : '') + '>' + esc(x.errore) + '</span>' : '') + '</td>' +
-            '<td>' + (el || badge(STATO_DOC[x.stato]) + (x.doppione ? ' ' + badge(['warn', 'Doppione', 'b-stato-attenzione']) : '') +
-              (x.senza_vettori ? ' ' + badge(['warn', 'Senza vettori', 'b-stato-attenzione']) : '')) + '</td>' +
-            '<td class="num-col">' + x.pezzi + '</td><td>' + esc(dataOra(x.indicizzato_il)) + '</td>' +
-            (can('fonti') ? '<td><button class="btn btn-secondary btn-sm btn-rielabora" data-doc="' + esc(x.documento) + '"' +
-              (x.in_lettura ? ' disabled' : '') + '>Rielabora</button></td>' : '') + '</tr>';
-        }).join('') + '</tbody></table></div>';
-      $$('#f-panel .btn-rielabora').forEach(function (b) { b.onclick = function () { rielaboraDocumento(f, this.dataset.doc, p); }; });
-      if (inLettura) setTimeout(function () { if (document.body.contains(p)) documentiFonte(f, p); }, 4000);
-    }).catch(function (e) { p.innerHTML = '<div class="notice notice-crit">' + ic('err') + '<span>' + esc(e.message) + '</span></div>'; });
+            if (x.figure_totali) {
+              var fc = Math.round(100 * x.figure_fatte / x.figure_totali);
+              $$('.bar-avanz[data-riga="' + riga + '"][data-tipo="figure"]', p).forEach(function (bar) {
+                bar.firstChild.style.width = fc + '%';
+              });
+              $$('.sub-figure[data-riga="' + riga + '"]', p).forEach(function (s) {
+                s.textContent = fc + '% · ' + x.figure_fatte + ' di ' + x.figure_totali + ' figure';
+              });
+            }
+          });
+        }
+        if (inLettura) setTimeout(function () { if (document.body.contains(p)) carica(); }, 4000);
+      }).catch(function (e) { p.innerHTML = '<div class="notice notice-crit">' + ic('err') + '<span>' + esc(e.message) + '</span></div>'; });
+    }
+    carica();
   }
   function rielaboraDocumento(f, documento, p) {
     api('POST', '/fonti/' + encodeURIComponent(f.id) + '/documenti/rielabora', { documento: documento })

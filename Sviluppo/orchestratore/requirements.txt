@@ -4,14 +4,10 @@ psycopg[binary]==3.2.10
 pyjwt[crypto]==2.10.1
 httpx==0.28.1
 Pillow==11.3.0
+langgraph==0.6.8
 
-# langgraph: tolto il 21/09/2026. Era qui dal primo commit del progetto per
-# costruire gli "archi concettuali" fra i documenti, ma LangGraph non sa farlo:
-# il "graph" del nome e' il grafo del FLUSSO DI ESECUZIONE (nodi = passi), non
-# un grafo di concetti. Quello e' Cognee, decisione D13 — e gli archi
-# concettuali trasversali sono comunque stati esclusi il 19/09/2026, perche' in
-# Cognee il permesso e' per dataset e non per arco.
-# Mai importato da nessun file, e tirava dentro langchain-core (5,6 MB).
-# Quando rimetterlo: alla fase 5 di VALUTAZIONE-ORCHESTRATORE-AGENTE.md, dove
-# servono i subagenti per fonte (rami paralleli) e la sessione che sopravvive
-# fra un messaggio e l'altro. Una riga:  langgraph==0.6.8
+# langgraph (MIT): il motore dell'agente vero (decisione D17 / fase 5 di
+# VALUTAZIONE-ORCHESTRATORE-AGENTE.md). Serve per i subagenti per fonte (rami
+# paralleli) e la sessione che sopravvive fra un messaggio e l'altro. Era nel
+# progetto dal primo commit e fu tolto il 21/09/2026 perche' non era ancora
+# importato da nulla; si rimette ora che si costruisce l'agente.

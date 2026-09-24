@@ -23,6 +23,8 @@ un riassunto.
 import json
 import os
 
+import httpx
+
 from orchestratore import egress
 
 LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
@@ -120,7 +122,8 @@ def per_la_ricerca(domanda: str, storico: list, suffisso: str = "") -> tuple[str
             testo = _chiedi(rotta, messaggi)
         except Exception as e:
             print(f"riformulazione non riuscita su {rotta}: {type(e).__name__}: {e}", flush=True)
-            _rotte_rotte.add(rotta)
+            if not isinstance(e, httpx.TimeoutException):
+                _rotte_rotte.add(rotta)
             continue
         # Le scorie PRIMA di scegliere la riga: il modello ricopia «/no_think»
         # in cima, e prendendo la prima riga non vuota si leggerebbe quella —

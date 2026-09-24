@@ -103,13 +103,94 @@ ISTRUZIONI = (
 )
 
 
-def _chiedi(messaggi):
+def _chiedi(messaggi, max_tokens=800):
     testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
-    corpo = {"model": ROTTA, "messages": messaggi, "temperature": 0, "max_tokens": 800}
+    corpo = {"model": ROTTA, "messages": messaggi, "temperature": 0,
+             "max_tokens": max_tokens}
     with egress.client(timeout=SECONDI, verify=False) as c:
         r = c.post(f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa)
         r.raise_for_status()
         return (r.json()["choices"][0]["message"].get("content") or "").strip()
+
+
+# La classificazione della domanda: QUALE via usare. E' il cervello dell'agente
+# (D22): non cerca, decide COME cercare. Quattro vie, ognuna con lo strumento
+# giusto gia' esistente. La classificazione e' una scelta a basso rischio:
+# sbagliare via significa usare lo strumento meno adatto, non invertire il
+# senso della domanda (che e' il difetto del vecchio estrae D19).
+VIA_ISTRUZIONI = (
+    "Classifica la domanda di una persona che cerca nei cataloghi aziendali "
+    "(decorazioni, vasi, sassi, candele, profumatori, ghirlande, etichette).\n"
+    "Rispondi con UNA sola parola fra queste quattro:\n"
+    "\n"
+    "- IDENTITA: la domanda nomina un codice o un nome di prodotto preciso "
+    "(es. «quanto costa il DST2040», «il FLK2004»)\n"
+    "- ATTRIBUTO: la domanda cerca prodotti con un attributo enumerabile "
+    "(colore, misura, prezzo) detto esplicitamente (es. «palline viola», "
+    "«etichette da 60 cm», «sotto i 2 euro»)\n"
+    "- CONCRETA: la domanda nomina un oggetto o una categoria di oggetti "
+    "(es. «sassi rossi», «vasi», «candele profumate»)\n"
+    "- ASTRATTA: la domanda esprime un bisogno o un'occasione senza nominare "
+    "un oggetto (es. «un regalo per una ragazza di 30 anni», «idee per un "
+    "matrimonio», «qualcosa di elegante»)\n"
+    "\n"
+    "Niente spiegazioni, solo la parola.\n"
+    "/no_think"
+)
+
+
+def _classifica(domanda) -> str:
+    """La via della domanda, una delle quattro. Degrada a CONCRETA (il
+    comportamento di oggi) se il modello non risponde o risponde male."""
+    try:
+        testo = _chiedi([{"role": "system", "content": VIA_ISTRUZIONI},
+                         {"role": "user", "content": domanda}],
+                        max_tokens=10).strip().upper()
+    except Exception:
+        return "CONCRETA"
+    for via in ("IDENTITA", "ATTRIBUTO", "CONCRETA", "ASTRATTA"):
+        if testo.startswith(via):
+            return via
+    return "CONCRETA"
+
+
+# Per le domande ASTRATTE: tradurre il bisogno in CATEGORIE che il catalogo
+# contiene DAVVERO. Il modello riceve le descrizioni dei documenti e deve
+# scegliere le categorie FRA quelle: «regalo per una trentenne» -> candele,
+# vasi, profumatori (perche' il catalogo li contiene), NON «zaini e cappelli»
+# (che un catalogo di vasi non ha). Senza questo ancoraggio l'agente ragiona
+# fuori dominio — misurato il 23/09/2026: «uomo che ama la montagna» dava
+# tazze, zaini, cappelli da un catalogo di decorazioni.
+INTENTO_ISTRUZIONI = (
+    "La persona esprime un bisogno senza nominare un oggetto. Sotto trovi "
+    "l'elenco di cio' che i cataloghi aziendali contengono DAVVERO.\n"
+    "Scegli le CATEGORIE, prese dall'elenco, che rispondono a quel bisogno.\n"
+    "Esempio: «un regalo per una ragazza di 30 anni» -> candele, vasi, "
+    "profumatori, oggetti decorativi\n"
+    "Solo categorie che compaiono nell'elenco: NON inventare categorie che il "
+    "catalogo non ha (niente zaini, cappelli, attrezzi se non sono elencati).\n"
+    "Massimo 6 categorie, separate da virgola. Se nessuna categoria dell'elenco "
+    "risponde, rispondi con le categorie piu' vicine.\n"
+    "Rispondi solo con l'elenco, niente spiegazioni.\n"
+    "/no_think"
+)
+
+
+def _intento(domanda, descrizioni=None) -> str:
+    """Le categorie concrete che rispondono a un bisogno astratto, o ''."""
+    elenco = "\n".join(f"- {d} | {t}" for d, t in (descrizioni or []))
+    corpo = domanda
+    if elenco:
+        corpo += f"\n\nCatalogo:\n{elenco}"
+    try:
+        testo = _chiedi([{"role": "system", "content": INTENTO_ISTRUZIONI},
+                         {"role": "user", "content": corpo}],
+                        max_tokens=120).strip()
+    except Exception:
+        return ""
+    testo = testo.split("```")[-2] if "```" in testo else testo
+    riga = next((r.strip() for r in testo.splitlines() if r.strip()), "")
+    return riga[:200]
 
 
 def _assaggio(righe):
@@ -143,17 +224,63 @@ def _pulisci(testo, gia_cercate):
     return riga
 
 
-def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8):
-    """Come `recupero.cerca`, ma cercando piu' volte: (righe, degradato).
+# ------------------------------------------------------------------ i 4 tool
+#
+# Ogni tool e' una VIA, col suo strumento. L'agente classifica la domanda e
+# instrada al tool giusto. I tool non scelgono i permessi (i gruppi restano
+# nella WHERE di recupero) e non decidono se rispondere (restituiscono pezzi):
+# sono mani diverse sullo stesso filtro, non teste diverse.
+import re as _re
 
-    Stessa firma e stesso contratto della ricerca normale, cosi' il chiamante
-    non deve sapere quale delle due sta usando — e spegnere l'agente e' una
-    variabile d'ambiente, non una modifica.
-    """
-    righe, degradato = recupero.cerca(conn, domanda, gruppi, qvec, limite)
-    if not ACCESO or degradato:
+
+def _tool_identita(conn, domanda, gruppi, limite):
+    """IDENTITA: un codice articolo (DST2040, FLK2004...). Il ramo lessicale
+    IDF gia' lo trova, ma `cerca_esatta` e' il colpo esatto: o la parola c'e'
+    o non c'e'. Torna None se nella domanda non si vede nessun codice."""
+    codici = _re.findall(r"\b[A-Z]{2,}[0-9]+\b", domanda)
+    if not codici:
+        return None
+    righe = recupero.cerca_esatta(conn, codici[0], gruppi, limite)
+    return righe or None
+
+
+def _tool_attributo(conn, domanda, gruppi, qvec, limite):
+    """ATTRIBUTO: colore/misura/prezzo espliciti. Si riusa D19 (vincoli): il
+    must-match testuale. La classificazione a monte fa da guardia: qui si
+    arriva solo se la domanda nomina davvero un attributo, quindi il rischio
+    dell'estrazione (che in D19 invertiva il senso) e' molto piu' basso."""
+    from orchestratore import vincoli as v
+    _, _, trovati = v.estrae(domanda)
+    if not trovati:
+        return None
+    regex = v.regex(trovati)
+    righe, _ = recupero.cerca(conn, domanda, gruppi, qvec, limite, vincolo=regex)
+    return righe or None
+
+
+def _tool_astratta(conn, domanda, gruppi, limite, documenti=None):
+    """ASTRATTA: un bisogno senza oggetto. Si traduce l'intento in categorie
+    ANCORATE alle descrizioni dei documenti (indice), e si cerca su TUTTI i
+    documenti — non ristretti, perche' l'indice su una domanda astratta sceglie
+    documenti che non assomigliano a nessun catalogo specifico. Se il modello
+    non sa tradurlo, si torna alla ricerca diretta."""
+    from orchestratore import indice
+    descrizioni = indice.descrizioni_visibili(conn, gruppi)
+    categorie = _intento(domanda, descrizioni)
+    if not categorie:
+        return None
+    qv = recupero.embedding(categorie)
+    righe, _ = recupero.cerca(conn, categorie, gruppi, qv, limite)
+    return righe or None
+
+
+def _tool_concreta(conn, domanda, gruppi, qvec, limite, vincolo, documenti):
+    """CONCRETA (e fallback): la ricerca diretta, con l'eventuale giro
+    cerca-guarda-riprova. E' il comportamento di oggi."""
+    righe, degradato = recupero.cerca(conn, domanda, gruppi, qvec, limite,
+                                      vincolo=vincolo, documenti=documenti)
+    if degradato:
         return righe, degradato
-
     viste = {r["id"]: r for r in righe}
     cercate = [domanda]
     for _ in range(GIRI - 1):
@@ -166,24 +293,81 @@ def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8):
                     f"Risultati dell'ultima:\n{_assaggio(righe)}"},
             ]), cercate)
         except Exception as e:
-            # Il modello non risponde: si tiene quello che si ha, che e'
-            # esattamente il risultato della ricerca di sempre.
             print(f"agente di ricerca fermo ({type(e).__name__}: {e})", flush=True)
             break
         if not nuova:
             break
         cercate.append(nuova)
-        righe, _ = recupero.cerca(conn, nuova, gruppi, recupero.embedding(nuova), limite)
+        righe, _ = recupero.cerca(conn, nuova, gruppi, recupero.embedding(nuova),
+                                  limite, vincolo=vincolo, documenti=documenti)
         for r in righe:
             viste.setdefault(r["id"], r)
-
     if len(cercate) > 1:
         print(f"ricerche: {json.dumps(cercate, ensure_ascii=False)}", flush=True)
-    # L'unione di piu' ricerche non ha un ordine suo: i punteggi di ricerche
-    # diverse non si sommano e non si confrontano. A ordinarla e' il
-    # cross-encoder, sulla domanda VERA — mai sulle riformulazioni, che sono
-    # un mezzo e non cio' che la persona ha chiesto.
+    # L'unione di piu' ricerche non ha un ordine suo: il cross-encoder ordina
+    # sulla domanda VERA, mai sulle riformulazioni.
     return recupero.riordina(domanda, list(viste.values()), limite), False
+
+
+def _comprensione(conn, domanda, gruppi, qvec, limite, documenti):
+    """La via UNICA: capire insieme cosa cercare e quali attributi deve avere.
+
+    E' cio' che fa una persona che legge «sassi rossi»: non separa «sassi» da
+    «rossi», capisce una cosa sola con una proprieta'. `vincoli.estrae` gia'
+    produce tutto insieme (intento + termini multilingue + attributi); qui si
+    applica nello stesso atto di ricerca: query arricchita + must-match.
+
+    Torna None se l'estrazione non capisce niente o la ricerca non trova: il
+    chiamante degrada sul routing a 4 vie, che resta come rete di sicurezza.
+    """
+    from orchestratore import vincoli as v
+    _, intent_termini, trovati = v.estrae(domanda)
+    if not intent_termini and not trovati:
+        return None
+    regex = v.regex(trovati)
+    query = v.query_di_ricerca(domanda, intent_termini, trovati)
+    qv = recupero.embedding(query) if qvec is None else qvec
+    righe, _ = recupero.cerca(conn, query, gruppi, qv, limite,
+                              vincolo=regex, documenti=documenti)
+    return righe or None
+
+
+def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8,
+          vincolo: str = "", documenti: list[str] | None = None,
+          domanda_vera: str | None = None):
+    """L'agente: capisce la domanda (via unica) e, se non basta, instrada.
+
+    Stessa firma di `recupero.cerca` (con un parametro in piu'), cosi' il
+    chiamante non sa quale dei due usa. `domanda` e' la query da CERCARE (puo'
+    essere arricchita coi sinonimi); `domanda_vera` e' cio' che la persona ha
+    scritto, e serve SOLO a capire.
+    """
+    if not ACCESO:
+        return recupero.cerca(conn, domanda, gruppi, qvec, limite,
+                              vincolo=vincolo, documenti=documenti)
+
+    vera = domanda_vera or domanda
+
+    # 1. Via UNICA: capire tutto insieme (oggetto + attributi). Prioritaria.
+    righe = _comprensione(conn, vera, gruppi, qvec, limite, documenti)
+    print(f"[agente] vera={vera!r} via_unica={bool(righe)} "
+          f"documenti={documenti!r}", flush=True)
+    if righe:
+        return recupero.riordina(domanda, righe, limite), False
+
+    # 2. Rete di sicurezza: il routing a 4 vie, per cio' che la via unica non
+    #    copre (identita' e astratte senza attributi).
+    via = _classifica(vera)
+    if via == "IDENTITA":
+        righe = _tool_identita(conn, vera, gruppi, limite)
+        if righe:
+            return recupero.riordina(domanda, righe, limite), False
+    elif via == "ASTRATTA":
+        righe = _tool_astratta(conn, vera, gruppi, limite, documenti)
+        if righe:
+            return recupero.riordina(domanda, righe, limite), False
+
+    return _tool_concreta(conn, domanda, gruppi, qvec, limite, vincolo, documenti)
 
 
 def _prova():

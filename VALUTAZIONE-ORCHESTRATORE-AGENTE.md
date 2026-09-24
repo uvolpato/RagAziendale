@@ -411,7 +411,18 @@ il titolo di pagina, `amfori` che è un logo e quindi sparisce. Non sono casi
 singoli: sono la struttura buttata via in lettura, che si prova a far
 ricomporre alla matematica dei vettori.
 
-Per i cataloghi, la direzione di lungo periodo è **estrarre la struttura**
+Per i cataloghi, la direzione di lungo periodo era **estrarre la struttura**
 (prodotto → codice → formato → prezzo) invece di incorporare pagine. È lo
 stesso lavoro del connettore ERP già specificato, applicato ai cataloghi
 fornitore.
+
+> **Corretto il 24/09/2026 — questa direzione è abbandonata.** Chiarito con il
+> committente: **i cataloghi non si estraggono in struttura**, si *indicano i
+> punti* che soddisfano la ricerca ("nastri blu" → "guarda qui, qui e qui", con
+> le figure), esattamente come un testo o un manuale. I **codici** vengono
+> dall'**anagrafica articoli** (ERP), già coperta dai connettori
+> (`SPECIFICA-CONNETTORI.md`), non dal catalogo. Quindi il difetto "il colore è
+> staccato dal codice" si riformula: non serve ricostruire il codice accanto al
+> colore, serve **descrivere bene la figura** (tinta unita vs stampata) così che
+> il recupero trovi e indichi la figura giusta. Dettaglio in
+> `SINTESI-SESSIONE-24-09-2026.md`.

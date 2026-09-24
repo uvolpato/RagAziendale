@@ -5,7 +5,7 @@
 `PROGETTO-RAG-Aziendale.md` §12 (nuova riga numerata). Quando è registrata, la
 si cancella da qui. Lo stesso per le azioni: fatte → cancellate.
 
-Aggiornato: 19/09/2026
+Aggiornato: 24/09/2026
 
 ---
 
@@ -13,7 +13,7 @@ Aggiornato: 19/09/2026
 
 | ID | Decisione | Opzioni | Proposta | Blocca |
 |---|---|---|---|---|
-| **D1** | **Modello di intelligenza artificiale per la chat** (`MODELLO_RAGIONAMENTO` in `.env`, oggi vuoto) | Modello locale su LM Studio / GPU aziendale · servizio esterno per le sole fonti «Può usare servizi esterni» · entrambi (decisioni 39–40, §11 dell'analisi) | Locale per partire (sovranità del dato); esterno solo per fonti approvate | Chat aperta agli utenti |
+| **D1** | **Modello di intelligenza artificiale per la chat** (`MODELLO_RAGIONAMENTO` in `.env`). **Scelto il 24/09/2026: `qwen3.8-27b-gsq-rco`** su llama-swap (locale), con escalation a un'API a pagamento solo su fallimento dimostrato | Modello locale su LM Studio / GPU aziendale · servizio esterno per le sole fonti «Può usare servizi esterni» · entrambi (decisioni 39–40, §11 dell'analisi) | Locale per partire (sovranità del dato); esterno solo su escalation dell'agente | Chat aperta agli utenti |
 | **D2** | **Approvare `SPECIFICA-CONNETTORI.md`** (decisione 70 proposta) | Sì · con modifiche | — | Sviluppo dei connettori |
 | **D3** | **Da quando importare i documenti** (ordini, DDT, fatture) | Tutto lo storico · dal 2020 · ultimi N anni | Ultimi **5 anni**; anagrafiche e listini sempre interi | Prima importazione |
 | **D4** | **Frequenze delle importazioni** | Quelle di `SPECIFICA-CONNETTORI.md` §7.5 · altre | Confermare §7.5 (documenti ogni 15 min, anagrafiche ogni ora, listini di notte, giacenze alle 6) | Configurazione di Dagster |
@@ -146,7 +146,7 @@ punti che vanno previsti **prima** di scriverle, non dopo:
     l'altalena dei modelli e il difetto del punto 7.
 
 | **D15** | **Dove stanno le cartelle dei documenti e chi fa rispettare i permessi di scrittura** (modello: una cartella per gruppo, scritta e letta dai suoi membri; una cartella generale letta da tutti e scritta da pochi gruppi) | Condivisione Windows con gruppi di Active Directory (serve D8: Keycloak collegato ad AD) · **Nextcloud con cartelle di gruppo e accesso con Keycloak** (stessi gruppi, caricamento dal web e sincronizzazione da PC; in futuro anche SharePoint e Google Drive) · caricamento dal nostro pannello | Se l'azienda ha già un file server con AD → quello. Altrimenti Nextcloud. **Da sapere prima**: c'è un file server? c'è AD? Il modello (decisione 71) è fatto e funziona su cartelle locali: manca solo dove stanno i file veri | Cartelle dei gruppi in produzione |
-| **D17** | **L'orchestratore diventa un agente?** Oggi è una catena fissa: token → embedding → ricerca con ACL nella query → gate → prompt → modello. Un agente deciderebbe da sé quali strumenti chiamare e quante volte | Catena fissa, come adesso · **agente che decide solo la ricerca** (quante interrogazioni, con che parole, quando fermarsi), con recupero e permessi che restano codice · agente pieno, con i permessi fra i suoi strumenti | **Agente sulla sola ricerca**, e non prima che l'indice sia stabile. LangGraph è già fra le dipendenze dell'orchestratore | Niente oggi. Serve per le domande a più passi: «confronta i prezzi di EUROSAND e FLEURAMI» oggi fa una ricerca sola |
+| **D17** | **L'orchestratore diventa un agente?** Oggi è una catena fissa: token → embedding → ricerca con ACL nella query → gate → prompt → modello. Un agente deciderebbe da sé quali strumenti chiamare e quante volte | Catena fissa, come adesso · **agente che decide solo la ricerca** (quante interrogazioni, con che parole, quando fermarsi), con recupero e permessi che restano codice · agente pieno, con i permessi fra i suoi strumenti | **Agente pieno con LangGraph** (framework MIT, non un ciclo custom), strumenti = le funzioni esistenti di `recupero.py` (`cerca`, `cerca_esatta`, `pagina`, `immagini_pertinenti`, `documenti_visibili`) esposte come tool, guardrail «l'agente decide COSA cercare, mai COSA può vedere». Cervello: 27B locale (`qwen3.8-27b-gsq-rco`) con escalation a un'API a pagamento solo su fallimento dimostrato. **Deciso il 24/09/2026** — vedi `SINTESI-SESSIONE-24-09-2026.md` | Niente oggi. Serve per le domande a più passi: «confronta i prezzi di EUROSAND e FLEURAMI» oggi fa una ricerca sola |
 | **D18** | **I prompt escono dal codice?** Oggi i quattro prompt del sistema sono stringhe Python: la risposta in chat (`orchestratore/prompt.py`), la riformulazione (`orchestratore/riformula.py`), la lettura della pagina col VLM e la descrizione delle figure (`ingestion/indicizza.py`). Cambiare una parola richiede di modificare il codice e ricostruire l'immagine | Restano nel codice · file di configurazione montato · **campo nel database, modificabile dal pannello**, con lo storico delle versioni | **Nel database con lo storico**, e per FONTE dove ha senso (i due prompt di lettura), globale per i due di risposta. Ma non prima che la precisione sia a regime: finché i prompt cambiano ogni giorno, il codice è il posto giusto e git è lo storico. Attenzione: `ISTRUZIONI_PAGINA` è l'impronta della cache del Markdown (`IMPRONTA_PROMPT`), quindi cambiarlo rilegge tutte le pagine — chi lo modifica dal pannello deve saperlo | Niente oggi. Serve quando a scrivere i prompt non sarà più chi tocca il codice. Segnalato il 22/09/2026, misurando che una sola regola aggiunta al prompt di risposta portava la completezza dal 46% al 73%: ogni prova di quel tipo oggi costa una ricostruzione dell'immagine |
 
 **Requisiti di design per D17** (emersi il 21/09/2026):
@@ -188,6 +188,138 @@ punti che vanno previsti **prima** di scriverle, non dopo:
    conversazione: nessuno ha chiesto un confronto fra due cataloghi. È il
    punto 4 visto dall'altra parte — prima di decidere serve sapere quante
    domande vere sono di quel tipo, e finora le osservate sono zero su cinque.
+
+| **D19** | **I vincoli di attributo diventano un ramo del recupero** (colore, misura, formato, prezzo). Oggi un «10 articoli viola» risponde inventando: "viola" si diluisce nel vettore della frase intera e il ramo lessicale la zittisce di proposito (parola comune). Misurato il 23/09/2026 su traces 235: 0 pezzi viola su 8 nel contesto, e il modello elenca 10 viola | Flusso di progetto (schema qui sotto) · solo ri-pesare le parole (bge-m3 sparse) · niente | **Flusso di progetto**: estrarre il vincolo dalla domanda, tradurlo nei valori che il corpus usa davvero, must-match testuale sulla co-occorrenza, barriera di coerenza | Risposte con attributi inventati (classe «fallimento progetto»: il sistema mette in errore l'utente) |
+| **D23** | **Cosa si fa coi cataloghi** (corregge `VALUTAZIONE-ORCHESTRATORE-AGENTE.md` §9) | Estrarre la struttura (prodotto → codice → prezzo) · **indicare i punti** che soddisfano la ricerca (pagine e figure, "nastri blu" → "guarda qui, qui e qui") | **Indicare i punti**: i cataloghi si trattano come un testo o un manuale, non come un database. I codici vengono dall'**anagrafica articoli** (ERP, `SPECIFICA-CONNETTORI.md`), mai dal catalogo | Definisce il successo: una risposta "guarda qui" vale più di un codice estratto male |
+
+**Requisiti di design per D19** (emersi il 23/09/2026, misurati):
+
+1. **Il fallimento è nel recupero, non nel modello.** Da traces 235: il vettore
+   della frase intera diluisce «viola» (i natalizi viola, pag. 219/221 INGE,
+   non entrano nei 150 candidati); il ramo lessicale tace per costruzione
+   («viola» in 74 pezzi su 3112 ≫ soglia 1/1000); finale 0/8 pezzi viola nel
+   contesto. Un «catalogo viola» verità-di-sproloquio: il dato c'è, il recupero
+   non lo vede.
+2. **Niente tabella di sinonimi fisica, niente DB di articoli.** Non avremo mai
+   una tabella con tutti gli attributi: cerchiamo un catalogo, non un gestionale.
+   Le misure han mostrato che la mappa la fa il modello:
+   * bge-m3 (il nostro embedding) è multilingue: «viola» sta vicino a
+     `violet` 0.723, `lila` 0.585, `purpur` 0.513, e il primo colore *diverso*
+     (`rot`) arriva a 0.442. I sinonimi vengono fuori da soli, al primo posto.
+   * Ma le soglie pulite non esistono: `rot~grün` fa 0.54, più di `viola~purpur`
+     0.51. I colori si raggruppano ma non si separano → il confronto è un
+     **ranking** sui primi N vicini, mai una soglia.
+   * Sulla **domanda intera** il ranking si rompe: `lila` scende sotto `schwarz`
+     e `weiss` (0.417 contro 0.428/0.410) e `purpur` frana al 7° posto.
+     Conclusione: **l'estrazione del vincolo dalla frase è obbligatoria**, il
+     confronto col corpus va fatto sulla parola sola, mai sulla frase intera.
+3. **Il flusso di progetto** (dalla domanda alla risposta):
+   * **estrazione** (nuova, davanti a `recupero`): il modello scompone
+     intent/vincoli. Provato il 23/09/2026 su 8 domande reali: colore=viola da
+     «violaceo», formato=60 cm, prezzo<10, quantità ridondanti assorbite;
+     «sassi rossi» → vincoli vuoti (il colore resta nell'intent, degradazione
+     sicura verso il comportamento di oggi). Il modello usato è `ragionamento`
+     (l'argomento sarebbe `veloce`, non configurato).
+   * **traduzione** (nuova): il valore del vincolo si proietta sui valori che
+     il corpus usa davvero (`viola` → {lila, violet, purpur}) cercando gli
+     embedding dei valori estratti dai chunk, per ranking sui primi N.
+   * **must-match** (nuova nel recupero): i pezzi che **contengono** almeno un
+     sinonimo (`content ~* 'lila|violet|purpur'`) — co-occorrenza testuale, un
+     AND sui fatti, non una somiglianza. Il vincolo è ammissibilità, non voto.
+   * **barriera di coerenza** (nuova, dopo il rerank): se 0 pezzi soddisfano il
+     vincolo, si risponde «non ci sono articoli viola nei documenti» **senza
+     chiamare il modello**. È il punto che toglie l'invenzione dall'engramma:
+     diventa un esito del flusso, non un comportamento.
+   * **prompt**: una regola in più, complementare alla barriera — «rispondi solo
+     di articoli che il contesto indica con quel valore».
+4. **Perimetro classe.** `colore` è il primo attributo, ma lo schema regge
+   misura/formato/prezzo senza toccare l'architettura: cambia solo il modo di
+   estrarre i valori dal corpus (cella `colore`, cella `misura`…). Quando non
+   c'è vincolo, il flusso è esattamente quello di oggi: zero regressione.
+5. **Confine del disegno (23/09/2026)**: questo flusso è per la **ricerca
+   documentale sui cataloghi**, dove l'attributo non esiste come dato (è solo
+   una parola nel testo) e il must-match testuale è l'unica via. Quando si
+   affronterà la **ricerca degli articoli sul DB gestionale**, lì gli attributi
+   **ci sono come dati** (colonne colore, misura, formato, prezzo): i vincoli
+   torneranno filtri strutturati sulla colonna vera (es. pattern Qdrant
+   `Filter(must=[...])`), con un filtro diretto invece del must-match testuale.
+   L'estrazione del vincolo (Passo 2) resta comune ai due mondi; il disegno di
+   oggi deve restare compatibile con quel futuro senza condizionarlo — si tiene
+   aperta l'opzione strutturata senza renderla prerequisito del flusso
+   documentale.
+6. **Da fare dopo il consenso su D19**: (a) estrazione dei valori dal corpus
+   e loro embedding; (b) estensione di `recupero.py` col ramo must-match;
+   (c) barriera di coerenza; (d) regola nel prompt; (e) replay del caso «10
+   articoli viola» come verifica, poi le domande critiche di
+   `Sviluppo/eval/DOMANDE-CRITICHE.md`.
+
+**Prove collegate** (riproducibili): `replica*.py`, `sinonimi.py`,
+`diluisce.py`, `estrazione.py` in `C:\Users\uvolp\AppData\Local\Temp\opencode\`,
+copiati in `/tmp` del container orchestratore.
+
+**Implementazione e verifica (23/09/2026) — stato D19**:
+
+Implementato. `vincoli.py` (nuovo), `recupero.cerca(... vincolo=)` e
+barriera in `main.py` (blocco 3-5). Il flusso è quello del disegno, con due
+aggiustamenti emersi in verifica:
+
+1. **Confini di parola nel must-match** (`regex()` usa `\m…\M`, PostgreSQL).
+   Senza, `~* 'viola'` matcha anche `violazione` nelle policy di sicurezza e
+   la barriera non scatta mai (misurato: 27 chunk veri per `viola\b`, prima
+   migliaia). E' un intervento sul flusso, non un cerotto: i confini di parola
+   sono la condizione necessaria del must-match per qualunque attributo.
+2. **Istruzione per i numeri**: i valori numerici (misura, prezzo) vanno
+   espressi con l'unità («60 cm», «2 €»), mai la sola cifra («2» matca in
+   4246/10594 chunk, ~40% dell'indice).
+
+Verifica su 16 domande inventate + probe a colpo su DB (utente direzione/
+acquisti, aziende luis+decobrands, vedi REPORT-D19-VERIFICA.md):
+- Il caso che ha scoperto D19 passa da 0/8 a 8/8 pezzi con termini viola.
+- La barriera scatta davvero sui colori assenti (ciclamino/fuksia/ecru/
+  salmone: 0 chunk nel corpus) e interrompe il turno senza chiamare il
+  modello.
+- Limiti trovati (tutti dentro l'architettura, nessuno richiede di rifare il
+  flusso): (1) il prezzo è una soglia numerica, non una stringa — la barriera
+  può nascondere dati scritti come «1,80 €»; (2) le domande di identità
+  (codice articolo) possono far allucinare all'estrazione vincoli fasulli che
+  degradano la pool o producono barriera falsa; (3) l'espansione sinonimi può
+  essere troppo larga (magenta → rosa/pink diluisce); (4) pagine-palette che
+  citano ogni colore bypassano la barriera («turchese» → FARBCODES).
+- Prossimo passo consigliato: decide su prezzo (1) — accettare il limite o
+  aggiungere l'intervallo numerico al must-match; è l'unico che può produrre
+  una risposta silenziosamente sbagliata.
+
+**Bug grave prezzo risolto (23/09/2026)**: «decorazioni natalizie sotto i
+2 euro» → barriera falsa «non esistono articoli con prezzo 2» quando i prezzi
+1,00–1,95 esistono (EUROSAND; i cataloghi scrivono «€ 1,85», simbolo prima
+del numero, e «2 €» senza simbolo davanti non matcha). Falso negativo
+sistematico su **qualunque** soglia numerica → classe «fallimento progetto»,
+non cerotto. Fix strutturale in `vincoli.py` (`_intervalli_numerici`,
+chiamata da `regex()`): per `attributo == "prezzo"` il must-match aggiunge
+l'intervallo reale sotto la soglia in entrambe le grafie («1,85» e «1.85»),
+con soglia 0 < valore ≤ 500 (oltre non è un catalogo decorazioni: il
+confronto numerico vero è il confine col DB gestionale).
+
+- Genera `\m(?:0|1|…|n-1)[,.]\d{2}\M` per i valori interi sotto la soglia
+  («sotto i 2» → 0,e 1,xx), e per le soglie decimali («sotto 1,50») limita i
+  decimi della parte intera uguale («1,00–1,49», mai «1,50»).
+- Solo `prezzo` è una soglia per costruzione («sotto», «meno di»): la misura
+  è un valore esatto («da 60 cm», verificato 8/8) — generare «tutto sotto
+  60» inonderebbe la pool. È la classe del vincolo, non un cerotto.
+- Test: `_prova()` ampliato (soglia intera, decimale, 0,99, codice «2040»
+  che deve restare senza intervalli), `python3 -m orchestratore.vincoli`,
+  e verifica end-to-end su 20 turni: il caso passava da barriera falsa a
+  risposta vera («81316 G002 € 1,99», «81317 G002 € 1,99», EUROSAND),
+  nessuna regressione su altri 19 turni (barriere oneste, identità DST2040,
+  misure, colori multilingua).
+
+Restano aperti i limiti (2)–(4) e il limite (1) ora coperto solo per il
+prezzo: (2) i vincoli fasulli dell'estrazione sulle domande di identità
+(es. `misura=2040` da DST2040) non sono corretti ma la risposta risulta
+giusta; (3) l'OR fra più valori dello stesso attributo diluisce(«argento e
+oro» risponde solo sul pezzo oro); (4) i valori qualitativi come misura
+(«grandi») restano senza corrispondenza testuale ma la risposta è corretta
+perché il vettore recupera i pezzi giusti.
 
 ---
 

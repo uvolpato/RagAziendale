@@ -146,6 +146,7 @@ punteggiati AS (
       CROSS JOIN scelti
      WHERE scelti.q IS NOT NULL
        AND to_tsvector('italian', c.content) @@ scelti.q
+       %%DOC%%
 )
 """
 
@@ -161,18 +162,21 @@ WITH consentite AS (
        AND aziende && %(aziende)s::text[]
        AND stato = 'attiva'
 ),
-""" + _ramo_lessicale(ripiego=False).rstrip() + "," + """
+%%VINC_CTE%%""" + _ramo_lessicale(ripiego=False).rstrip() + "," + """
 vett AS (
     SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> %(qvec)s::vector) AS r
     FROM chunks c
     WHERE c.source_id IN (SELECT id FROM consentite)
       AND c.embedding IS NOT NULL
+      %%VINC_VETT%%
+      %%DOC%%
     ORDER BY c.embedding <=> %(qvec)s::vector
     LIMIT %(cand)s
 ),
 testo AS (
     SELECT id, row_number() OVER (ORDER BY punti DESC, id) AS r
       FROM punteggiati WHERE punti > 0
+      %%VINC_TEST%%
      ORDER BY punti DESC, id
      LIMIT %(cand)s
 ),
@@ -203,7 +207,7 @@ WITH consentite AS (
        AND aziende && %(aziende)s::text[]
        AND stato = 'attiva'
 ),
-""" + _ramo_lessicale(ripiego=True).strip().rstrip(",") + """
+%%VINC_CTE%%""" + _ramo_lessicale(ripiego=True).strip().rstrip(",") + """
 SELECT c.id, c.source_id, c.documento, c.page, c.content,
        s.residency, p.punti AS punteggio,
        (SELECT array_agg(i.id ORDER BY i.id) FROM immagini i
@@ -213,12 +217,14 @@ FROM punteggiati p
 JOIN chunks c ON c.id = p.id
 JOIN consentite s ON s.id = c.source_id
 WHERE p.punti > 0
+      %%VINC_SOLO%%
 ORDER BY p.punti DESC, c.id
 LIMIT %(limite)s;
 """
 
 
-def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8):
+def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8,
+          vincolo: str = "", documenti: list[str] | None = None):
     """Restituisce (righe, degradato).
 
     limite 8 e non 5 (dal 20/09/2026): sui cataloghi un solo prodotto occupa
@@ -226,6 +232,19 @@ def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8):
     domanda larga ("sassi rossi") restava senza il testo del prodotto. Da
     validare con l'eval: piu' pezzi significa anche piu' contesto da leggere per
     il modello, e con 5 utenti in parallelo il contesto costa VRAM.
+
+    `vincolo` (D19): espressione regolare dei termini di un attributo ENUMERABILE
+    (colore, misura, formato, prezzo) nelle lingue dei cataloghi. Se presente,
+    la ricerca resta SOLO dentro i pezzi che la contengono: e' la POOL definita
+    dal vincolo, sopra la quale vettoriale e full-text ordinano. Se la pool e'
+    vuota non tornano righe, e il chiamante risponde onestamente senza chiamare
+    il modello. Prima di D19 un vero natalizio viola stava a posizione 753 su
+    1434 per coseno: il vincolo non si cerca col vettore, si esige nel testo.
+
+    `documenti` (D21): se presente, la ricerca resta DENTRO quei documenti. E'
+    il secondo passaggio dell'indice (indice.py): il primo ha scelto quali
+    cataloghi c'entrano, questo cerca solo li'. E' un restringimento del
+    recupero, non dei permessi: le ACL restano nella WHERE come sempre.
 
     `qvec` None significa embedding non disponibile -> solo full-text.
     """
@@ -237,7 +256,30 @@ def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8):
         return [], False
 
     degradato = qvec is None
-    sql = SQL_SOLO_TESTO if degradato else SQL_IBRIDA
+    # D19: la pool del vincolo, dentro "consentite". Nei template SQL i
+    # marcatori %%VINC_*%% vengono sostituiti col frammento giusto se c'e' un
+    # vincolo, o con niente se non c'e' (i rami tornano quelli di prima).
+    # Il vincolo viaggia come parametro, mai nel testo SQL.
+    cte = ("vinc AS (\n"
+           "    SELECT c.id\n"
+           "      FROM chunks c\n"
+           "      JOIN consentite s ON s.id = c.source_id\n"
+           "     WHERE c.content ~* %(vincolo)s\n"
+           "),\n" if vincolo else "")
+    filtro_vett = "AND c.id IN (SELECT id FROM vinc)\n" if vincolo else ""
+    filtro_testo = "AND id IN (SELECT id FROM vinc)\n" if vincolo else ""
+    filtro_solo = "AND p.id IN (SELECT id FROM vinc)\n" if vincolo else ""
+    # D21: restrizione ai documenti scelti dall'indice. Parametro, mai testo.
+    filtro_doc = "AND c.documento = ANY(%(documenti)s::text[])\n" if documenti else ""
+    if degradato:
+        sql = (SQL_SOLO_TESTO.replace("%%VINC_CTE%%", cte)
+                              .replace("%%VINC_SOLO%%", filtro_solo)
+                              .replace("%%DOC%%", filtro_doc))
+    else:
+        sql = (SQL_IBRIDA.replace("%%VINC_CTE%%", cte)
+                         .replace("%%VINC_VETT%%", filtro_vett)
+                         .replace("%%VINC_TEST%%", filtro_testo)
+                         .replace("%%DOC%%", filtro_doc))
     # Con il rerank si pesca largo e si sceglie dopo: la fusione decide un
     # ordine, il cross-encoder lo corregge guardando domanda e pezzo insieme.
     # Senza rerank configurato si prendono gli stessi di prima, altrimenti si
@@ -248,6 +290,10 @@ def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8):
     if not degradato:
         par |= {"qvec": qvec, "cand": max(CANDIDATI, CANDIDATI_RERANK) if largo else CANDIDATI,
                 "k": K_RRF}
+    if vincolo:
+        par["vincolo"] = vincolo
+    if documenti:
+        par["documenti"] = documenti
 
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(sql, par)

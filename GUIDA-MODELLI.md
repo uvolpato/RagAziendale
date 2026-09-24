@@ -146,6 +146,7 @@ scala la RAM): lo sviluppo lo fa a turni, non in parallelo.
 | Modello con id sbagliato | verificare l'id esatto sulla doc del provider; `drop_params: true` evita errori sui parametri non riconosciuti |
 | L'orchestratore non parla col provider | è giusto: parla solo con LiteLLM. Il provider lo raggiunge LiteLLM, l'unico con la chiave |
 | `EGRESS_EXTERNAL` vuoto | va compilato con l'host del provider scelto: il gate consente solo host dichiarati (le chiamate verso il provider esterno saranno vietate sui turni contaminati) |
+| 27B in variante **"rco"** (reasoning content output) | **ragiona sempre ad alta voce**: emette `reasoning_content` prima del `content`, e `/no_think` NON lo spegne. Con budget token piccolo il `content` resta vuoto. Si gestisce sopprimendo `reasoning_content` nello stream e dando token sufficienti (verificato il 24/09/2026) |
 
 ---
 

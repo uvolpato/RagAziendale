@@ -128,7 +128,8 @@ def _riavvio_voluto(_segnale, _frame):
             with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, connect_timeout=5) as c:
                 if IN_CORSO.get("stato"):      # c'era gia' una lettura buona: si rimette com'era
                     c.execute("UPDATE documenti SET in_lettura = NULL, pagine_fatte = 0,"
-                              " pagine_totali = NULL, errore = NULL, stato = %s"
+                              " pagine_totali = NULL, figure_fatte = 0, figure_totali = NULL,"
+                              " errore = NULL, stato = %s"
                               " WHERE source_id = %s AND documento = %s",
                               (IN_CORSO["stato"], IN_CORSO["fid"], IN_CORSO["rel"]))
                 else:                          # mai letto prima: la riga sparisce, si rilegge dopo
@@ -731,7 +732,8 @@ class Lettore:
             print(f"modello di chat scaricato per fare spazio: {libera} MB liberi, "
                   f"ne servono {VRAM_MINIMA_MB}", flush=True)
 
-    def pezzi(self, p: pathlib.Path, progresso=None, solo_gpu=False, dentro=None, lettura=None):
+    def pezzi(self, p: pathlib.Path, progresso=None, solo_gpu=False, dentro=None, lettura=None,
+              progresso_figure=None):
         """progresso(fatte, totali) se c'e', chiamata ad ogni blocco completato.
         solo_gpu: file che fuori dalla finestra si legge SOLO finche' la GPU e'
         libera; se la perde a meta', si ferma e si riprende dopo (Rimandato).
@@ -802,7 +804,7 @@ class Lettore:
                 print("    VLM scaricato: la VRAM va a Docling", flush=True)
             _, immagini, markdown = self._con_docling(p, meta(0.5), solo_gpu, dentro,
                                                       descrivi=False)
-            immagini = _descrivi_col_titolo(immagini, titoli, dentro)
+            immagini = _descrivi_col_titolo(immagini, titoli, dentro, progresso_figure)
             # Le descrizioni vanno NEI SEGNAPOSTO del Markdown di Docling, che
             # li mette dove stanno le figure: cosi' ogni descrizione resta
             # accanto al suo codice articolo invece di galleggiare nella
@@ -831,6 +833,7 @@ class Lettore:
         if progresso:
             progresso(0, n)
         fuori = []
+        errori = 0
         for pagina in range(1, n + 1):
             try:
                 md = _markdown_pagina(p, pagina, dentro)
@@ -839,11 +842,19 @@ class Lettore:
                 # senza quella, con l'avviso nel registro.
                 print(f"    {p.name}: pagina {pagina} non letta ({type(e).__name__}: {e})", flush=True)
                 md = ""
+                errori += 1
             fuori += _pezzi_da_markdown(md, pagina)
             if progresso:
                 progresso(pagina, n)
             if pagina % 6 == 0 or pagina == n:
                 print(f"    {p.name}: pagina {pagina} di {n} (VLM)", flush=True)
+        # Tutte le pagine fallite non sono un catalogo illeggibile: sono il
+        # VLM che non risponde (o che non e' mai stato raggiunto). Se il
+        # documento entrasse lo stesso, l'impronta lo marchierebbe «fatto» e il
+        # giro dopo lo saltarrebbe senza testo — come successo il 22/09/2026.
+        # Un file davvero rovinato si rivede al ritorno del VLM e va in errore.
+        if errori == n:
+            raise Rimandato("VLM non raggiungibile: nessuna pagina letta")
         return fuori
 
     def _con_docling(self, p, progresso=None, solo_gpu=False, dentro=None, descrivi=True):
@@ -904,6 +915,21 @@ def _litellm():
     return (os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/"),
             {"Authorization": "Bearer " + os.environ.get("LITELLM_MASTER_KEY", "")},
             os.environ.get("LLM_EMBEDDING", "embedding"))
+
+
+def _litellm_visione():
+    """Il VLM via LiteLLM, per nome logico `visione`, come l'embedding.
+
+    Il VLM passava direttamente da llama-swap (`VLM_URL`), ma llama-swap ascolta
+    su loopback e i container non lo raggiungono: le descrizioni delle figure
+    restavano vuote (23/09/2026, nessun colore nell'indice dei nastri). LiteLLM
+    sa raggiungere i modelli, e la rotta `visione` sta in litellm-config.yaml.
+    """
+    testa = {"Authorization": "Bearer " + os.environ.get("LITELLM_MASTER_KEY", ""),
+             "Content-Type": "application/json"}
+    return (os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/"),
+            testa,
+            os.environ.get("LLM_VISIONE", "visione"))
 
 
 def modello_vero():
@@ -1187,6 +1213,11 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
             """Il pannello fonti legge pagine_fatte/pagine_totali mentre il file gira."""
             conn.execute("UPDATE documenti SET pagine_fatte = %s, pagine_totali = %s"
                          " WHERE source_id = %s AND documento = %s", (fatte, totali, fid, rel))
+        def _progresso_figure(fatte, totali):
+            """Le descrizioni delle figure corrono a barra pagine gia' al 100%:
+            si tengono su colonne proprie, cosi' il pannello le vede muovere."""
+            conn.execute("UPDATE documenti SET figure_fatte = %s, figure_totali = %s"
+                         " WHERE source_id = %s AND documento = %s", (fatte, totali, fid, rel))
         # Grosso e fuori finestra: si legge finche' la GPU e' libera. Se la
         # perde a meta' non si insiste in CPU (ore di macchina occupata mentre
         # qualcuno chatta): si rimette il file come stava e si riprende dopo.
@@ -1209,12 +1240,14 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         try:
             pezzi, immagini = lettore.pezzi(p, _progresso, solo_gpu=grosso,
                                             dentro=_cartella_sorgenti(percorso, rel),
-                                            lettura=come_leggere(fid))
+                                            lettura=come_leggere(fid),
+                                            progresso_figure=_progresso_figure)
         except Rimandato as e:
             if vecchio:
                 conn.execute("UPDATE documenti SET impronta = %s, dimensione = %s, modificato_il = %s,"
                              " stato = %s, errore = NULL, in_lettura = NULL, pagine_fatte = 0,"
-                             " pagine_totali = NULL WHERE source_id = %s AND documento = %s",
+                             " pagine_totali = NULL, figure_fatte = 0, figure_totali = NULL"
+                             " WHERE source_id = %s AND documento = %s",
                              (vecchio[1], vecchio[2], vecchio[3], vecchio[4], fid, rel))
             else:
                 conn.execute("DELETE FROM documenti WHERE source_id = %s AND documento = %s", (fid, rel))
@@ -1300,7 +1333,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
 
 
 def completa_vettori(conn, stato_vettori):
-    """Pezzi entrati senza vettore (host giu' al giro prima)."""
+    """Pezzi e immagini entrati senza vettore (host giu' al giro prima)."""
     if not stato_vettori["ok"]:
         return 0
     fatti = 0
@@ -1308,8 +1341,15 @@ def completa_vettori(conn, stato_vettori):
         righe = conn.execute("""SELECT c.id, c.content FROM chunks c JOIN sources s ON s.id = c.source_id
                                  WHERE c.embedding IS NULL AND s.provenienza = 'cartella'
                                  ORDER BY c.id LIMIT 64""").fetchall()
+        tabella = "chunks"
         if not righe:
-            return fatti
+            righe = conn.execute("""SELECT i.id, i.descrizione FROM immagini i JOIN sources s ON s.id = i.source_id
+                                     WHERE i.embedding IS NULL AND i.descrizione <> ''
+                                       AND s.provenienza = 'cartella'
+                                     ORDER BY i.id LIMIT 64""").fetchall()
+            tabella = "immagini"
+            if not righe:
+                return fatti
         vett = vettori([r[1] for r in righe])
         if not vett:
             return fatti
@@ -1318,9 +1358,13 @@ def completa_vettori(conn, stato_vettori):
             if not stato_vettori["ok"]:
                 return fatti
         with conn.transaction():
-            for (cid, _), v in zip(righe, vett):
-                conn.execute("UPDATE chunks SET embedding = %s::vector, updated_at = now() WHERE id = %s",
-                             (vettore_sql(v), cid))
+            for (rid, _), v in zip(righe, vett):
+                if tabella == "chunks":
+                    conn.execute("UPDATE chunks SET embedding = %s::vector, updated_at = now() WHERE id = %s",
+                                 (vettore_sql(v), rid))
+                else:
+                    conn.execute("UPDATE immagini SET embedding = %s::vector WHERE id = %s",
+                                 (vettore_sql(v), rid))
         fatti += len(righe)
 
 
@@ -1389,7 +1433,8 @@ def giro(aspetta=False, forza=False, solo=None):
         # Residui di un giro morto a meta': un file segnato "in lettura" che non
         # e' piu' in lettura. Uno solo girerebbe senza azzerarli (il processo
         # che li ha scritti se n'e' andato): alla prossima lettura valida.
-        conn.execute("UPDATE documenti SET in_lettura = NULL, pagine_fatte = 0, pagine_totali = NULL"
+        conn.execute("UPDATE documenti SET in_lettura = NULL, pagine_fatte = 0, pagine_totali = NULL,"
+                     " figure_fatte = 0, figure_totali = NULL"
                      " WHERE in_lettura IS NOT NULL")
         fonti = [f for f in conn.execute(
             """SELECT id, percorso, aziende FROM sources
@@ -1411,6 +1456,7 @@ def main():
     solo = sys.argv[sys.argv.index("--solo") + 1] if "--solo" in sys.argv else None
     while True:
         inizio = time.time()
+        cambi, completati = [], 0
         try:
             esiti, completati = giro(aspetta=una_volta, forza=forza, solo=solo)
             if esiti is None:
@@ -1485,25 +1531,22 @@ DPI_PAGINA = int(os.environ.get("DPI_PAGINA", "150"))
 TIENI_MARKDOWN_NO = os.environ.get("RILEGGI_MARKDOWN", "") == "1"
 
 ISTRUZIONI_PAGINA = (
-    "Leggi questa pagina di catalogo e riportala in Markdown.\n"
+    "Read this page and report its content faithfully, in Markdown.\n"
     "\n"
-    "1. Il nome del prodotto come intestazione `#`, con le sue misure.\n"
-    "2. OGNI articolo va su una riga di TABELLA Markdown, una riga per articolo, "
-    "anche quando sulla pagina gli articoli sono affiancati o impilati in una griglia. "
-    "Prima riga di intestazione con i nomi delle colonne che servono fra: "
-    "codice, descrizione, colore, misura, confezione, prezzo.\n"
-    "3. MAI `<br>` dentro una cella: se una casella della pagina contiene piu' valori "
-    "(per esempio misura, confezione e due prezzi), ognuno va in una COLONNA sua.\n"
-    "4. Trascrivi i testi come sono, in tutte le lingue presenti. Non tradurre, non "
-    "riassumere, non inventare articoli che non vedi.\n"
-    "\n"
-    "Esempio della forma attesa:\n"
-    "# NOME PRODOTTO\n"
-    "traduzioni del nome | misure\n"
-    "\n"
-    "| codice | colore | misura | confezione | prezzo |\n"
-    "| --- | --- | --- | --- | --- |\n"
-    "| ABC123 | rosso / red | 5 l | 6 | 12,20 |\n"
+    "RULES:\n"
+    "- Transcribe the text you see, in every language present. Do NOT translate, "
+    "do NOT summarise, do NOT reinterpret.\n"
+    "- If the page contains a real TABLE, write it as a Markdown table with its "
+    "own columns and rows. If there is no table, do NOT invent one.\n"
+    "- If the page is a photo, a scan, or an image with no readable text, write "
+    "«Immagine» on one line and then ONE short description of what is visible "
+    "(objects, colours, material). Do NOT invent text, codes, numbers, prices.\n"
+    "- If a text repeats many times (for example a repeated greeting or slogan), "
+    "write it ONCE. Never repeat the same line.\n"
+    "- Never invent anything that is not visible: no codes, no prices, no rows, "
+    "no numbers.\n"
+    "- Keep the answer as long as the page requires, no longer. Stop when you "
+    "have reported everything once.\n"
 )
 # Il Markdown salvato dipende da QUESTE istruzioni: se cambiano, i file
 # vecchi sono di un'altra forma e rileggerli darebbe pezzi incoerenti con i
@@ -1517,12 +1560,21 @@ IMPRONTA_PROMPT = hashlib.sha256(ISTRUZIONI_PAGINA.encode()).hexdigest()[:8]
 # 221x149 px di sassi rossi diventa «possibly dried fruit or processed food»
 # (misurato il 22/09/2026).
 ISTRUZIONI_FIGURA = (
-    "This image is a detail taken from a product catalogue page titled: "
-    "«{titolo}».\n"
-    "Transcribe all text visible in the image, or write 'nessun testo'. Then add one short "
-    "sentence describing what is shown: objects, colours, materials, shapes.\n"
-    "Use the page title only to understand WHAT the objects are. Describe only what you "
-    "actually see in the image, and do not invent details that are not visible."
+    "This image is a detail from a product catalogue page titled: «{titolo}».\n"
+    "\n"
+    "Describe the product using ONLY what you can actually see, in short lines:\n"
+    "- object: what it is\n"
+    "- material: what it is made of (only if visible or readable)\n"
+    "- shape/size: width, height, shape, texture, edges, any visible detail\n"
+    "\n"
+    "Then write «Colours: » followed by the DISTINCT colours visible, comma-separated. "
+    "Group similar shades under one name (for example 'light blue' and 'sky blue' are "
+    "both 'blue'). List each colour exactly once.\n"
+    "If the image shows a single item with no colour variation, write «Colours: n/a».\n"
+    "\n"
+    "Only if there is a short PRODUCT CODE or product name printed near the object, "
+    "write it as «Code: ». Do NOT transcribe addresses, phone numbers, or long text.\n"
+    "Never invent anything that is not visible. Do not repeat. Keep the answer short."
 )
 SECONDI_PER_FIGURA = int(os.environ.get("SECONDI_PER_FIGURA", "120"))
 
@@ -1901,7 +1953,7 @@ def _salva_descrizioni(dentro, mappa):
         print(f"    descrizioni non salvate ({type(e).__name__}: {e})", flush=True)
 
 
-def _descrivi_col_titolo(immagini, titoli, dentro=None):
+def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
     """Le figure descritte da NOI, dicendo al modello da che pagina vengono.
 
     Un ritaglio di 221x149 px senza contesto inganna: il 22/09/2026 un primo
@@ -1919,15 +1971,16 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None):
     import base64
     import json
     import urllib.request
-    if VLM_DESCRIZIONI != "api" or not VLM_MODELLO or not VLM_URL:
+    if VLM_DESCRIZIONI != "api":
         return immagini
-    chiave = os.environ.get("INFERENCE_TOKEN") or os.environ.get("LITELLM_MASTER_KEY") or ""
-    testa = {"Content-Type": "application/json"}
-    if chiave:
-        testa["Authorization"] = f"Bearer {chiave}"
+    # La descrizione passa da LiteLLM (rotta `visione`), non da VLM_URL/llama-swap.
+    url, testa, logico = _litellm_visione()
     salvate = _descrizioni_salvate(dentro)
-    fuori, falliti, riusate = [], 0, 0
+    fuori, falliti, riusate, fatte = [], 0, 0, 0
     for percorso, pagina, vecchia in immagini:
+        fatte += 1
+        if progresso:
+            progresso(fatte, len(immagini))
         nome = pathlib.PurePath(percorso).name
         if nome in salvate:
             riusate += 1
@@ -1946,12 +1999,12 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None):
         try:
             b64 = base64.b64encode((RADICE / percorso).read_bytes()).decode()
             corpo = json.dumps({
-                "model": VLM_MODELLO, "max_tokens": 160, "temperature": 0,
+                "model": logico, "max_tokens": 160, "temperature": 0,
                 "messages": [{"role": "user", "content": [
                     {"type": "text", "text": ISTRUZIONI_FIGURA.format(titolo=titolo)},
                     {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}}]}],
             }).encode()
-            req = urllib.request.Request(f"{VLM_URL.rstrip('/')}/chat/completions",
+            req = urllib.request.Request(f"{url}/v1/chat/completions",
                                          data=corpo, headers=testa, method="POST")
             with urllib.request.urlopen(req, timeout=SECONDI_PER_FIGURA) as r:
                 descr = json.load(r)["choices"][0]["message"]["content"].strip()
@@ -1966,6 +2019,11 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None):
         print(f"    {riusate} descrizioni riprese da disco (niente VLM)", flush=True)
     if falliti:
         print(f"    {falliti} figure senza descrizione (il modello non ha risposto)", flush=True)
+    # Tutte fallite (e ce n'erano) = VLM giu', non figure difficili: senza
+    # queste descrizioni il documento entrerebbe dimezzato e marcato «fatto».
+    # Come per le pagine, meglio rimandare: al giro con la VLM su si rivede.
+    if immagini and falliti == len(immagini):
+        raise Rimandato(f"VLM non raggiungibile: {falliti} figure senza descrizione")
     _salva_descrizioni(dentro, salvate)
     return fuori
 

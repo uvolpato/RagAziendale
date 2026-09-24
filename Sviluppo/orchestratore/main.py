@@ -27,7 +27,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from orchestratore import documento as documento_mod
-from orchestratore import egress, gate, identita, immagini, prompt, recupero, riformula
+from orchestratore import egress, gate, identita, immagini, immagini_articoli, indice, prompt, recupero, ricerca_agente, riformula, sinonimi, vincoli
 
 app = FastAPI()
 
@@ -67,6 +67,15 @@ CAMPIONE = int(os.environ.get("IMMAGINI_CAMPIONE", "4"))
 # riceve una risposta VUOTA (provato il 20/09/2026). Per il RAG il ragionamento
 # non serve: la risposta deve stare nei documenti recuperati.
 SUFFISSO_SISTEMA = os.environ.get("SUFFISSO_SISTEMA", "")
+# Prova A/B: salta riformulazione e estrazione vincoli (i due passi LLM che
+# iniettano errori). Si cerca la domanda dell'utente TALE E QUALE, senza
+# riscrittura ne' pool must-match: e' il comportamento di RAGFlow/Onyx.
+# Variabile d'ambiente, non codice: per tornare indietro basta riavviare senza.
+SENZA_ESTRAZIONE = os.environ.get("SENZA_ESTRAZIONE", "") == "1"
+# Prova: bypassa la TABELLA sinonimi come fonte. La via unica dell'agente passa
+# il CATALOGO al modello e i termini multilingue escono da li'. Non si butta
+# nulla: per tornare indietro basta levare la variabile.
+SENZA_SINONIMI = os.environ.get("SENZA_SINONIMI", "") == "1"
 
 
 @app.on_event("startup")
@@ -205,6 +214,40 @@ def _domanda(messages) -> str:
         if m.get("role") == "user" and isinstance(m.get("content"), str):
             return m["content"].strip()
     return ""
+
+
+# Il prompt che LibreChat manda per chiedere il TITOLO automatico della
+# conversazione. Non e' una domanda sui documenti: e' una richiesta di servizio
+# del frontend. Se passa dal flusso di ricerca, intasa il modello e fa scattare
+# i timeout (misurato il 23/09/2026).
+TITOLO_LIBRECHAT = re.compile(
+    r"provide a concise,?\s+5-word-or-less\s+title", re.I
+)
+
+
+def _e_titolo_librechat(domanda) -> bool:
+    return bool(domanda) and bool(TITOLO_LIBRECHAT.search(domanda))
+
+
+def _titolo_librechat(domanda):
+    """Genera il titolo della conversazione, senza ricerca ne' gate.
+
+    LibreChat manda gia' l'intera conversazione dentro la domanda; qui la si
+    rimanda al modello e si restituisce la risposta. Nessun filtro ACL: non si
+    leggono documenti, si riassume solo cio' che l'utente ha gia' scritto e
+    visto nella sua stessa chat."""
+    messaggi = [{"role": "system", "content": SUFFISSO_SISTEMA},
+                {"role": "user", "content": domanda}]
+
+    def gen():
+        try:
+            for pezzo in _stream_litellm(messaggi, os.environ.get("LLM_RAGIONAMENTO", "ragionamento"), {}):
+                yield pezzo
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': {'message': str(e), 'type': 'upstream_error'}})}\n\n"
+            yield "data: [DONE]\n\n"
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 # Le immagini non si attaccano piu' a ogni risposta: si OFFRONO, e si mostrano
@@ -514,30 +557,17 @@ def _sparse(trovate, quante=None):
 
 
 def _immagini_per_la_domanda(conn, qvec, gruppi, righe, domanda=""):
-    """Gli id delle figure che rispondono alla domanda.
+    """Gli id delle figure degli ARTICOLI che hanno risposto, non della domanda.
 
-    Si cerca fra le DESCRIZIONI delle immagini (prodotte dal modello visivo,
-    vettorizzate come i pezzi), restando nei documenti che hanno risposto: la
-    figura deve venire dalla stessa fonte del testo citato, altrimenti si
-    mostrano prodotti di un catalogo mentre la risposta parla di un altro.
-
-    Se i vettori non ci sono — embedding giu', oppure documenti letti prima
-    che le descrizioni venissero salvate — si torna alla scelta per pagina.
+    D23 (Sviluppo/TOOL-IMMAGINI.md): prima si trovano gli articoli (i chunk gia'
+    recuperati), poi le loro figure — match per codice nella descrizione, e in
+    mancanza la verifica LLM in una chiamata sola. Prima si cercava la DOMANDA
+    per somiglianza vettoriale e, su «profumatori per auto», uscivano figure
+    fuori tema pur dentro la pagina giusta.
     """
-    documenti = list({r["documento"] for r in righe}) if righe else None
-    # ...e nelle PAGINE che hanno risposto. Il documento da solo non basta:
-    # quando la risposta viene da un catalogo solo, «stesso documento» lascia
-    # candidate tutte le sue pagine. Il 22/09/2026, alla domanda «sassi rossi»
-    # con il testo che citava le pagine 4, 6 e 7, sono uscite sfere di acciaio
-    # (pagina 31), ciottoli di fiume (63) e stelline natalizie (92) — sotto la
-    # frase «Ecco le figure delle pagine citate», che quindi era falsa.
-    pagine = sorted({r["page"] for r in righe if r.get("page") is not None}) if righe else None
-    # La domanda serve anche come TESTO, non solo come vettore: sui codici
-    # articolo il vettoriale non distingue GRA1040 da GRA1041.
-    trovate = recupero.immagini_pertinenti(conn, qvec, gruppi, documenti, MAX_IMMAGINI * 4,
-                                           pagine=pagine, domanda=domanda)
+    trovate = immagini_articoli.per_articoli(conn, righe, gruppi, MAX_IMMAGINI)
     if trovate:
-        return [(r["id"], _didascalia(r.get("descrizione")), r) for r in _scelte(trovate)]
+        return [(r["id"], _didascalia(r.get("descrizione")), r) for r in trovate]
     return [(i, "", None) for i in _immagini_del_turno(righe)]
 
 
@@ -656,6 +686,16 @@ async def chat(request: Request):
     domanda = _domanda(corpo.get("messages", []))
     conn = _conn()
 
+    # 1-quater. Il titolo automatico di LibreChat non e' una domanda sui
+    # cataloghi: e' una richiesta di un titolo per la conversazione. Passava dal
+    # flusso di ricerca (agente, sinonimi, vincoli, indice) come una domanda
+    # vera, intasava il modello e faceva andare in timeout l'estrazione dei
+    # vincoli (misurato il 23/09/2026: la via unica smetteva di scattare). Qui
+    # si riconosce e si risponde direttamente col modello, senza ricerca: e' la
+    # stessa conversazione che il frontend manderebbe a qualunque LLM.
+    if _e_titolo_librechat(domanda):
+        return _titolo_librechat(domanda)
+
     # 1-bis. Indicizzazione che ha scaricato il modello: si risponde e basta,
     # senza toccare LiteLLM. Nessuna traccia: non c'e' stato nessun turno.
     if _indice_in_aggiornamento(conn):
@@ -683,16 +723,80 @@ async def chat(request: Request):
     # 2. La domanda per la RICERCA: in una conversazione l'ultima frase da sola
     # non basta ("ne ho bisogno in auto"). Si riscrive con le battute
     # precedenti; se non si puo', resta com'era.
-    cercata, riscritta = riformula.per_la_ricerca(domanda, storico_messaggi, SUFFISSO_SISTEMA)
+    # (Prova A/B: con SENZA_ESTRAZIONE=1 si salta e si usa la domanda vera.)
+    cercata, riscritta = (domanda, False) if SENZA_ESTRAZIONE else \
+        riformula.per_la_ricerca(domanda, storico_messaggi, SUFFISSO_SISTEMA)
     if riscritta:
         print(f"riformulata: {domanda!r} -> {cercata!r}", flush=True)
 
-    # 3. Embedding della domanda (puo degradare a full-text) e ricerca con ACL.
-    qvec = recupero.embedding(cercata)
-    righe, degradato = recupero.cerca(conn, cercata, gruppi, qvec=qvec,
-                                      limite=pezzi_da_recuperare(domanda))
+    # 3. D19: i vincoli di attributo (colore, misura, formato, prezzo) diventano
+    # un ramo del RECUPERO, non un augurio nel prompt. Si estrae il vincolo
+    # ("colore=viola"), si proiettano i termini nelle lingue dei cataloghi
+    # ("lila|violet|purple"), e il recupero resta SOLO dentro i pezzi che li
+    # contengono. Misurato il 23/09/2026: un vero natalizio viola stava a
+    # posizione 753 su 1434 per coseno — nessun peso l'avrebbe portato in cima,
+    # il must-match sulla parola sì. Se i vincoli falliscono (modello giu',
+    # risposta non JSON) si torna alla ricerca di oggi: degradano in silenzio.
+    # (Prova A/B: con SENZA_ESTRAZIONE=1 niente estrazione, niente vincolo.)
+    if SENZA_ESTRAZIONE:
+        _, intent_termini, vincoli_trovati = "", [], []
+        vincolo_regex, query = "", cercata
+    else:
+        _, intent_termini, vincoli_trovati = vincoli.estrae(cercata)
+        vincolo_regex = vincoli.regex(vincoli_trovati)
+        # La query da dare a embedding e rerank parla anche le lingue dei
+        # cataloghi: la domanda da sola non raggiunge «sassi rossi» scritti
+        # «river pebbles dunkelrot dark red» (misurato il 23/09/2026).
+        query = vincoli.query_di_ricerca(cercata, intent_termini, vincoli_trovati)
 
-    # 4. Gate: contaminazione e rotta. Puo rifiutare il turno.
+    # D20: la query si estende coi SINONIMI multilingue delle parole di
+    # contenuto (dizionario in tabella, popolato dall'8B una volta per parola).
+    # E' il collegamento linguistico che ne' il vettore ne' il reranker fanno
+    # da soli («sassi» -> «pietre, pebbles, kiesel»). Vale in entrambe le
+    # modalita', perche' il difetto e' della LINGUA, non dell'estrazione.
+    # (Prova: SENZA_SINONIMI=1 bypassa questa fonte — la via unica dell'agente
+    # passa il CATALOGO al modello e i termini giusti escono da li', senza
+    # tabella. Non si butta nulla: per tornare indietro si leva la variabile.)
+    if not SENZA_SINONIMI:
+        query = sinonimi.arricchisci(conn, query)
+
+    # 4. Embedding della domanda (puo degradare a full-text) e ricerca con ACL.
+    qvec = recupero.embedding(query)
+    # D21: indice dei documenti. Primo passaggio: QUALI cataloghi c'entrano,
+    # cercando fra le descrizioni dei documenti (34 righe, non migliaia di
+    # chunk). Secondo passaggio: la ricerca dettagliata resta DENTRO quelli.
+    # Senza descrizioni generate (indice vuoto) `pertinenti` torna lista vuota
+    # e la ricerca resta su tutto: comportamento di oggi, zero regressione.
+    documenti = indice.pertinenti(conn, qvec, gruppi)
+    # pertinenti torna (source_id, documento): il filtro della ricerca vuole i
+    # NOMI documento, non i source_id. `for _, d` e non `for d, _`.
+    ristretti = [d for _, d in documenti] or None
+    righe, degradato = ricerca_agente.cerca(conn, query, gruppi, qvec=qvec,
+                                            limite=pezzi_da_recuperare(domanda),
+                                            vincolo=vincolo_regex,
+                                            documenti=ristretti,
+                                            domanda_vera=domanda)
+    # Fallback: l'indice può escludere per sbaglio il documento giusto (misurato
+    # il 23/09/2026: «decorazioni sotto i 2 euro» non includeva EUROSAND, che
+    # e' dove stanno i prezzi 1,99). Se la ricerca ristretta non trova niente,
+    # si riprova su tutto: il restringimento e' un acceleratore, non un filtro
+    # di correttezza. Le ACL restano nella WHERE in entrambi i casi.
+    if ristretti and not righe:
+        righe, degradato = ricerca_agente.cerca(
+            conn, query, gruppi, qvec=qvec,
+            limite=pezzi_da_recuperare(domanda),
+            vincolo=vincolo_regex)
+
+    # 5. Barriera di coerenza: se c'era un vincolo e il must-match non trova
+    # NESSUN pezzo, non c'e' riscontro nei documenti — e il modello, chiamato
+    # comunque, sarebbe tentato di inventarlo. Meglio la verita' secca, senza
+    # modello. Solo se il vincolo c'era: una ricerca vuota per altri motivi
+    # resta del flusso normale.
+    if vincoli_trovati and not righe:
+        conn.close()
+        return _risposta_unica(vincoli.messaggio_vuoto(vincoli_trovati))
+
+    # 6. Gate: contaminazione e rotta. Puo rifiutare il turno.
     try:
         decisione = gate.applica(conn, conversation_id, righe)
     except gate.RispostaRifiutata as e:
@@ -700,7 +804,7 @@ async def chat(request: Request):
         return JSONResponse(
             {"error": {"message": str(e), "type": "risposta_rifiutata"}}, status_code=403)
 
-    # 5. Prompt: system + contesto + la cronologia dei messaggi.
+    # 7. Prompt: system + contesto + la cronologia dei messaggi.
     ids_immagini = _immagini_per_la_domanda(conn, qvec, gruppi, righe, cercata)
     url_per_pos = {i + 1: (immagini.firma_url(iid, f"https://{APP_HOST}", utente),
                            _sotto_la_figura(r, d), _pagina_url(r, utente))

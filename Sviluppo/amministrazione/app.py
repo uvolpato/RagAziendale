@@ -385,8 +385,11 @@ def documenti_fonte(fid: str, s=Depends(utente)):
         righe = conn.execute("""
             SELECT d.documento, d.stato, d.errore, d.pezzi, d.dimensione, d.modificato_il, d.indicizzato_il,
                    d.in_lettura, d.pagine_fatte, d.pagine_totali,
+                   d.figure_fatte, d.figure_totali,
                    (SELECT count(*) FROM chunks c WHERE c.source_id = d.source_id AND c.documento = d.documento
-                     AND c.embedding IS NULL) AS senza_vettori
+                     AND c.embedding IS NULL) AS senza_vettori,
+                   (SELECT count(*) FROM immagini i WHERE i.source_id = d.source_id AND i.documento = d.documento
+                     AND i.embedding IS NULL) AS senza_vettori_immagini
               FROM documenti d WHERE d.source_id = %s ORDER BY d.documento""", (fid,)).fetchall()
         doppi = {r["documento"] for r in conn.execute("""
             SELECT unnest(array_agg(documento)) AS documento FROM documenti WHERE source_id = %s
