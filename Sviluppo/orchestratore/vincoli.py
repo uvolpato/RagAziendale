@@ -45,7 +45,7 @@ MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 # «violaceo» -> colore=viola); con un modello economico basta valorizzarla.
 VELOCE = os.environ.get("LLM_VELOCE", "")
 PRINCIPALE = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
-SECONDI = float(os.environ.get("VINCOLI_TIMEOUT", "15"))
+SECONDI = float(os.environ.get("VINCOLI_TIMEOUT", "60"))
 
 ATTRIBUTI = {"colore", "misura", "formato", "prezzo"}
 
@@ -109,7 +109,7 @@ _rotte_rotte = set()
 def _chiedi(rotta, messaggi):
     testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
     corpo = {"model": rotta, "messages": messaggi, "temperature": 0,
-             "max_tokens": 250}
+             "max_tokens": 4000}
     with egress.client(timeout=SECONDI, verify=False) as c:
         r = c.post(f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa)
         r.raise_for_status()

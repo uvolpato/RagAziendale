@@ -38,6 +38,11 @@ APP_HOST = os.environ.get("APP_HOST", "assistente.localhost")
 # Temperatura bassa ma non zero: a zero anche la decodifica avida puo' entrare
 # in loop su un contesto pieno di righe di tabella quasi uguali.
 TEMPERATURA = float(os.environ.get("TEMPERATURA", "0.2"))
+# Budget di token della risposta. Con il 27B "rco" (reasoning content output)
+# il modello ragiona ad alta voce PRIMA di rispondere: senza un budget
+# sufficiente il ragionamento si mangia i token e il `content` resta vuoto
+# (verificato il 24/09/2026). 4096 copre ragionamento + risposta con citazioni.
+MAX_TOKEN = int(os.environ.get("MAX_TOKEN_RISPOSTA", "4096"))
 # NIENTE frequency_penalty da qui. Provata il 22/09/2026 e scartata subito:
 # punisce i token gia' usati, e una citazione come «[2]» si ripete
 # legittimamente dieci volte in una risposta. Il modello ha smesso di citare i
@@ -613,6 +618,7 @@ def _stream_litellm(messages, rotta, uso):
         # Qui il modello deve RIPORTARE quello che sta nel contesto, non
         # inventare: la creativita' non serve e la ripetibilita' si'.
         "temperature": TEMPERATURA,
+        "max_tokens": MAX_TOKEN,
         # Con include_usage LiteLLM manda l'uso dei token nell'ultimo chunk:
         # serve alla traccia (token_in/token_out) senza una seconda chiamata.
         "stream_options": {"include_usage": True},
@@ -637,6 +643,14 @@ def _stream_litellm(messages, rotta, uso):
                         continue  # il chunk di usage non porta testo
                     if pezzo.get("model"):
                         pezzo["model"] = MODEL_NAME
+                    # Il 27B "rco" emette il ragionamento in
+                    # delta.reasoning_content prima del testo vero. LibreChat non
+                    # lo conosce: lo si scarta, cosi' arriva solo la risposta.
+                    delta = (pezzo.get("choices") or [{}])[0].get("delta")
+                    if isinstance(delta, dict):
+                        delta.pop("reasoning_content", None)
+                        if "content" not in delta and not delta.get("tool_calls"):
+                            continue  # solo ragionamento (o chunk vuoto): non si mostra
                     yield f"data: {json.dumps(pezzo)}\n\n"
 
 

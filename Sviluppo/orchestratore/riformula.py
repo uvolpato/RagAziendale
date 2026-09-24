@@ -92,7 +92,7 @@ _rotte_rotte = set()
 
 def _chiedi(rotta, messaggi):
     testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
-    corpo = {"model": rotta, "messages": messaggi, "temperature": 0, "max_tokens": 120}
+    corpo = {"model": rotta, "messages": messaggi, "temperature": 0, "max_tokens": 4000}
     with egress.client(timeout=SECONDI, verify=False) as c:
         r = c.post(f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa)
         r.raise_for_status()

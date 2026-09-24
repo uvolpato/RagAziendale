@@ -524,6 +524,34 @@ def cerca_esatta(conn, termine: str, gruppi: list[str], limite: int = 8):
         return cur.fetchall()
 
 
+SQL_GREP = f"""
+WITH consentite AS ({_CONSENTITE})
+SELECT c.documento, count(*) AS pezzi, min(c.page) AS prima, max(c.page) AS ultima
+FROM chunks c
+JOIN consentite s ON s.id = c.source_id
+WHERE c.content ILIKE %(motivo)s
+GROUP BY c.documento
+ORDER BY pezzi DESC;
+"""
+
+
+def grep(conn, termine: str, gruppi: list[str]):
+    """Quanti pezzi (e in quali documenti) contengono `termine`.
+
+    E' il passo di ORIENTAMENTO che a mano ha scoperto il difetto «nastri blu»:
+    la ricerca diceva «non c'e'» mentre il termine compariva in 240 pezzi. Il
+    modello, prima di fidarsi di un «non trovato», puo' chiedere «ma 'blu'
+    esiste davvero? dove?». Niente punteggi: solo dove e quanto."""
+    par = _permessi(gruppi)
+    if par is None or not (termine or "").strip():
+        return []
+    pulito = termine.strip().replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    par |= {"motivo": f"%{pulito}%"}
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(SQL_GREP, par)
+        return cur.fetchall()
+
+
 def pagina(conn, documento: str, page, gruppi: list[str]):
     """Tutti i pezzi di UNA pagina, nell'ordine in cui stanno sul foglio.
 

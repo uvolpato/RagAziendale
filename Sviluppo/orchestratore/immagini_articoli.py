@@ -59,7 +59,7 @@ ISTRUZIONI = (
 def _chiedi(messaggi):
     testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
     corpo = {"model": ROTTA, "messages": messaggi, "temperature": 0,
-             "max_tokens": 200}
+             "max_tokens": 4000}
     with egress.client(timeout=SECONDI, verify=False) as c:
         r = c.post(f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa)
         r.raise_for_status()

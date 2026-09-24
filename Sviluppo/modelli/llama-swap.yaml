@@ -185,16 +185,36 @@ models:
       #     traboccamento: sono i buffer di --batch-size 8192 allocati come
       #     memoria host bloccata. Ci sono anche a scheda semivuota.
       #
-      # 8192 e non 16384, con la cache KV a 8 bit: non serviva a risolvere la
-      # lentezza (non l'ha risolta), ma un 27B con 16k di contesto f16 chiede
-      # circa 4 GB di sola cache, e tenerli occupati per un modello di
-      # confronto e' sprecato.
-      --ctx-size 8192
+      # 16384 e non 8192: il 27B e' passato da «confronto» a MODELLO DI CHAT il
+      # 24/09/2026, e il RAG carica 8-20 pezzi nel contesto. A 8192 la richiesta
+      # sforava (ContextWindowExceededError, misurato sull'agente: 8557 token
+      # contro 8192). Cache KV a 8 bit per contenere la VRAM.
+      --ctx-size 16384
       --cache-type-k q8_0
       --cache-type-v q8_0
       --parallel 1
       ${gpu}
-    ttl: 1800
+    ttl: 0
+
+  # ---- chat + visione: Qwen3.6 35B-A3B (MoE) ------------------------
+  # MoE: 35B totali ma solo 3B attivi per token. Veloce come un modello piccolo
+  # con la conoscenza di uno grande. Ha il proiettore visione (mmproj): oltre a
+  # rispondere puo' descrivere le figure. Standard (non-RCO): rispetta /no_think,
+  # quindi i passi meccanici sono veloci e il ragionamento resta per le domande
+  # astratte. 11,4 GiB (testo) + 0,86 GiB (mmproj) ≈ 12,2 GiB.
+  "qwen3.6-35b-a3b-gsq-hybrid":
+    name: "Chat + Visione (Qwen3.6 35B-A3B GSQ hybrid)"
+    cmd: |
+      ${llama}
+      --model ${modelli}/chtisgit/Qwen3.6-35B-A3B-2Bit-GSQ-hybrid-GGUF/Qwen3.6-35B-A3B-GSQ-hybrid.gguf
+      --mmproj ${modelli}/chtisgit/Qwen3.6-35B-A3B-2Bit-GSQ-hybrid-GGUF/mmproj-BF16.gguf
+      --port ${PORT}
+      --ctx-size 32768
+      --cache-type-k q4_0
+      --cache-type-v q4_0
+      --parallel 1
+      ${gpu}
+    ttl: 0
 
 routing:
   router:
@@ -222,11 +242,11 @@ routing:
             - "qwen3-8b-gsq"
             - "qwen/qwen3-vl-4b"
 
-        # Il 27B da solo: 12 GB non convivono con chat e VLM. Caricarlo
-        # scarica il gruppo «grandi» — ma NON i piccoli, che restano.
-        # 12 + 0,8 = 12,8 su 16,3.
+        # Il modello di CHAT grande: il 35B-A3B (MoE) da solo. ~12,2 GiB non
+        # convivono con 8B e VLM. Caricarlo scarica il gruppo «grandi» — ma NON
+        # i piccoli, che restano. 12,2 + 0,8 = 13 su 16,3.
         "confronto":
           swap: true
           exclusive: true
           members:
-            - "qwen3.8-27b-gsq-rco"
+            - "qwen3.6-35b-a3b-gsq-hybrid"

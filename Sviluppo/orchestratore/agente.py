@@ -1,0 +1,258 @@
+"""L'agente vero (D17, fase 5): un ciclo LangGraph di strumenti di recupero.
+
+Sostituisce il surrogato `ricerca_agente.py` (cerca-guarda-riprova con un solo
+strumento). Qui il modello ha PIU' strumenti — cerca (col vincolo colore),
+cerca_esatta, pagina, grep, documenti — e decide da se' quali chiamare e quante
+volte, con un tetto (MAX_PASSI).
+
+Il flusso e' quello di una persona davanti ai dati (introspezione del 24/09):
+
+    capisce (intent + vincoli, D19) -> cerca -> guarda cosa torna
+         -> se sbaglia: grep (dove sta davvero?) / pagina (leggi) -> riprova
+         -> rispondi onestamente
+
+Guardrail (VALUTAZIONE-ORCHESTRATORE-AGENTE.md §4), non negoziabili:
+
+- **Il modello decide COSA cercare, mai COSA puo' vedere.** I gruppi li inietta
+  il server dentro gli strumenti (chiusura su `gruppi`): non passano mai dal
+  modello e non compaiono in nessun prompt.
+- **Ciclo limitato.** MAX_PASSI chiamate di strumenti al massimo.
+- **I pezzi restano chunk veri del database.** Il modello non inventa testo.
+- **"Non lo so" e' una risposta possibile.**
+"""
+
+import json
+import operator
+import os
+from typing import Annotated, Any, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+from orchestratore import egress, recupero
+
+LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
+MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
+ROTTA = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
+SECONDI = float(os.environ.get("AGENTE_TIMEOUT", "120"))
+MAX_PASSI = int(os.environ.get("AGENTE_MAX_PASSI", "4"))
+MAX_TOKEN = int(os.environ.get("AGENTE_MAX_TOKEN", "2048"))
+
+ISTRUZIONI_SISTEMA = (
+    "Sei un assistente che cerca nei cataloghi aziendali (decorazioni, nastri, "
+    "vasi, sassi, candele, profumatori, ghirlande, etichette).\n"
+    "Usa gli strumenti per trovare cio' che la persona chiede.\n"
+    "\n"
+    "- Se la domanda e' un saluto o una chiacchiera (non una ricerca), NON "
+    "chiamare strumenti: rispondi direttamente.\n"
+    "- Cerca e leggi solo finche' non hai abbastanza per rispondere: appena "
+    "hai trovato (o capito che non c'e') cio' che serve, SMETTI di chiamare "
+    "strumenti e rispondi. Non cercare infinite variazioni della stessa domanda.\n"
+    "- Se una ricerca non ti convince, usa `grep` per vedere se la parola esiste "
+    "davvero e dove, oppure `pagina` per leggere il contesto.\n"
+    "- Se non trovi cio' che la persona chiede, dillo onestamente: NON inventare "
+    "articoli, codici o prezzi che non hai visto.\n"
+    "- Rispondi in italiano. Quando ti basi sui documenti, cita documento e "
+    "pagina.\n"
+)
+
+
+# Gli strumenti che il modello puo' chiamare.
+STRUMENTI = [
+    {"type": "function", "function": {
+        "name": "cerca",
+        "description": "Cerca nei cataloghi e restituisce i passi piu' pertinenti. "
+                       "I vincoli di colore/misura/prezzo sono gia' applicati dal sistema.",
+        "parameters": {"type": "object",
+                       "properties": {"query": {"type": "string"}},
+                       "required": ["query"]}}},
+    {"type": "function", "function": {
+        "name": "cerca_esatta",
+        "description": "Cerca una parola o un codice ESATTO (es. DST2040, un nome proprio).",
+        "parameters": {"type": "object",
+                       "properties": {"termine": {"type": "string"}},
+                       "required": ["termine"]}}},
+    {"type": "function", "function": {
+        "name": "grep",
+        "description": "Quanti pezzi e in quali documenti compare una parola. Serve a "
+                       "capire se una cosa esiste davvero e dove, prima di fidarsi di un 'non trovato'.",
+        "parameters": {"type": "object",
+                       "properties": {"termine": {"type": "string"}},
+                       "required": ["termine"]}}},
+    {"type": "function", "function": {
+        "name": "pagina",
+        "description": "Legge TUTTI i passi di una pagina di un documento, per capire il contesto.",
+        "parameters": {"type": "object",
+                       "properties": {"documento": {"type": "string"},
+                                      "pagina": {"type": "integer"}},
+                       "required": ["documento", "pagina"]}}},
+    {"type": "function", "function": {
+        "name": "documenti",
+        "description": "Elenca i cataloghi disponibili e quanti passi ha ciascuno.",
+        "parameters": {"type": "object", "properties": {}}}},
+]
+
+
+# Quanto testo di ogni pezzo si fa vedere al modello in uno strumento.
+ASSAGGIO = 250
+
+
+def _formatta(righe):
+    if not righe:
+        return "(nessun risultato)"
+    fuori = []
+    for r in righe:
+        doc = r.get("documento", "?")
+        pag = f", pagina {r['page']}" if r.get("page") is not None else ""
+        testo = " ".join((r.get("content") or "").split())
+        if len(testo) > ASSAGGIO:
+            testo = testo[:ASSAGGIO] + " …"
+        fuori.append(f"[{doc}{pag}] {testo}")
+    return "\n".join(fuori)
+
+
+def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
+    """Esegue uno strumento e torna (righe, testo_per_il_modello).
+
+    `gruppi`, `vincolo` e `intent_termini` arrivano dalla chiusura, non dal
+    modello: e' il guardrail. I sinonimi dell'oggetto (intent_termini) si
+    aggiungono alla query perche' il catalogo scrive «ribbons» dove la persona
+    dice «nastri» (D19, query_di_ricerca).
+    """
+    sinonimi = intent_termini or []
+    if nome == "cerca":
+        q = str(argomenti.get("query", "")).strip()
+        if not q:
+            return [], "(query vuota)"
+        if sinonimi:
+            q = q + " " + " ".join(sinonimi)
+        righe, _ = recupero.cerca(conn, q, gruppi, qvec=recupero.embedding(q),
+                                  limite=8, vincolo=vincolo)
+        return righe, _formatta(righe)
+    if nome == "cerca_esatta":
+        t = str(argomenti.get("termine", "")).strip()
+        if not t:
+            return [], "(termine vuoto)"
+        righe = recupero.cerca_esatta(conn, t, gruppi, limite=8)
+        return righe, _formatta(righe)
+    if nome == "grep":
+        t = str(argomenti.get("termine", "")).strip()
+        if not t:
+            return [], "(termine vuoto)"
+        righe = recupero.grep(conn, t, gruppi)
+        if not righe:
+            return [], f"(il termine '{t}' non compare in nessun documento visibile)"
+        testo = "\n".join(f"- {r['documento']}: {r['pezzi']} pezzi "
+                          f"(pagine {r['prima']}-{r['ultima']})" for r in righe)
+        return [], testo
+    if nome == "pagina":
+        righe = recupero.pagina(conn, str(argomenti.get("documento", "")),
+                                argomenti.get("pagina"), gruppi)
+        return righe, _formatta(righe)
+    if nome == "documenti":
+        righe = recupero.documenti_visibili(conn, gruppi)
+        testo = "\n".join(f"- {r['documento']} ({r['pezzi']} passi)" for r in righe)
+        return [], testo or "(nessun documento visibile)"
+    return [], "(strumento sconosciuto)"
+
+
+def _chiama(messaggi):
+    """Una chiamata al modello, con gli strumenti. Torna il messaggio assistant."""
+    testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
+    corpo = {"model": ROTTA, "messages": messaggi, "tools": STRUMENTI,
+             "tool_choice": "auto", "temperature": 0, "max_tokens": MAX_TOKEN}
+    with egress.client(timeout=SECONDI, verify=False) as c:
+        r = c.post(f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa)
+        r.raise_for_status()
+        m = r.json()["choices"][0]["message"]
+    m.pop("reasoning_content", None)   # il 27B "rco" ragiona ad alta voce
+    return m
+
+
+class Stato(TypedDict):
+    domanda: str
+    messaggi: Annotated[list, operator.add]
+    conn: Any
+    gruppi: list
+    vincolo: str              # regex must-match da vincoli.estrae (D19)
+    intent_termini: list      # sinonimi dell'oggetto, per il modello
+    pezzi: dict               # chunk accumulati, per id
+    passi: int
+
+
+def _nodo_capisce(stato: Stato) -> dict:
+    """Il passo D19: intent + vincoli dalla domanda. Degrada in silenzio."""
+    from orchestratore import vincoli as v
+    _, intent_termini, trovati = v.estrae(stato["domanda"])
+    return {"vincolo": v.regex(trovati), "intent_termini": intent_termini}
+
+
+def _nodo_agente(stato: Stato) -> dict:
+    messaggio = _chiama(stato["messaggi"])
+    return {"messaggi": [messaggio], "passi": stato.get("passi", 0) + 1}
+
+
+def _nodo_strumenti(stato: Stato) -> dict:
+    ultimo = stato["messaggi"][-1]
+    pezzi = dict(stato.get("pezzi") or {})
+    messaggi = []
+    for tc in ultimo.get("tool_calls") or []:
+        nome = tc.get("function", {}).get("name", "")
+        try:
+            argomenti = json.loads(tc.get("function", {}).get("arguments") or "{}")
+        except (TypeError, ValueError):
+            argomenti = {}
+        righe, testo = _esegui(nome, argomenti, stato["conn"], stato["gruppi"],
+                               stato.get("vincolo", ""), stato.get("intent_termini", []))
+        for r in righe:
+            pezzi.setdefault(r["id"], r)
+        messaggi.append({"role": "tool", "tool_call_id": tc.get("id", ""),
+                         "content": testo})
+    return {"messaggi": messaggi, "pezzi": pezzi}
+
+
+def _prossimo(stato: Stato) -> str:
+    ultimo = stato["messaggi"][-1]
+    if ultimo.get("tool_calls") and stato.get("passi", 0) < MAX_PASSI:
+        return "strumenti"
+    return "fine"
+
+
+_grafo = StateGraph(Stato)
+_grafo.add_node("capisce", _nodo_capisce)
+_grafo.add_node("agente", _nodo_agente)
+_grafo.add_node("strumenti", _nodo_strumenti)
+_grafo.add_edge(START, "capisce")
+_grafo.add_edge("capisce", "agente")
+_grafo.add_conditional_edges("agente", _prossimo,
+                             {"strumenti": "strumenti", "fine": END})
+_grafo.add_edge("strumenti", "agente")
+_compilato = _grafo.compile()
+
+
+def cerca(conn, domanda: str, gruppi: list, limite: int = 8):
+    """L'agente: (righe, risposta)."""
+    stato = _compilato.invoke({
+        "domanda": domanda,
+        "messaggi": [{"role": "system", "content": ISTRUZIONI_SISTEMA},
+                     {"role": "user", "content": domanda}],
+        "conn": conn, "gruppi": gruppi, "vincolo": "", "intent_termini": [],
+        "pezzi": {}, "passi": 0,
+    })
+    righe = list((stato.get("pezzi") or {}).values())[:limite]
+    risposta = (stato["messaggi"][-1].get("content") or "").strip()
+    return righe, risposta
+
+
+def _prova():
+    """Le regole che non chiamano il modello."""
+    assert _formatta([]) == "(nessun risultato)"
+    assert "[catalogo.pdf, pagina 3] testo" == _formatta(
+        [{"id": 1, "documento": "catalogo.pdf", "page": 3, "content": "testo"}])
+    assert _prossimo({"messaggi": [{"content": "ciao"}], "passi": 1}) == "fine"
+    assert _prossimo({"messaggi": [{"tool_calls": [{"id": "x"}]}], "passi": 1}) == "strumenti"
+    assert _prossimo({"messaggi": [{"tool_calls": [{"id": "x"}]}], "passi": 9}) == "fine"
+    print("agente: regole verdi")
+
+
+if __name__ == "__main__":
+    _prova()
