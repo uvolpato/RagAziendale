@@ -292,6 +292,8 @@ SU_RICHIESTA = os.environ.get("IMMAGINI_SU_RICHIESTA", "1") != "0"
 # Frase dell'offerta. Contiene MARCA: al turno dopo si guarda se l'assistente
 # aveva davvero offerto qualcosa, prima di interpretare un "si" come consenso.
 MARCA_OFFERTA = "immagini collegate a questa risposta"
+# Offerta di mostrare il resto dell'elenco: al turno dopo si riconosce il "si'".
+MARCA_ALTRO = "Vuoi che te le elenchi tutte?"
 # Le due marche servono a due cose insieme: scrivere la riga (_fonti_citate,
 # _blocco_offerta) e RICONOSCERLA nella cronologia per toglierla
 # (_senza_aggiunte). Una sola costante, cosi' non possono divergere.
@@ -325,6 +327,15 @@ def vuole_le_immagini(domanda: str, ultima_risposta: str) -> bool:
     fatta. Servono ENTRAMBE le condizioni: l'offerta nel turno precedente e una
     risposta breve e affermativa."""
     if not (ultima_risposta and MARCA_OFFERTA in ultima_risposta):
+        return False
+    d = domanda.strip()
+    return len(d) <= 60 and bool(CONSENSO.match(d))
+
+
+def vuole_il_resto(domanda: str, ultima_risposta: str) -> bool:
+    """True se l'utente dice di si' all'offerta «vuoi che te le elenchi tutte?».
+    Stesso meccanismo di vuole_le_immagini: l'offerta prima, il consenso dopo."""
+    if not (ultima_risposta and MARCA_ALTRO in ultima_risposta):
         return False
     d = domanda.strip()
     return len(d) <= 60 and bool(CONSENSO.match(d))
@@ -397,6 +408,49 @@ def _fonti_citate(righe, base: str = "", utente: str = "") -> str:
             etichetta = f"[{etichetta}]({url})"
         voci.append("".join(f"[{n}]" for n in numeri) + f" {etichetta}")
     return "\n\n---\n" + MARCA_FONTI + " · ".join(voci) + "_"
+
+
+def _figura_in_breve(descrizione) -> str:
+    """La descrizione della figura: e' il contenuto che il VLM ha gia' letto
+    (Object + Material + Shape/size + Colours). Si mostra quasi per intero."""
+    d = descrizione or ""
+    if "Object:" in d:
+        d = d.split("Object:", 1)[1]
+    return " ".join(d.split())[:220]
+
+
+def _elenco_figure(righe, base, utente) -> str:
+    """Le figure trovate, in un elenco strutturato: descrizione + link alla
+    pagina. E' la risposta per i PRODOTTI: non un «Fonti» in fondo, ma l'elenco
+    stesso — ogni voce dice cos'e' e porta alla pagina che lo mostra.
+
+    Non si elencano tutte: se ne mostrano al massimo LIMITE_ELENCO, e si offre
+    il resto invece di annegare la risposta."""
+    voci, viste = [], set()
+    contate = 0
+    for r in righe:
+        if r.get("descrizione") is None:
+            continue
+        chiave = (r.get("documento"), r.get("page"))
+        if chiave in viste:
+            continue
+        viste.add(chiave)
+        contate += 1
+        if contate > LIMITE_ELENCO:
+            continue
+        descr = _figura_in_breve(r.get("descrizione"))
+        url = documento_mod.firma_url(r.get("source_id"), r.get("documento"),
+                                      r.get("page"), base, utente)
+        pag = f", pagina {r['page']}" if r.get("page") is not None else ""
+        voci.append(f"- **{descr}** — [{r['documento']}{pag}]({url})")
+    resto = contate - len(voci)
+    testo = "\n".join(voci)
+    if resto > 0:
+        testo += f"\n\n_Ci sono altre {resto} voci. Vuoi che te le elenchi tutte?_"
+    return testo
+
+
+LIMITE_ELENCO = 5        # quante figure elencare prima di offrire il resto
 
 
 PER_RIGA = 4        # quante figure affiancare
@@ -742,6 +796,23 @@ async def chat(request: Request):
     # ricerca -> gate -> prompt).
     righe, risposta = agente.cerca(conn, domanda, gruppi,
                                    limite=pezzi_da_recuperare(domanda))
+
+    # I PRODOTTI (figure) si rispondono con l'ELENCO: descrizione + link alla
+    # pagina, non col riassunto del modello (che inventa la pagina). L'elenco
+    # e' la risposta.
+    elenco = _elenco_figure(righe, f"https://{APP_HOST}", utente)
+    if elenco:
+        testo = "Ecco cosa ho trovato:\n\n" + elenco
+        def gen():
+            try:
+                yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': testo}, 'index': 0}], 'model': MODEL_NAME})}\n\n"
+                yield "data: [DONE]\n\n"
+            finally:
+                _registra_traccia(conn, conversation_id, utente, domanda, righe,
+                                  {"rotta": "agente"}, None, None,
+                                  int((time.monotonic() - inizio) * 1000))
+                conn.close()
+        return StreamingResponse(gen(), media_type="text/event-stream")
 
     if risposta:
         def gen():

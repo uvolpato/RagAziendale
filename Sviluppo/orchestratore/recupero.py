@@ -550,12 +550,21 @@ def grep(conn, termine: str, gruppi: list[str]):
         return cur.fetchall()
 
 
+# Le figure di INTRO/MARCHIO che non sono prodotti: loghi, branding, pagine
+# «customization», copertine («## » e' il titolo della pagina) e il footer
+# (Susteren, il paese nell'indirizzo). Il VLM le descrive come ogni altra
+# figura, ma non sono cio' che si cerca in un catalogo: le si scarta dal
+# `cerca_figure` (24/09/2026, «nastri blu» tornava copertine e footer).
+SCARTA_FIGURE = r"logo|branding|customization|digital graphic|Susteren|##"
+
+
 SQL_FIGURE = f"""
 WITH consentite AS ({_CONSENTITE})
-SELECT i.id, i.documento, i.page, i.descrizione, i.percorso
+SELECT i.id, i.source_id, i.documento, i.page, i.descrizione, i.percorso
 FROM immagini i
 JOIN consentite s ON s.id = i.source_id
 WHERE i.descrizione ~* %(oggetto)s
+  AND i.descrizione !~* %(scarta)s
 %%VINC%%
 ORDER BY i.page, i.id
 LIMIT %(limite)s;
@@ -575,7 +584,8 @@ def cerca_figure(conn, termini, vincolo="", gruppi=None, limite=12):
     puliti = [t for t in (t.strip() for t in termini) if t]
     if not puliti:
         return []
-    par |= {"oggetto": "|".join(re.escape(t) for t in puliti), "limite": limite}
+    par |= {"oggetto": "|".join(re.escape(t) for t in puliti),
+            "scarta": SCARTA_FIGURE, "limite": limite}
     vinc = "AND i.descrizione ~* %(vincolo)s" if vincolo else ""
     if vincolo:
         par["vincolo"] = vincolo

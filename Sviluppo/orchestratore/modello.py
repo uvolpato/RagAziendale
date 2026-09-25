@@ -41,9 +41,13 @@ def chiedi(messaggi, max_tokens=4000):
 
 
 def messaggio(messaggi, max_tokens=2048, tools=None, tool_choice="auto"):
-    """Il messaggio COMPLETO (content + tool_calls + reasoning_content), con
-    ragionamento. Serve all'agente, che deve scegliere gli strumenti."""
-    return _risposta(messaggi, max_tokens, ragiona=True,
+    """Il messaggio COMPLETO (content + tool_calls), SENZA ragionamento.
+
+    La scelta degli strumenti e' meccanica: il ragionamento la rendeva non
+    deterministica e a volte produceva risposte vuote (il 35B si mangiava il
+    budget di token ragionando e non decideva mai). Senza, il modello decide e
+    produce tool_calls affidabili."""
+    return _risposta(messaggi, max_tokens, ragiona=False,
                      tools=tools, tool_choice=tool_choice)
 
 

@@ -33,3 +33,22 @@ Criterio di verifica per distinguere posticcio da strutturale:
   formato → prezzo)? Allora è un posticcio.
 - la soluzione vale per l'intera CLASSE di casi, e il caso specifico è solo il
   primo che l'ha scoperta? Allora è strutturale.
+
+## Milestone: il sistema funziona come funziona l'assistente
+
+La bussola di ogni decisione di comportamento è una sola: guarda come funziona
+tu, l'assistente, in questa conversazione, e fai funzionare il sistema allo
+stesso modo.
+
+Tu hai davanti l'INTERA conversazione e capisci il contesto: un «sì» dopo
+un'offerta è un consenso, un «ciao» non è una ricerca, «mostrami il resto»
+riprende ciò che avevi appena elencato. Non hai una catena di `if` per ogni
+caso: leggi, capisci, decidi.
+
+Il sistema deve fare lo stesso. L'agente riceve la conversazione intera (non
+la sola domanda) e decide da sé — saluto, consenso, ricerca prodotti, lettura
+di un testo — come faresti tu. La comprensione e la memoria stanno nell'agente,
+non in `if` sparsi nel chiamante.
+
+Regola pratica: davanti a un problema di comportamento, non chiederti «quale
+caso speciale aggiungo?» ma «come lo farei io?».

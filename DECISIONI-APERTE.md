@@ -38,11 +38,23 @@ e' l'unico pezzo nuovo.
 esistono archi fra documenti di aree diverse. Cercare su piu' dataset unisce i
 risultati, non i grafi.
 
-**Idea del 22/09/2026 (utente)**: costruire un grafo per ogni COMBINAZIONE di
-aree, scelto in base ai gruppi di chi chiede. Aggira l'obiezione che aveva
-chiuso il requisito 3 — non servono ACL sugli archi, perche' ogni grafo e'
-interamente consentito a chi lo usa. Costo: N grafi da tenere aggiornati, e la
-sospensione di una fonte non e' piu' immediata.
+**Direzione (confermata il 25/09/2026)**: costruire un grafo per ogni
+COMBINAZIONE di aree, scelto in base ai gruppi di chi chiede. Aggira il
+problema dei permessi — non servono ACL sugli archi, perché ogni grafo è
+interamente consentito a chi lo usa: chi ha solo «acquisti» vede il grafo
+«acquisti», chi ha «acquisti» + «commerciale» vede il grafo «acquisti+commerciale».
+**Posticipato, non escluso**: si riprende dopo il problema dei cataloghi. Caso
+d'uso vero: l'**area legale**, dove il collegamento fra documenti è la domanda
+stessa («quali contratti citano questa policy»).
+
+**Come costruirli (raffinato il 25/09/2026)**: NON a priori. **Base**: un grafo
+per area + uno "tutti i documenti" (per il superutente). **Su richiesta**: i
+grafi di aggregazione (acquisti+commerciale, ecc.) si costruiscono quando un
+profilo li configura, non tutte le combinazioni possibili. Il grafo è un
+artefatto derivato dal profilo (documenti + aree), quindi sempre ricostruibile.
+Costi: latenza al primo uso di un profilo multi-area (una volta sola) e
+invalidazione quando cambia un'area (il grafo che la contiene si marca "da
+ricostruire").
 
 **Punto in rosso**: `ENABLE_BACKEND_ACCESS_CONTROL` fallisce APERTO — se e'
 falso i parametri dataset sono ignorati e la ricerca gira su tutti i dati.
@@ -54,7 +66,7 @@ Analisi completa e ordine dei passi: `Sviluppo/PROBLEMI-APERTI.md` §6-bis.
 
 1. **Architettura a tre livelli**: Docling = *estrazione* (testo, tabelle, immagini, OCR) · Cognee = *grafo + ricerca* · gate = *permessi*. Non si sostituiscono, si completano. Cognee legge i formati nativi (PDF, DOCX, …): niente obbligo di convertire tutto in Markdown; l'OCR di Docling serve solo per scansioni/foto.
 2. **Immagini fuori da Cognee**: Docling estrae le immagini → volume dedicato con ID stabile. Il VLM (qwen multimodale) genera una **descrizione** che entra **nel testo** di Cognee con un **riferimento esplicito** `[immagine:id]`. In risposta, l'orchestratore risolve `id → immagine`, la passa al VLM, e il modello sa di doverla integrare perché il riferimento sta nel testo recuperato. Il VLM fa due lavori: (a) descrivere le immagini all'ingestion, (b) rispondere integrandole.
-3. **Archi concettuali trasversali** (fra documenti di aree diverse) — **ESCLUSI** (decisione del 19/09/2026). Verifica Cognee: il permesso è a livello *dataset* (isolamento EBAC, grafi fisicamente separati per dataset), non a livello di *arco/nodo*. Un arco trasversale con ACL sui singoli archi richiederebbe fork/ristrutturazione del sorgente, costo da settimane + revisione di sicurezza esterna, e il rischio di un bug è fuga di dati (il costo peggiore). Il valore reale del cross-area è già servito da: (a) dati strutturati via SQL + semantic layer (decisione 6), (b) ricerca su più dataset per chi ha accesso a più aree (unione, decisione 44). Si riapre **solo** se emerge un caso concreto e nominato di "navigazione da concetto a concetto".
+3. **Archi concettuali trasversali** (fra documenti di aree diverse) — **POSTICIPATI**, non esclusi (corretto il 25/09/2026). Il 19/09 erano stati chiusi perché un arco trasversale con ACL sui singoli archi richiederebbe fork/ristrutturazione del sorgente, costo da settimane + revisione di sicurezza esterna, e il rischio di un bug è fuga di dati (il costo peggiore). La direzione che evita il problema è il **grafo per combinazione di aree** (vedi sopra): niente ACL per arco, ogni grafo è consentito a chi lo usa. Si riprende dopo il problema dei cataloghi; caso d'uso vero l'area legale.
 4. **Cognee e le immagini** (verificato sulla documentazione): Cognee tratta i **file immagine standalone** (`.png`, `.jpg`, scansioni) trascrivendoli in testo (VLM + OCR) — **non** estrae né conserva le immagini annidate dentro i PDF. Quindi: **Docling resta indispensabile** per estrarre le immagini dai PDF (cataloghi), Cognee da solo non le vede. Il ruolo di Docling si semplifica (solo estrazione di qualità, niente chunk/embedding). La lacuna "immagini dentro i PDF" va confermata nella prova pratica.
 | **D14** | **Agente personale per ogni utente** (posta, calendario, attività) | **Agenti di LibreChat + server MCP con accesso delegato del singolo utente** · OpenClaw (nato per uso personale, con accesso a terminale e skill esterne) · Letta · piattaforma a parte | Agenti di LibreChat: sono già dentro la chat, con Keycloak e con i permessi per utente. Ogni utente collega il **proprio** account di posta, quindi l'agente agisce solo come lui. Invio, risposta, inoltro e accettazione di inviti sempre con conferma. La posta si legge solo con il modello locale. La memoria personale va in Cognee, in un dataset privato di ogni utente | Agente personale |
 | **D16** | **Impostazioni di lettura per fonte** (oggi valgono per tutte le cartelle allo stesso modo: sono variabili d'ambiente del servizio) | Tutto globale, come adesso · un piccolo insieme di valori per fonte (colonna `impostazioni jsonb` su `sources`, modificabile dal pannello) · **profili** scelti quando si collega la fonte («Cataloghi prodotto», «Procedure e policy», «Scansioni»), con la possibilità di ritoccare i singoli valori | **Profili con ritocchi**: chi collega una cartella sceglie che tipo di documenti contiene, non quanti dpi vuole. Sotto, il profilo imposta i valori; il pannello mostra quelli **efficaci** e quali sono stati cambiati rispetto al profilo | Niente oggi. Serve quando le fonti diventano eterogenee: succede già ora |

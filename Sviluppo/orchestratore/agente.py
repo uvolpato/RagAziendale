@@ -30,8 +30,6 @@ from langgraph.graph import END, START, StateGraph
 
 from orchestratore import egress, modello, recupero
 
-LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
-MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 ROTTA = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
 SECONDI = float(os.environ.get("AGENTE_TIMEOUT", "120"))
 MAX_PASSI = int(os.environ.get("AGENTE_MAX_PASSI", "4"))

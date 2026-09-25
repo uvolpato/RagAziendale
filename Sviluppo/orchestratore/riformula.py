@@ -27,8 +27,6 @@ import httpx
 
 from orchestratore import egress, modello
 
-LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
-MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 # Rotta veloce se c'e', altrimenti il modello principale: la riscrittura e' un
 # lavoro corto e meccanico, non merita il modello grosso, ma non vale la pena
 # rinunciarci se il veloce non e' configurato.

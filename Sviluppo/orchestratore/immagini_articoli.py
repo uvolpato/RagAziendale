@@ -23,8 +23,6 @@ from psycopg.rows import dict_row
 
 from orchestratore import egress, modello
 
-LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
-MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 ROTTA = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
 SECONDI = float(os.environ.get("IMMAGINI_TIMEOUT", "30"))
 

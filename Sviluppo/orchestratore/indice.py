@@ -25,8 +25,6 @@ from psycopg.rows import tuple_row
 
 from orchestratore import egress, modello, recupero
 
-LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
-MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 PRINCIPALE = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
 SECONDI = float(os.environ.get("INDICE_TIMEOUT", "30"))
 

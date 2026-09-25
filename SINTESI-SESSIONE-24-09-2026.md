@@ -99,3 +99,50 @@ da sola basta.
 3. Costruire l'agente LangGraph (strumenti `recupero.*`, ciclo, subagenti per
    fonte) con router 27B → API.
 4. Ritestare "nastri blu" / "sassi rossi" e misurare.
+
+---
+
+## 6. Aggiornamento 25/09 — litellm tolto, agente cablato, glossario
+
+**Modello: 35B-A3B (MoE+VLM), non più il 27B.** Il 27B "rco" ragionava sempre e
+i passi meccanici costavano 18–53s. Il 35B-A3B (MoE, 3B attivi) è veloce, ha il
+proiettore visione (sostituisce il VLM separato) ed è standard (rispetta
+`reasoning_effort`).
+
+**litellm rimosso.** Il modello è uno solo e locale: l'orchestratore e l'ingestion
+chiamano llama-swap direttamente (`host.docker.internal:1235`). Nuovo
+`modello.py` con `chiedi` (meccanica, `reasoning_effort: none`) / `messaggio`
+(agente) / `stream` (risposta). litellm buttava via `reasoning_effort`, il
+parametro chiave per il toggle del ragionamento.
+
+**Agente cablato in `main.py`.** La catena fissa (riformula → vincoli → sinonimi →
+ricerca → gate → prompt) è sostituita da `agente.cerca`. Per i prodotti risponde
+con un **elenco strutturato** (descrizione + link alla pagina, max 5 voci +
+"vuoi vederli tutti?"), non con un "Fonti" in fondo.
+
+**Tool-calling deterministico.** Il 35B con reasoning, per la scelta degli
+strumenti, produceva risposte vuote e non-deterministiche (stessa domanda, esiti
+diversi). Ora `modello.messaggio` usa `reasoning_effort: none`: la scelta "quale
+tool chiamare" è meccanica. Il ragionamento resta per le domande astratte.
+
+**Reindex di tutti i cataloghi.** EUROSAND, FLEURAMI e Creative_Living erano
+rimasti al vecchio formato figura ("The image shows…"); ora tutti hanno `Colours:`
+uniforme. "sassi rossi" prima non trovava nulla, ora trova le pagine giuste.
+
+**Glossario: embedding scartato, co-occorrenza.** Per estrarre i sinonimi dal
+corpus (popolare `sinonimi` con ciò che il catalogo scrive davvero), l'embedding
+**fallisce** — misurato: "vasi" sta più vicino a "sassi" (0.63) di "rocks" (0.46),
+"pebbles" (0.43). Il vettore multilingue collega le frasi, non i nomi singoli di
+dominio. La via giusta è la **co-occorrenza**: il catalogo si auto-traduce
+("river pebbles | pierres de fleuve | pietre di fiume | KIESEL"), quindi i gruppi
+di termini che compaiono insieme sono il glossario. Da implementare.
+
+**Knowledge graph: posticipato, non escluso** (corretto in `DECISIONI-APERTE.md`
+D13). Direzione: un grafo per ogni combinazione di aree (chi ha solo "acquisti"
+vede il grafo "acquisti", chi ha "acquisti"+"commerciale" vede il grafo
+combinato). Caso d'uso vero: l'area legale (collegamento fra documenti). Si
+riprende dopo il problema dei cataloghi.
+
+**Milestone aggiunta ad `AGENTS.md`**: il sistema funziona come funziona
+l'assistente — l'agente riceve la conversazione intera e decide da sé (saluto,
+consenso, ricerca, lettura), non con `if` sparsi nel chiamante.
