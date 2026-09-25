@@ -44,6 +44,9 @@ GUARDIA_SENZA_OGGETTO = os.environ.get("GUARDIA_SENZA_OGGETTO", "") == "1"
 # cerca» sia «cerca con l'oggetto sbagliato». Quando e' acceso, il guardrail
 # reattivo di _nodo_agente si spegne (la ricerca e' gia' fatta).
 GUARDIA_FORTE = os.environ.get("GUARDIA_FORTE", "") == "1"
+# 1 = pre-selezione dei documenti con l'indice (indice.py): prima si sceglie
+# QUALI cataloghi c'entrano (descrizione del documento), poi si cerca dentro.
+INDICE_PRESELEZIONE = os.environ.get("INDICE_PRESELEZIONE", "") == "1"
 
 ISTRUZIONI_SISTEMA = (
     "Sei un assistente che cerca in un archivio aziendale di cataloghi e documenti.\n"
@@ -96,7 +99,9 @@ STRUMENTI = [
                        "required": ["documento", "pagina"]}}},
     {"type": "function", "function": {
         "name": "documenti",
-        "description": "Elenca i cataloghi disponibili e quanti passi ha ciascuno.",
+        "description": "Elenca i cataloghi disponibili e cosa contiene ciascuno (la "
+                       "descrizione del contenuto). Usalo sulle domande APERTE, prima "
+                       "di cercare, per ancorarti a cio' che l'archivio ha davvero.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "cerca_figure",
@@ -146,6 +151,16 @@ def _formatta_figure(righe):
     return "\n".join(fuori)
 
 
+def _pre_seleziona(conn, qvec, gruppi):
+    """I documenti piu' pertinenti (indice.py), o None se l'indice non c'e' o la
+    pre-selezione e' spenta. Con None la ricerca resta su tutto, come prima."""
+    if not INDICE_PRESELEZIONE or qvec is None:
+        return None
+    from orchestratore import indice
+    doc = indice.pertinenti(conn, qvec, gruppi, quanti=4)
+    return [d[1] for d in doc] if doc else None
+
+
 def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
     """Esegue uno strumento e torna (righe, testo_per_il_modello).
 
@@ -161,8 +176,10 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
             return [], "(query vuota)"
         if termini:
             q = q + " " + " ".join(termini)
-        righe, _ = recupero.cerca(conn, q, gruppi, qvec=recupero.embedding(q),
-                                  limite=8, vincolo=vincolo)
+        qvec = recupero.embedding(q)
+        documenti = _pre_seleziona(conn, qvec, gruppi)
+        righe, _ = recupero.cerca(conn, q, gruppi, qvec=qvec,
+                                  limite=8, vincolo=vincolo, documenti=documenti)
         return righe, _formatta(righe)
     if nome == "cerca_figure":
         oggetto = str(argomenti.get("oggetto", "")).strip()
@@ -172,8 +189,9 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
             limite = int(argomenti.get("limite") or 12)
         except (TypeError, ValueError):
             limite = 12
+        documenti = _pre_seleziona(conn, recupero.embedding(oggetto), gruppi)
         righe = recupero.cerca_figure(conn, [oggetto] + termini, vincolo, gruppi,
-                                      limite=limite)
+                                      limite=limite, documenti=documenti)
         return righe, _formatta_figure(righe)
     if nome == "cerca_esatta":
         t = str(argomenti.get("termine", "")).strip()
@@ -196,8 +214,13 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
                                 argomenti.get("pagina"), gruppi)
         return righe, _formatta(righe)
     if nome == "documenti":
-        righe = recupero.documenti_visibili(conn, gruppi)
-        testo = "\n".join(f"- {r['documento']} ({r['pezzi']} passi)" for r in righe)
+        from orchestratore import indice
+        descrizioni = indice.descrizioni_visibili(conn, gruppi)
+        if descrizioni:
+            testo = "\n".join(f"- {d}: {desc}" for d, desc in descrizioni)
+        else:
+            righe = recupero.documenti_visibili(conn, gruppi)
+            testo = "\n".join(f"- {r['documento']} ({r['pezzi']} passi)" for r in righe)
         return [], testo or "(nessun documento visibile)"
     return [], "(strumento sconosciuto)"
 

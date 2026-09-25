@@ -576,15 +576,17 @@ FROM immagini i
 JOIN consentite s ON s.id = i.source_id
 WHERE i.descrizione ~* %(oggetto)s
   AND i.descrizione !~* %(scarta)s
+%%DOC%%
 %%VINC%%
 ORDER BY i.page, i.id
 LIMIT %(limite)s;
 """
 
 
-def cerca_figure(conn, termini, vincolo="", gruppi=None, limite=12):
+def cerca_figure(conn, termini, vincolo="", gruppi=None, limite=12, documenti=None):
     """Le figure la cui descrizione contiene uno dei `termini` (l'oggetto) e,
-    se c'e', il `vincolo` (l'attributo).
+    se c'e', il `vincolo` (l'attributo). `documenti` restringe a quei documenti
+    (pre-selezione dell'indice).
 
     E' il modo in cui un catalogo va cercato: il prodotto sta nella FIGURA,
     non nel testo. Qui si trova la pagina da indicare alla persona — «i nastri
@@ -600,12 +602,15 @@ def cerca_figure(conn, termini, vincolo="", gruppi=None, limite=12):
     vinc = "AND i.descrizione ~* %(vincolo)s" if vincolo else ""
     if vincolo:
         par["vincolo"] = vincolo
+    doc = "AND i.documento = ANY(%(documenti)s::text[])" if documenti else ""
+    if documenti:
+        par["documenti"] = documenti
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(SQL_FIGURE.replace("%%VINC%%", vinc), par)
+        cur.execute(SQL_FIGURE.replace("%%VINC%%", vinc).replace("%%DOC%%", doc), par)
         righe = cur.fetchall()
     # Vincolo morbido: la pool del must-match e' vuota -> si riprova senza.
     if vincolo and VINCOLO_MORBIDO and not righe:
-        return cerca_figure(conn, termini, "", gruppi, limite)
+        return cerca_figure(conn, termini, "", gruppi, limite, documenti)
     return righe
 
 

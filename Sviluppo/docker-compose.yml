@@ -210,6 +210,8 @@ services:
       # 1 = guardrail FORTE: la prima ricerca la fa sempre il sistema con
       # l'intent estratto (sostituisce il guardrail reattivo).
       GUARDIA_FORTE: ${GUARDIA_FORTE-0}
+      # 1 = pre-selezione dei documenti con l'indice (indice.py) prima di cercare.
+      INDICE_PRESELEZIONE: ${INDICE_PRESELEZIONE-0}
       # Prova: l'agente di ricerca (cerca-guarda-riprova, D17) accanto ai
       # termini multilingue. si = attivo, altrimenti la sola ricerca diretta.
       # Si cambia qui e si riavvia, come SENZA_ESTRAZIONE.
