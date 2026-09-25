@@ -28,12 +28,14 @@ from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from orchestratore import egress, modello, recupero
+from orchestratore import egress, glossario, modello, recupero
 
 ROTTA = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
 SECONDI = float(os.environ.get("AGENTE_TIMEOUT", "120"))
 MAX_PASSI = int(os.environ.get("AGENTE_MAX_PASSI", "4"))
 MAX_TOKEN = int(os.environ.get("AGENTE_MAX_TOKEN", "2048"))
+# 1 = non espandere i termini col glossario del corpus (solo quelli del modello).
+SENZA_GLOSSARIO = os.environ.get("SENZA_GLOSSARIO", "") == "1"
 
 ISTRUZIONI_SISTEMA = (
     "Sei un assistente che cerca in un archivio aziendale di cataloghi e documenti.\n"
@@ -136,17 +138,17 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
     """Esegue uno strumento e torna (righe, testo_per_il_modello).
 
     `gruppi`, `vincolo` e `intent_termini` arrivano dalla chiusura, non dal
-    modello: e' il guardrail. I sinonimi dell'oggetto (intent_termini) si
-    aggiungono alla query perche' il catalogo scrive «ribbons» dove la persona
+    modello: e' il guardrail. I termini multilingue dell'oggetto (intent_termini)
+    si aggiungono alla query perche' il catalogo scrive «ribbons» dove la persona
     dice «nastri» (D19, query_di_ricerca).
     """
-    sinonimi = intent_termini or []
+    termini = intent_termini or []
     if nome == "cerca":
         q = str(argomenti.get("query", "")).strip()
         if not q:
             return [], "(query vuota)"
-        if sinonimi:
-            q = q + " " + " ".join(sinonimi)
+        if termini:
+            q = q + " " + " ".join(termini)
         righe, _ = recupero.cerca(conn, q, gruppi, qvec=recupero.embedding(q),
                                   limite=8, vincolo=vincolo)
         return righe, _formatta(righe)
@@ -154,7 +156,7 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
         oggetto = str(argomenti.get("oggetto", "")).strip()
         if not oggetto:
             return [], "(oggetto vuoto)"
-        righe = recupero.cerca_figure(conn, [oggetto] + sinonimi, vincolo, gruppi)
+        righe = recupero.cerca_figure(conn, [oggetto] + termini, vincolo, gruppi)
         return righe, _formatta_figure(righe)
     if nome == "cerca_esatta":
         t = str(argomenti.get("termine", "")).strip()
@@ -196,7 +198,7 @@ class Stato(TypedDict):
     conn: Any
     gruppi: list
     vincolo: str              # regex must-match da vincoli.estrae (D19)
-    intent_termini: list      # sinonimi dell'oggetto, per il modello
+    intent_termini: list      # termini multilingue dell'oggetto, per il modello
     pezzi: dict               # chunk accumulati, per id
     passi: int
 
@@ -205,6 +207,10 @@ def _nodo_capisce(stato: Stato) -> dict:
     """Il passo D19: intent + vincoli dalla domanda. Degrada in silenzio."""
     from orchestratore import vincoli as v
     _, intent_termini, trovati = v.estrae(stato["domanda"])
+    # I termini del modello («sassi» -> «pietre») si espandono coi termini del
+    # CORPUS («pietre» -> «rocks, dekosteine»), che il modello non sa.
+    if not SENZA_GLOSSARIO:
+        intent_termini = glossario.espandi(stato["conn"], intent_termini)
     return {"vincolo": v.regex(trovati), "intent_termini": intent_termini}
 
 

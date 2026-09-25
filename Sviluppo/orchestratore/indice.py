@@ -11,7 +11,7 @@ e il suo VETTORE (migrazione 019). La ricerca a due stadi:
 
 La descrizione la scrive il modello UNA volta, leggendo le intestazioni dei
 pezzi gia' indicizzati (il titolo di ogni pagina, che e' la prima riga del
-chunk): non si rilegge nessun PDF. Stesso principio dei sinonimi (018): il
+chunk): non si rilegge nessun PDF. Stesso principio del glossario (020): il
 modello popola, la cache in tabella consulta.
 
 Le ACL restano dove sono sempre state: la descrizione non si duplica sui pezzi,

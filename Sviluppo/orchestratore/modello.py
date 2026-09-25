@@ -6,7 +6,7 @@ Questo permette anche di mandare `reasoning_effort` — che litellm buttava via.
 
 Due velocita', decise per chiamata:
 - `chiedi` (ragiona=False): reasoning_effort "none" -> risposta secca e veloce,
-  per i passi MECCANICI (estrazione vincoli, sinonimi, riscrittura, indici).
+  per i passi MECCANICI (estrazione vincoli, glossario, riscrittura, indici).
 - `messaggio` / `stream` (ragionamento acceso): per l'agente e la risposta,
   dove il ragionamento serve (domande astratte, scelta degli strumenti).
 """

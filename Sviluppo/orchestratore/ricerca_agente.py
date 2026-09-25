@@ -331,7 +331,7 @@ def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8,
 
     Stessa firma di `recupero.cerca` (con un parametro in piu'), cosi' il
     chiamante non sa quale dei due usa. `domanda` e' la query da CERCARE (puo'
-    essere arricchita coi sinonimi); `domanda_vera` e' cio' che la persona ha
+    essere arricchita coi termini multilingue); `domanda_vera` e' cio' che la persona ha
     scritto, e serve SOLO a capire.
     """
     if not ACCESO:

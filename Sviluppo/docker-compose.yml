@@ -199,12 +199,12 @@ services:
       # domanda dell'utente tale e quale (comportamento RAGFlow/Onyx). 0/assente
       # = flusso attuale. Non e' codice: si cambia qui e si riavvia.
       SENZA_ESTRAZIONE: ${SENZA_ESTRAZIONE-0}
-      # Prova: bypassa la tabella sinonimi come fonte; i termini multilingue
-      # li produce il modello col CATALOGO davanti. 1 = attivo. Reversibile.
-      SENZA_SINONIMI: ${SENZA_SINONIMI-1}
+      # Prova: non espandere i termini della domanda col glossario del corpus
+      # (restano solo quelli del modello). 1 = attivo. Reversibile.
+      SENZA_GLOSSARIO: ${SENZA_GLOSSARIO-0}
       # Prova: l'agente di ricerca (cerca-guarda-riprova, D17) accanto ai
-      # sinonimi. si = attivo, altrimenti la sola ricerca diretta. Si cambia
-      # qui e si riavvia, come SENZA_ESTRAZIONE.
+      # termini multilingue. si = attivo, altrimenti la sola ricerca diretta.
+      # Si cambia qui e si riavvia, come SENZA_ESTRAZIONE.
       RICERCA_AGENTE: ${RICERCA_AGENTE-si}
       # Le immagini si offrono in fondo alla risposta e si mostrano a chi
       # scrive "mostra": quattro figure attaccate a ogni risposta sono rumore.

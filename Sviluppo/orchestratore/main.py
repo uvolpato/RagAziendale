@@ -27,7 +27,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from orchestratore import documento as documento_mod
-from orchestratore import agente, egress, gate, identita, immagini, immagini_articoli, indice, modello, prompt, recupero, ricerca_agente, riformula, sinonimi, vincoli
+from orchestratore import agente, egress, gate, identita, immagini, immagini_articoli, indice, modello, prompt, recupero, ricerca_agente, riformula, vincoli
 
 app = FastAPI()
 
@@ -77,10 +77,6 @@ SUFFISSO_SISTEMA = os.environ.get("SUFFISSO_SISTEMA", "")
 # riscrittura ne' pool must-match: e' il comportamento di RAGFlow/Onyx.
 # Variabile d'ambiente, non codice: per tornare indietro basta riavviare senza.
 SENZA_ESTRAZIONE = os.environ.get("SENZA_ESTRAZIONE", "") == "1"
-# Prova: bypassa la TABELLA sinonimi come fonte. La via unica dell'agente passa
-# il CATALOGO al modello e i termini multilingue escono da li'. Non si butta
-# nulla: per tornare indietro basta levare la variabile.
-SENZA_SINONIMI = os.environ.get("SENZA_SINONIMI", "") == "1"
 
 
 @app.on_event("startup")
@@ -758,7 +754,7 @@ async def chat(request: Request):
 
     # 1-quater. Il titolo automatico di LibreChat non e' una domanda sui
     # cataloghi: e' una richiesta di un titolo per la conversazione. Passava dal
-    # flusso di ricerca (agente, sinonimi, vincoli, indice) come una domanda
+    # flusso di ricerca (agente, glossario, vincoli, indice) come una domanda
     # vera, intasava il modello e faceva andare in timeout l'estrazione dei
     # vincoli (misurato il 23/09/2026: la via unica smetteva di scattare). Qui
     # si riconosce e si risponde direttamente col modello, senza ricerca: e' la
@@ -792,7 +788,7 @@ async def chat(request: Request):
 
     # L'agente vero: capisce la domanda e decide da se' — cerca le figure per i
     # prodotti, legge il testo per i documenti, risponde ai saluti senza
-    # cercare. Sostituisce la catena fissa (riformula -> vincoli -> sinonimi ->
+    # cercare. Sostituisce la catena fissa (riformula -> vincoli -> glossario ->
     # ricerca -> gate -> prompt).
     righe, risposta = agente.cerca(conn, domanda, gruppi,
                                    limite=pezzi_da_recuperare(domanda))
