@@ -36,6 +36,9 @@ MAX_PASSI = int(os.environ.get("AGENTE_MAX_PASSI", "4"))
 MAX_TOKEN = int(os.environ.get("AGENTE_MAX_TOKEN", "2048"))
 # 1 = non espandere i termini col glossario del corpus (solo quelli del modello).
 SENZA_GLOSSARIO = os.environ.get("SENZA_GLOSSARIO", "") == "1"
+# 1 = il guardrail forza la ricerca anche quando non c'e' un oggetto ma c'e' un
+# colore («color crema»): i termini del colore diventano l'oggetto da cercare.
+GUARDIA_SENZA_OGGETTO = os.environ.get("GUARDIA_SENZA_OGGETTO", "") == "1"
 
 ISTRUZIONI_SISTEMA = (
     "Sei un assistente che cerca in un archivio aziendale di cataloghi e documenti.\n"
@@ -204,6 +207,7 @@ def _chiama(messaggi):
 class Stato(TypedDict):
     domanda: str
     intent: str               # l'oggetto estratto da vincoli.estrae (per il guardrail)
+    colore: list              # termini degli attributi enumerabili (guardia senza oggetto)
     messaggi: Annotated[list, operator.add]
     conn: Any
     gruppi: list
@@ -222,7 +226,7 @@ def _nodo_capisce(stato: Stato) -> dict:
     if not SENZA_GLOSSARIO:
         intent_termini = glossario.espandi(stato["conn"], intent_termini)
     return {"vincolo": v.regex(trovati), "intent_termini": intent_termini,
-            "intent": intent}
+            "intent": intent, "colore": v.termini_colore(trovati)}
 
 
 def _nodo_agente(stato: Stato) -> dict:
@@ -232,14 +236,18 @@ def _nodo_agente(stato: Stato) -> dict:
     # («e nastri azzurri?» dopo «sassi») il modello imita la risposta precedente
     # e inventa la pagina (misurato il 25/09/2026: «Nastri azzurri: p. 38-39»
     # senza alcuna ricerca). Il modello decide COME cercare, mai se non cercare.
-    if (not messaggio.get("tool_calls") and stato.get("intent")
-            and stato.get("passi", 0) == 0):
-        messaggio["tool_calls"] = [{
-            "id": "forza_ricerca",
-            "type": "function",
-            "function": {"name": "cerca_figure",
-                         "arguments": json.dumps({"oggetto": stato["intent"]})},
-        }]
+    if not messaggio.get("tool_calls") and stato.get("passi", 0) == 0:
+        oggetto = stato.get("intent")
+        # senza oggetto ma con un colore («color crema»): si cerca il colore.
+        if not oggetto and GUARDIA_SENZA_OGGETTO:
+            oggetto = (stato.get("colore") or [""])[0]
+        if oggetto:
+            messaggio["tool_calls"] = [{
+                "id": "forza_ricerca",
+                "type": "function",
+                "function": {"name": "cerca_figure",
+                             "arguments": json.dumps({"oggetto": oggetto})},
+            }]
     return {"messaggi": [messaggio], "passi": stato.get("passi", 0) + 1}
 
 
@@ -295,6 +303,7 @@ def cerca(conn, domanda: str, gruppi: list, limite: int = 8, storia: list = None
     stato = _compilato.invoke({
         "domanda": domanda,
         "intent": "",
+        "colore": [],
         "messaggi": messaggi,
         "conn": conn, "gruppi": gruppi, "vincolo": "", "intent_termini": [],
         "pezzi": {}, "passi": 0,

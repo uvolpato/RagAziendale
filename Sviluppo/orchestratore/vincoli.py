@@ -109,6 +109,18 @@ def _termini(lista) -> list:
     return out
 
 
+def termini_colore(trovati) -> list:
+    """I termini degli attributi enumerabili (colore/misura/...) appiattiti in
+    una lista. Serve al guardrail: quando non c'e' un oggetto ma c'e' un colore
+    («color crema»), quei termini diventano la query di ricerca."""
+    out = []
+    for v in (trovati or []):
+        for t in v.get("termini") or []:
+            if t and t not in out:
+                out.append(t)
+    return out
+
+
 def estrae(domanda: str, catalogo=None):
     """(intent, intent_termini, vincoli) estratti dalla domanda.
 

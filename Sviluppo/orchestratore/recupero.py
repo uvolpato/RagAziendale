@@ -45,6 +45,12 @@ RERANK_MODELLO = os.environ.get("RERANK_MODELLO", "text-embedding-bge-reranker-v
 # piu' fedele ma 150 pezzi interi superano il contesto del reranker.
 RERANK_CARATTERI = int(os.environ.get("RERANK_CARATTERI", "900"))
 
+# Vincolo MORBIDO (esperimento reversibile): se il must-match del vincolo
+# (colore/misura) svuota la pool, si riprova SENZA vincolo invece di tornare
+# zero righe. Un colore che il catalogo scrive con un altro termine («tortora»
+# dove il catalogo dice «beige») non deve azzerare la ricerca.
+VINCOLO_MORBIDO = os.environ.get("VINCOLO_MORBIDO", "") == "1"
+
 # Quanto dev'essere RARA una parola perche' il ramo lessicale la cerchi: al
 # massimo un pezzo su MILLE. Con l'archivio di oggi (3112 pezzi) vuol dire al
 # massimo 3 pezzi — che e' la definizione di un codice articolo o di un nome
@@ -299,7 +305,12 @@ def cerca(conn, domanda: str, gruppi: list[str], qvec=None, limite: int = 8,
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(sql, par)
         righe = cur.fetchall()
-    return (riordina(domanda, righe, limite) if largo else righe), degradato
+    righe = riordina(domanda, righe, limite) if largo else righe
+    # Vincolo morbido: la pool del must-match e' vuota -> si riprova senza.
+    if vincolo and VINCOLO_MORBIDO and not righe:
+        return cerca(conn, domanda, gruppi, qvec=qvec, limite=limite,
+                     vincolo="", documenti=documenti)
+    return righe, degradato
 
 
 def contiene_interno(righe) -> str | None:
@@ -591,7 +602,11 @@ def cerca_figure(conn, termini, vincolo="", gruppi=None, limite=12):
         par["vincolo"] = vincolo
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(SQL_FIGURE.replace("%%VINC%%", vinc), par)
-        return cur.fetchall()
+        righe = cur.fetchall()
+    # Vincolo morbido: la pool del must-match e' vuota -> si riprova senza.
+    if vincolo and VINCOLO_MORBIDO and not righe:
+        return cerca_figure(conn, termini, "", gruppi, limite)
+    return righe
 
 
 def pagina(conn, documento: str, page, gruppi: list[str]):
