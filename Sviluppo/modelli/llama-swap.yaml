@@ -146,6 +146,7 @@ models:
       # alla volta, quindi due slot non servono a niente.
       --ctx-size 16384
       --parallel 1
+      --repeat-penalty 1.1
       ${gpu}
     ttl: 0
 
@@ -213,6 +214,7 @@ models:
       --cache-type-k q4_0
       --cache-type-v q4_0
       --parallel 1
+      --repeat-penalty 1.1
       ${gpu}
     ttl: 0
 

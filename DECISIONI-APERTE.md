@@ -360,6 +360,7 @@ perché il vettore recupera i pezzi giusti.
 | **A6** | **Cancellare il backup della cronologia vecchia** quando non serve più | Tu | `C:\Progetti\_backup-segreti\` — contiene ancora la password |
 | **A8** | **Estendere il prototipo** con Utenti, Gruppi, Profili, Aziende | Designer | `SPECIFICA-INTERFACCE-AMMINISTRAZIONE.md` §7b e §11b |
 | **A9** | **Libreria personale di note** — documenti per persona che entrano nell'indice (cercabili) ma non si condividono; strumento `nota` dell'agente | Io (agente) | ACL a livello utente (`sub` dal token, oggi c'è solo gruppo/azienda); note embeddate al volo dall'orchestratore, filtro `proprietario` nella CTE `consentite`. Progettata in sessione 25/09, rinviata per fare prima la memoria agentica |
+| **A10** | **Controllo automatico della degenerazione dei dati generati** — rilevare i loop (parole ripetute) nelle descrizioni VLM e nelle risposte del modello, e rigenerarli o segnalarli | Io | Visto il 25/09: 12 descrizioni di figure in loop («fronds»×22, «green»×23) per il repeat-penalty mancante, più il loop «satin, polyester…» del 35B in chat. Il repeat-penalty ora c'è, ma serve un check strutturale: parola ripetuta ≥8 volte a fine indicizzazione → anomalia `indice:descrizione-degenere` + rigenerazione mirata (come la ri-descrizione manuale delle 12 figure). Vale anche per le risposte in chat (loop in generazione) |
 
 ---
 

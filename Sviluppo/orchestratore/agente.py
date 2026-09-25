@@ -203,6 +203,7 @@ def _chiama(messaggi):
 
 class Stato(TypedDict):
     domanda: str
+    intent: str               # l'oggetto estratto da vincoli.estrae (per il guardrail)
     messaggi: Annotated[list, operator.add]
     conn: Any
     gruppi: list
@@ -215,16 +216,30 @@ class Stato(TypedDict):
 def _nodo_capisce(stato: Stato) -> dict:
     """Il passo D19: intent + vincoli dalla domanda. Degrada in silenzio."""
     from orchestratore import vincoli as v
-    _, intent_termini, trovati = v.estrae(stato["domanda"])
+    intent, intent_termini, trovati = v.estrae(stato["domanda"])
     # I termini del modello («sassi» -> «pietre») si espandono coi termini del
     # CORPUS («pietre» -> «rocks, dekosteine»), che il modello non sa.
     if not SENZA_GLOSSARIO:
         intent_termini = glossario.espandi(stato["conn"], intent_termini)
-    return {"vincolo": v.regex(trovati), "intent_termini": intent_termini}
+    return {"vincolo": v.regex(trovati), "intent_termini": intent_termini,
+            "intent": intent}
 
 
 def _nodo_agente(stato: Stato) -> dict:
     messaggio = _chiama(stato["messaggi"])
+    # Guardrail: se la domanda nomina un OGGETTO e il modello non ha chiamato
+    # nessuno strumento, si forza la ricerca della figura. Senza, sul follow-up
+    # («e nastri azzurri?» dopo «sassi») il modello imita la risposta precedente
+    # e inventa la pagina (misurato il 25/09/2026: «Nastri azzurri: p. 38-39»
+    # senza alcuna ricerca). Il modello decide COME cercare, mai se non cercare.
+    if (not messaggio.get("tool_calls") and stato.get("intent")
+            and stato.get("passi", 0) == 0):
+        messaggio["tool_calls"] = [{
+            "id": "forza_ricerca",
+            "type": "function",
+            "function": {"name": "cerca_figure",
+                         "arguments": json.dumps({"oggetto": stato["intent"]})},
+        }]
     return {"messaggi": [messaggio], "passi": stato.get("passi", 0) + 1}
 
 
@@ -279,6 +294,7 @@ def cerca(conn, domanda: str, gruppi: list, limite: int = 8, storia: list = None
         messaggi.append({"role": "user", "content": domanda})
     stato = _compilato.invoke({
         "domanda": domanda,
+        "intent": "",
         "messaggi": messaggi,
         "conn": conn, "gruppi": gruppi, "vincolo": "", "intent_termini": [],
         "pezzi": {}, "passi": 0,
