@@ -207,6 +207,9 @@ services:
       VINCOLO_MORBIDO: ${VINCOLO_MORBIDO-0}
       # 1 = il guardrail cerca anche senza oggetto quando c'e' un colore.
       GUARDIA_SENZA_OGGETTO: ${GUARDIA_SENZA_OGGETTO-0}
+      # 1 = guardrail FORTE: la prima ricerca la fa sempre il sistema con
+      # l'intent estratto (sostituisce il guardrail reattivo).
+      GUARDIA_FORTE: ${GUARDIA_FORTE-0}
       # Prova: l'agente di ricerca (cerca-guarda-riprova, D17) accanto ai
       # termini multilingue. si = attivo, altrimenti la sola ricerca diretta.
       # Si cambia qui e si riavvia, come SENZA_ESTRAZIONE.

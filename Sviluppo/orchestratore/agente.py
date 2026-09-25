@@ -39,6 +39,11 @@ SENZA_GLOSSARIO = os.environ.get("SENZA_GLOSSARIO", "") == "1"
 # 1 = il guardrail forza la ricerca anche quando non c'e' un oggetto ma c'e' un
 # colore («color crema»): i termini del colore diventano l'oggetto da cercare.
 GUARDIA_SENZA_OGGETTO = os.environ.get("GUARDIA_SENZA_OGGETTO", "") == "1"
+# 1 = guardrail FORTE (reversibile): la prima ricerca la fa SEMPRE il sistema,
+# con l'intent estratto, prima che il modello decida. Copre sia «il modello non
+# cerca» sia «cerca con l'oggetto sbagliato». Quando e' acceso, il guardrail
+# reattivo di _nodo_agente si spegne (la ricerca e' gia' fatta).
+GUARDIA_FORTE = os.environ.get("GUARDIA_FORTE", "") == "1"
 
 ISTRUZIONI_SISTEMA = (
     "Sei un assistente che cerca in un archivio aziendale di cataloghi e documenti.\n"
@@ -225,18 +230,46 @@ def _nodo_capisce(stato: Stato) -> dict:
     # CORPUS («pietre» -> «rocks, dekosteine»), che il modello non sa.
     if not SENZA_GLOSSARIO:
         intent_termini = glossario.espandi(stato["conn"], intent_termini)
-    return {"vincolo": v.regex(trovati), "intent_termini": intent_termini,
-            "intent": intent, "colore": v.termini_colore(trovati)}
+    vincolo = v.regex(trovati)
+    colore = v.termini_colore(trovati)
+    pezzi, messaggi = {}, []
+    # Guardrail FORTE: la prima ricerca la fa il sistema, con l'intent estratto,
+    # e il risultato arriva al modello gia' pronto (non puo' ne' non cercare ne'
+    # cercare con l'oggetto sbagliato).
+    if GUARDIA_FORTE:
+        oggetto = intent
+        if not oggetto and GUARDIA_SENZA_OGGETTO and colore:
+            # Solo colore: l'oggetto e' il primo termine e il resto entra nei
+            # termini, cosi' la regex copre tutta la famiglia («crema, cream,
+            # beige, ivory»). Con la sola «crema» (italiano, assente) la ricerca
+            # troverebbe zero anche se «cream» ha 260 figure.
+            oggetto = colore[0]
+            intent_termini = intent_termini + [c for c in colore if c not in intent_termini]
+        if oggetto:
+            righe, testo = _esegui("cerca_figure", {"oggetto": oggetto},
+                                   stato["conn"], stato["gruppi"], vincolo, intent_termini)
+            pezzi = {r["id"]: r for r in righe}
+            messaggi = [
+                {"role": "assistant", "content": "", "tool_calls": [{
+                    "id": "forza_ricerca", "type": "function",
+                    "function": {"name": "cerca_figure",
+                                 "arguments": json.dumps({"oggetto": oggetto})}}]},
+                {"role": "tool", "tool_call_id": "forza_ricerca", "content": testo},
+            ]
+    return {"vincolo": vincolo, "intent_termini": intent_termini,
+            "intent": intent, "colore": colore,
+            "pezzi": pezzi, "messaggi": messaggi}
 
 
 def _nodo_agente(stato: Stato) -> dict:
     messaggio = _chiama(stato["messaggi"])
-    # Guardrail: se la domanda nomina un OGGETTO e il modello non ha chiamato
-    # nessuno strumento, si forza la ricerca della figura. Senza, sul follow-up
-    # («e nastri azzurri?» dopo «sassi») il modello imita la risposta precedente
-    # e inventa la pagina (misurato il 25/09/2026: «Nastri azzurri: p. 38-39»
-    # senza alcuna ricerca). Il modello decide COME cercare, mai se non cercare.
-    if not messaggio.get("tool_calls") and stato.get("passi", 0) == 0:
+    # Guardrail REATTIVO: scatta solo se quello forte e' spento. Se il modello
+    # non ha chiamato nessuno strumento e c'e' un oggetto, si forza la ricerca.
+    # Senza, sul follow-up («e nastri azzurri?» dopo «sassi») il modello imita
+    # la risposta precedente e inventa la pagina (misurato il 25/09/2026:
+    # «Nastri azzurri: p. 38-39» senza alcuna ricerca).
+    if (not GUARDIA_FORTE and not messaggio.get("tool_calls")
+            and stato.get("passi", 0) == 0):
         oggetto = stato.get("intent")
         # senza oggetto ma con un colore («color crema»): si cerca il colore.
         if not oggetto and GUARDIA_SENZA_OGGETTO:
