@@ -279,6 +279,20 @@ def _nodo_capisce(stato: Stato) -> dict:
                                  "arguments": json.dumps({"oggetto": oggetto})}}]},
                 {"role": "tool", "tool_call_id": "forza_ricerca", "content": testo},
             ]
+            # Fallback: la figura non c'e' (il prodotto sta nel TESTO: «profumatore»
+            # non compare nelle descrizioni figura, ma il catalogo ne parla in
+            # prosa). Si cerca anche nel testo e si passa il risultato.
+            if not righe:
+                righe2, testo2 = _esegui("cerca", {"query": oggetto},
+                                         stato["conn"], stato["gruppi"], vincolo, intent_termini)
+                pezzi = {r["id"]: r for r in righe2}
+                messaggi += [
+                    {"role": "assistant", "content": "", "tool_calls": [{
+                        "id": "forza_ricerca_testo", "type": "function",
+                        "function": {"name": "cerca",
+                                     "arguments": json.dumps({"query": oggetto})}}]},
+                    {"role": "tool", "tool_call_id": "forza_ricerca_testo", "content": testo2},
+                ]
     return {"vincolo": vincolo, "intent_termini": intent_termini,
             "intent": intent, "colore": colore,
             "pezzi": pezzi, "messaggi": messaggi}
