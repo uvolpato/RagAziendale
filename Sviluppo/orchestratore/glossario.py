@@ -16,15 +16,17 @@ Due sorgenti, una tabella:
 - il MODELLO, al primo incontro di una parola che non c'e' (glossario_di): la
   sua memoria copre «sassi» -> «pietre, ciottoli, pebbles» ma non i nomi di
   dominio rari («rocks», «dekosteine»).
-- il CORPUS, con estrai_glossario(): il modello LEGGE i nomi trilingue dei
-  cataloghi («pebbles | galets | ciottoli») e ne estrae voce -> termini. E'
-  lui a capire cos'e' l'oggetto e cosa e' un aggettivo o un colore, non una
-  lista di parole hardcoded.
+- il CORPUS: l'ingestion, durante il giro, fa leggere al modello i nomi
+  trilingue dei cataloghi («pebbles | galets | ciottoli») e ne estrae voce ->
+  termini (indicizza.estrai_glossario). E' lui a capire cos'e' l'oggetto e cosa
+  e' un aggettivo o un colore, non una lista di parole hardcoded.
 
 Una voce con array vuoto significa «gia' guardata, nessun termine»: cosi' il
 modello non viene ri-chiamato per «bisogno», «quanto», «costa» a ogni turno.
+
+La cache in RAM si rinfresca da sola quando l'ingestion riempie la tabella
+(_sincronizza): un glossario ricostruito non richiede il riavvio.
 """
-import json
 import os
 import threading
 
@@ -47,9 +49,11 @@ ISTRUZIONI = (
 )
 
 # Cache in RAM: voce -> lista termini (anche vuota, per le voci gia' guardate).
-# Caricata dalla tabella al primo uso, aggiornata in scrittura.
+# Caricata dalla tabella, e rinfrescata quando l'ingestion la riempie (vedi
+# _sincronizza): cosi' un glossario ricostruito non richiede il riavvio.
 _cache: dict[str, list] = {}
 _caricate: set[str] = set()
+_ultimo_aggiornamento = ""   # max(aggiornato_il) all'ultimo caricamento
 _lock = threading.Lock()
 
 
@@ -73,18 +77,33 @@ def _genera(parola: str) -> list:
 
 
 def _carica(conn):
-    """Carica la tabella nella cache RAM, una volta sola."""
-    if "ok" in _caricate:
-        return
+    """Ricarica la tabella nella cache RAM e ricorda l'ultimo aggiornamento."""
+    global _ultimo_aggiornamento
     with _lock:
-        if "ok" in _caricate:
-            return
         # tuple_row: non ereditare il dict_row del chiamante (main.py ce l'ha).
         with conn.cursor(row_factory=tuple_row) as cur:
             cur.execute("SELECT voce, termini FROM glossario")
             for voce, termini in cur.fetchall():
                 _cache[voce] = list(termini)
+            cur.execute("SELECT max(aggiornato_il)::text FROM glossario")
+            _ultimo_aggiornamento = (cur.fetchone()[0] or "")
         _caricate.add("ok")
+
+
+def _sincronizza(conn):
+    """Ricarica la cache solo se la tabella e' cambiata dall'ultimo caricamento.
+
+    L'ingestion riempie `glossario` durante il giro: senza questo controllo il
+    processo terrebbe in RAM la versione vecchia fino al riavvio. Una SELECT su
+    `max(aggiornato_il)` a ricerca, non una query per termine."""
+    if "ok" not in _caricate:
+        _carica(conn)
+        return
+    with conn.cursor(row_factory=tuple_row) as cur:
+        cur.execute("SELECT max(aggiornato_il)::text FROM glossario")
+        riga = cur.fetchone()
+    if (riga[0] or "") != _ultimo_aggiornamento:
+        _carica(conn)
 
 
 def glossario_di(conn, parola: str) -> list:
@@ -92,7 +111,7 @@ def glossario_di(conn, parola: str) -> list:
     parola = parola.strip().lower()
     if not parola:
         return []
-    _carica(conn)
+    _sincronizza(conn)
     with _lock:
         if parola in _cache:
             return _cache[parola]
@@ -118,7 +137,7 @@ def glossario_noti(conn, parola: str) -> list:
     parola = parola.strip().lower()
     if not parola:
         return []
-    _carica(conn)
+    _sincronizza(conn)
     with _lock:
         return list(_cache.get(parola, []))
 
@@ -184,122 +203,6 @@ def _pulisci(testo: str, parola: str) -> list:
     return out[:MAX_GLOSSARIO]
 
 
-# ---- Estrazione dal corpus --------------------------------------------------
-
-# Il modello legge i nomi trilingue dei cataloghi e ne estrae voce -> termini.
-# E' lui a distinguere l'oggetto dall'aggettivo e dal colore: qui non c'e'
-# nessuna lista di parole da tenere o scartare.
-ISTRUZIONI_ESTRAI = (
-    "Sei un esperto di cataloghi di decorazioni e giardinaggio. Ti passo i nomi "
-    "dei prodotti nelle lingue italiano/tedesco/inglese, separati da «|» (ogni "
-    "riga e' lo stesso prodotto nelle tre lingue).\n"
-    "Estrai il glossario dei termini multilingue. Per ogni OGGETTO o MATERIALE "
-    "scrivi una riga con la PAROLA SEMPLICE che lo indica (il nome della cosa, "
-    "non l'aggettivo che la descrive: «rocks», non «deco rocks»; «pebbles», non "
-    "«river pebbles»), seguita dai suoi termini/traduzioni nelle altre lingue, "
-    "anch'essi parole semplici.\n"
-    "NON includere i colori, e NON gli aggettivi o i qualificatori che "
-    "descrivono stile o materiale dell'oggetto: tieni solo il NOME della cosa.\n"
-    "Formato: oggetto: termine1, termine2, ...\n"
-    "Esempio: rocks: pietre, pierres, dekosteine\n"
-    "Niente numeri, niente nomi di prodotto completi, niente spiegazioni.\n"
-    "/no_think"
-)
-
-
-def _righe_corpus(conn) -> list:
-    """Le righe «|» dei chunk: i nomi trilingue dei prodotti. Uniche e ordinate."""
-    righe = set()
-    with conn.cursor(row_factory=tuple_row) as cur:
-        cur.execute("SELECT content FROM chunks")
-        for (t,) in cur:
-            for x in (t or "").splitlines():
-                x = x.strip()
-                if 10 <= len(x) <= 120 and x.count("|") >= 1:
-                    righe.add(x)
-    return sorted(righe)
-
-
-def _lotti(righe: list, soglia: int = 8000) -> list:
-    lotti, corrente, n = [], [], 0
-    for r in righe:
-        corrente.append(r)
-        n += len(r)
-        if n >= soglia:
-            lotti.append(corrente)
-            corrente, n = [], 0
-    if corrente:
-        lotti.append(corrente)
-    return lotti
-
-
-def _parsa_estrazione(testo: str) -> dict:
-    out = {}
-    for riga in testo.splitlines():
-        riga = riga.strip().strip("`").strip()
-        if not riga or riga.startswith(("#", "```")):
-            continue
-        sep = next((s for s in (": ", ":", "=", " -> ") if s in riga), None)
-        if not sep:
-            continue
-        voce, _, valori = riga.partition(sep)
-        voce = voce.strip().lower()
-        if not voce:
-            continue
-        vals = {v.strip().lower() for v in valori.split(",") if v.strip()}
-        if vals:
-            out.setdefault(voce, set()).update(vals)
-    return out
-
-
-def _persisti(conn, glossario: dict):
-    """Scrive il glossario in tabella, bidirezionale (ogni voce porta le altre)
-    e in UNIONE coi termini gia' presenti: non sovrascrive la memoria del modello
-    («sassi» resta), aggiunge quella del corpus («pietre» -> «rocks»)."""
-    gruppi = {}
-    for voce, termini in glossario.items():
-        tutte = {voce} | set(termini)
-        for v in tutte:
-            gruppi.setdefault(v, set()).update(tutte - {v})
-    with conn.cursor(row_factory=tuple_row) as cur:
-        for voce, termini in gruppi.items():
-            cur.execute("SELECT termini FROM glossario WHERE voce = %s", (voce,))
-            riga = cur.fetchone()
-            esistenti = set(riga[0]) if riga else set()
-            tutti = list(termini | esistenti)[:MAX_GLOSSARIO]
-            cur.execute(
-                """INSERT INTO glossario (voce, termini) VALUES (%s, %s)
-                   ON CONFLICT (voce) DO UPDATE SET termini = EXCLUDED.termini,
-                     aggiornato_il = now()""",
-                (voce, tutti),
-            )
-    conn.commit()
-
-
-def estrai_glossario(conn, soglia: int = 8000) -> int:
-    """Costruisce il glossario dal CORPUS con il modello. I nomi trilingue dei
-    cataloghi («pebbles | galets | ciottoli») passano al modello a lotti; lui ne
-    estrae voce -> termini capendo da se' cos'e' oggetto e cos'e' aggettivo. Il
-    codice si limita a passargli i dati e a persistere il risultato. Idempotente:
-    si puo' rilanciare a ogni cambio del corpus."""
-    righe = _righe_corpus(conn)
-    if not righe:
-        return 0
-    glossario = {}
-    for lotto in _lotti(righe, soglia):
-        try:
-            testo = _chiedi([
-                {"role": "system", "content": ISTRUZIONI_ESTRAI},
-                {"role": "user", "content": "\n".join(lotto)},
-            ])
-        except Exception:
-            continue
-        for voce, vals in _parsa_estrazione(testo).items():
-            glossario.setdefault(voce, set()).update(vals)
-    _persisti(conn, glossario)
-    return len(glossario)
-
-
 def _prova():
     assert _pulisci("pietre, ciottoli, Pebbles., pietre", "sassi") == \
         ["pietre", "ciottoli", "pebbles"]
@@ -309,9 +212,6 @@ def _prova():
     # Il limite duro: il modello non puo' gonfiare la query oltre MAX_GLOSSARIO.
     lunghi = ",".join(f"s{i}" for i in range(40))
     assert len(_pulisci(lunghi, "x")) == MAX_GLOSSARIO
-    # Parsing dell'estrazione: una riga valida, una riga da scartare.
-    assert _parsa_estrazione("rocks: pietre, pierres\nciao mondo\n") == \
-        {"rocks": {"pietre", "pierres"}}
     print("glossario: regole locali ok")
 
 

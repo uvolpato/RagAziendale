@@ -27,7 +27,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from orchestratore import documento as documento_mod
-from orchestratore import agente, egress, gate, identita, immagini, immagini_articoli, indice, modello, prompt, recupero, ricerca_agente, riformula, vincoli
+from orchestratore import agente, egress, gate, identita, immagini, immagini_articoli, indice, memoria, modello, prompt, recupero, ricerca_agente, riformula, vincoli
 
 app = FastAPI()
 
@@ -415,13 +415,13 @@ def _figura_in_breve(descrizione) -> str:
     return " ".join(d.split())[:220]
 
 
-def _elenco_figure(righe, base, utente) -> str:
+def _elenco_figure(righe, base, utente, tutte=False) -> str:
     """Le figure trovate, in un elenco strutturato: descrizione + link alla
     pagina. E' la risposta per i PRODOTTI: non un «Fonti» in fondo, ma l'elenco
     stesso — ogni voce dice cos'e' e porta alla pagina che lo mostra.
 
-    Non si elencano tutte: se ne mostrano al massimo LIMITE_ELENCO, e si offre
-    il resto invece di annegare la risposta."""
+    Non si elencano tutte (se `tutte` e' falso): se ne mostrano al massimo
+    LIMITE_ELENCO, e si offre il resto invece di annegare la risposta."""
     voci, viste = [], set()
     contate = 0
     for r in righe:
@@ -432,7 +432,7 @@ def _elenco_figure(righe, base, utente) -> str:
             continue
         viste.add(chiave)
         contate += 1
-        if contate > LIMITE_ELENCO:
+        if not tutte and contate > LIMITE_ELENCO:
             continue
         descr = _figura_in_breve(r.get("descrizione"))
         url = documento_mod.firma_url(r.get("source_id"), r.get("documento"),
@@ -441,7 +441,7 @@ def _elenco_figure(righe, base, utente) -> str:
         voci.append(f"- **{descr}** — [{r['documento']}{pag}]({url})")
     resto = contate - len(voci)
     testo = "\n".join(voci)
-    if resto > 0:
+    if resto > 0 and not tutte:
         testo += f"\n\n_Ci sono altre {resto} voci. Vuoi che te le elenchi tutte?_"
     return testo
 
@@ -786,12 +786,27 @@ async def chat(request: Request):
                 for i, (iid, d, r) in enumerate(ids)}
         return _risposta_unica("Ecco le figure delle pagine citate:\n\n" + _blocco_immagini(urls))
 
+    # 1-ter-bis. "Si" all'offerta «vuoi che te le elenchi tutte?»: si rifa' la
+    # ricerca sulla domanda precedente con piu' figure e si elenca TUTTO, senza
+    # il tetto dell'elenco breve.
+    if vuole_il_resto(domanda, _ultima_risposta(storico_messaggi)):
+        precedente = _domanda_precedente(storico_messaggi)
+        righe, _ = agente.cerca(conn, precedente, gruppi,
+                                limite=PEZZI_ELENCO,
+                                storia=memoria.comprimi(storico_messaggi))
+        elenco = _elenco_figure(righe, f"https://{APP_HOST}", utente, tutte=True)
+        conn.close()
+        if elenco:
+            return _risposta_unica("Ecco tutte le voci:\n\n" + elenco)
+        return _risposta_unica("Non ho trovato altre voci.")
+
     # L'agente vero: capisce la domanda e decide da se' — cerca le figure per i
     # prodotti, legge il testo per i documenti, risponde ai saluti senza
     # cercare. Sostituisce la catena fissa (riformula -> vincoli -> glossario ->
     # ricerca -> gate -> prompt).
     righe, risposta = agente.cerca(conn, domanda, gruppi,
-                                   limite=pezzi_da_recuperare(domanda))
+                                   limite=pezzi_da_recuperare(domanda),
+                                   storia=memoria.comprimi(storico_messaggi))
 
     # I PRODOTTI (figure) si rispondono con l'ELENCO: descrizione + link alla
     # pagina, non col riassunto del modello (che inventa la pagina). L'elenco

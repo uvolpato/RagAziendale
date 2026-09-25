@@ -468,8 +468,10 @@ services:
     mem_limit: 4g
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
-      # I modelli (embedding, VLM) stanno su llama-swap, raggiunti direttamente.
+      # I modelli (embedding, VLM, chat per il glossario) stanno su llama-swap,
+      # raggiunti direttamente.
       MODELLI_HOST: ${MODELLI_HOST-host.docker.internal:1235}
+      MODELLO_CHAT: ${MODELLO_CHAT-qwen3.6-35b-a3b-gsq-hybrid}
       EMBEDDING_MODELLO: ${EMBEDDING_MODELLO-text-embedding-bge-m3-embeddings}
       # Le immagini dei cataloghi le descrive Docling con il suo VLM locale
       # (SmolVLM, dentro l'immagine): nessun modello esterno da chiamare.

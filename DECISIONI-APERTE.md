@@ -359,6 +359,7 @@ perché il vettore recupera i pezzi giusti.
 | **A5** | **Riallineare le altre copie del repository B2B** (server di produzione, altri PC) | Tu / chi fa i rilasci | La cronologia è stata riscritta: `git fetch && git reset --hard origin/master` oppure un clone nuovo. Un `git pull` normale reintrodurrebbe i commit vecchi |
 | **A6** | **Cancellare il backup della cronologia vecchia** quando non serve più | Tu | `C:\Progetti\_backup-segreti\` — contiene ancora la password |
 | **A8** | **Estendere il prototipo** con Utenti, Gruppi, Profili, Aziende | Designer | `SPECIFICA-INTERFACCE-AMMINISTRAZIONE.md` §7b e §11b |
+| **A9** | **Libreria personale di note** — documenti per persona che entrano nell'indice (cercabili) ma non si condividono; strumento `nota` dell'agente | Io (agente) | ACL a livello utente (`sub` dal token, oggi c'è solo gruppo/azienda); note embeddate al volo dall'orchestratore, filtro `proprietario` nella CTE `consentite`. Progettata in sessione 25/09, rinviata per fare prima la memoria agentica |
 
 ---
 

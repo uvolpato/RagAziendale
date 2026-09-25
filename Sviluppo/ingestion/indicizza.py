@@ -1397,6 +1397,133 @@ def conta_lessemi(conn, esiti=None):
         print(f"  frequenze delle parole non aggiornate ({type(e).__name__}: {e})", flush=True)
 
 
+# ------------------------------------------------------------------ glossario
+# Il glossario multilingue di dominio (orchestratore/glossario.py) si costruisce
+# QUI, dal corpus, durante il giro: e' dato derivato come `lessemi`. Il modello
+# legge i nomi trilingue dei cataloghi e ne estrae voce -> termini; capisce da
+# se' cos'e' l'oggetto e cos'e' un aggettivo o un colore, senza liste hardcoded.
+ISTRUZIONI_GLOSSARIO = (
+    "Sei un esperto di cataloghi di decorazioni e giardinaggio. Ti passo i nomi "
+    "dei prodotti nelle lingue italiano/tedesco/inglese, separati da «|» (ogni "
+    "riga e' lo stesso prodotto nelle tre lingue).\n"
+    "Estrai il glossario dei termini multilingue. Per ogni OGGETTO o MATERIALE "
+    "scrivi una riga con la PAROLA SEMPLICE che lo indica (il nome della cosa, "
+    "non l'aggettivo che la descrive: «rocks», non «deco rocks»; «pebbles», non "
+    "«river pebbles»), seguita dai suoi termini/traduzioni nelle altre lingue, "
+    "anch'essi parole semplici.\n"
+    "NON includere i colori, e NON gli aggettivi o i qualificatori che "
+    "descrivono stile o materiale dell'oggetto: tieni solo il NOME della cosa.\n"
+    "Formato: oggetto: termine1, termine2, ...\n"
+    "Esempio: rocks: pietre, pierres, dekosteine\n"
+    "Niente numeri, niente nomi di prodotto completi, niente spiegazioni.\n"
+    "/no_think"
+)
+
+MAX_GLOSSARIO = int(os.environ.get("GLOSSARIO_MAX", "6"))
+
+
+def _righe_glossario(conn):
+    """Le righe «|» dei chunk: i nomi trilingue dei prodotti. Uniche e ordinate."""
+    righe = set()
+    with conn.cursor() as cur:
+        cur.execute("SELECT content FROM chunks")
+        for (t,) in cur:
+            for x in (t or "").splitlines():
+                x = x.strip()
+                if 10 <= len(x) <= 120 and x.count("|") >= 1:
+                    righe.add(x)
+    return sorted(righe)
+
+
+def _lotti_glossario(righe, soglia=8000):
+    lotti, corrente, n = [], [], 0
+    for r in righe:
+        corrente.append(r)
+        n += len(r)
+        if n >= soglia:
+            lotti.append(corrente)
+            corrente, n = [], 0
+    if corrente:
+        lotti.append(corrente)
+    return lotti
+
+
+def _chiedi_glossario(righe):
+    """Il glossario dal modello di chat, via llama-swap diretto."""
+    host = os.environ.get("MODELLI_HOST", "host.docker.internal:1235")
+    modello = os.environ.get("MODELLO_CHAT", "qwen3.6-35b-a3b-gsq-hybrid")
+    corpo = {"model": modello, "temperature": 0, "max_tokens": 4000,
+             "reasoning_effort": "none",
+             "messages": [{"role": "system", "content": ISTRUZIONI_GLOSSARIO},
+                          {"role": "user", "content": "\n".join(righe)}]}
+    r = httpx.post(f"http://{host}/v1/chat/completions", json=corpo, timeout=300)
+    r.raise_for_status()
+    return (r.json()["choices"][0]["message"].get("content") or "").strip()
+
+
+def _parsa_glossario(testo):
+    out = {}
+    for riga in testo.splitlines():
+        riga = riga.strip().strip("`").strip()
+        if not riga or riga.startswith(("#", "```")):
+            continue
+        sep = next((s for s in (": ", ":", "=", " -> ") if s in riga), None)
+        if not sep:
+            continue
+        voce, _, valori = riga.partition(sep)
+        voce = voce.strip().lower()
+        if not voce:
+            continue
+        vals = {v.strip().lower() for v in valori.split(",") if v.strip()}
+        if vals:
+            out.setdefault(voce, set()).update(vals)
+    return out
+
+
+def _persisti_glossario(conn, glossario):
+    """Scrive il glossario in tabella, bidirezionale (ogni voce porta le altre)
+    e in UNIONE coi termini gia' presenti: non sovrascrive la memoria del modello
+    («sassi» resta), aggiunge quella del corpus («pietre» -> «rocks»)."""
+    gruppi = {}
+    for voce, termini in glossario.items():
+        tutte = {voce} | set(termini)
+        for v in tutte:
+            gruppi.setdefault(v, set()).update(tutte - {v})
+    with conn.transaction():
+        for voce, termini in gruppi.items():
+            riga = conn.execute("SELECT termini FROM glossario WHERE voce = %s",
+                                (voce,)).fetchone()
+            esistenti = set(riga[0]) if riga else set()
+            tutti = list(termini | esistenti)[:MAX_GLOSSARIO]
+            conn.execute(
+                """INSERT INTO glossario (voce, termini) VALUES (%s, %s)
+                   ON CONFLICT (voce) DO UPDATE SET termini = EXCLUDED.termini,
+                     aggiornato_il = now()""",
+                (voce, tutti),
+            )
+
+
+def estrai_glossario(conn):
+    """Costruisce il glossario dal CORPUS con il modello. Idempotente: si ricala
+    a ogni giro con cambi. Se il modello non risponde (GPU occupata, chat
+    scaricata per far posto a Docling), degrada in silenzio e il glossario resta
+    quello di prima."""
+    righe = _righe_glossario(conn)
+    if not righe:
+        return 0
+    glossario = {}
+    for lotto in _lotti_glossario(righe):
+        try:
+            testo = _chiedi_glossario(lotto)
+        except Exception:
+            continue
+        for voce, vals in _parsa_glossario(testo).items():
+            glossario.setdefault(voce, set()).update(vals)
+    if glossario:
+        _persisti_glossario(conn, glossario)
+    return len(glossario)
+
+
 def giro(aspetta=False, forza=False, solo=None):
     """Un giro su tutte le cartelle. Uno solo alla volta (servizio e giri a
     mano insieme leggerebbero due volte gli stessi file): il servizio salta il
@@ -1429,6 +1556,13 @@ def giro(aspetta=False, forza=False, solo=None):
         esiti = [indicizza_fonte(conn, f, lettore, stato_vettori, solo, forza) for f in fonti]
         completati = completa_vettori(conn, stato_vettori)
         conta_lessemi(conn, esiti)
+        if any(e.get("nuovi") or e.get("cambiati") or e.get("tolti") for e in esiti):
+            try:
+                n = estrai_glossario(conn)
+                print(f"  glossario: {n} voci estratte dal corpus", flush=True)
+            except Exception as e:
+                # Un glossario vecchio cerca un po' peggio; non perde il giro.
+                print(f"  glossario non aggiornato ({type(e).__name__}: {e})", flush=True)
     del lettore
     gc.collect()
     return esiti, completati

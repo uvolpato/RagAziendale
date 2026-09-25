@@ -96,7 +96,11 @@ STRUMENTI = [
                        "all'oggetto. Per i cataloghi: trova dove sta il prodotto e la "
                        "sua pagina. I vincoli di colore/misura sono gia' applicati.",
         "parameters": {"type": "object",
-                       "properties": {"oggetto": {"type": "string"}},
+                       "properties": {
+                           "oggetto": {"type": "string"},
+                           "limite": {"type": "integer",
+                                      "description": "Quante figure restituire. Alza a 20 "
+                                                     "quando la persona chiede di elencarle tutte."}},
                        "required": ["oggetto"]}}},
 ]
 
@@ -156,7 +160,12 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
         oggetto = str(argomenti.get("oggetto", "")).strip()
         if not oggetto:
             return [], "(oggetto vuoto)"
-        righe = recupero.cerca_figure(conn, [oggetto] + termini, vincolo, gruppi)
+        try:
+            limite = int(argomenti.get("limite") or 12)
+        except (TypeError, ValueError):
+            limite = 12
+        righe = recupero.cerca_figure(conn, [oggetto] + termini, vincolo, gruppi,
+                                      limite=limite)
         return righe, _formatta_figure(righe)
     if nome == "cerca_esatta":
         t = str(argomenti.get("termine", "")).strip()
@@ -257,12 +266,20 @@ _grafo.add_edge("strumenti", "agente")
 _compilato = _grafo.compile()
 
 
-def cerca(conn, domanda: str, gruppi: list, limite: int = 8):
-    """L'agente: (righe, risposta)."""
+def cerca(conn, domanda: str, gruppi: list, limite: int = 8, storia: list = None):
+    """L'agente: (righe, risposta).
+
+    `storia` e' la conversazione intera (milestone): se c'e', l'agente capisce
+    da se' saluti, consensi e «mostrami il resto», invece di ricevere la sola
+    domanda del turno. `domanda` resta per l'estrazione di intent/vincoli."""
+    messaggi = [{"role": "system", "content": ISTRUZIONI_SISTEMA}]
+    if storia:
+        messaggi += [m for m in storia if m.get("role") in ("user", "assistant")]
+    else:
+        messaggi.append({"role": "user", "content": domanda})
     stato = _compilato.invoke({
         "domanda": domanda,
-        "messaggi": [{"role": "system", "content": ISTRUZIONI_SISTEMA},
-                     {"role": "user", "content": domanda}],
+        "messaggi": messaggi,
         "conn": conn, "gruppi": gruppi, "vincolo": "", "intent_termini": [],
         "pezzi": {}, "passi": 0,
     })
