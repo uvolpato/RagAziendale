@@ -49,6 +49,12 @@ ISTRUZIONI = (
     "da «nastri» escono «nastri, ribbons, bänder, tapes»; da «sassi» escono "
     "«pietre, ciottoli, pebbles, kiesel». Solo parole che indicano lo STESSO "
     "oggetto, non materiali o cose affini.\n"
+    "CONTESTO: le parole della richiesta che indicano il TEMA, l'OCCASIONE o "
+    "l'USO — non l'oggetto e non gli attributi enumerabili. Esempi: «natalizie» "
+    "in «profumatore con essenze natalizie», «per un matrimonio», «da esterno», "
+    "«regalo per una ragazza di 30 anni». Per ognuna, le parole corrispondenti "
+    "nelle lingue dei cataloghi. Da «natalizie» escono «natale, christmas, "
+    "weihnachten, winter». Se non c'e', CONTESTO e' vuoto.\n"
     "VINCOLI: solo le proprieta' ENUMERABILI che la persona chiede "
     "esplicitamente. Attributi ammessi: colore, misura, formato, prezzo. "
     "NON sono vincoli le parole di categoria o contenuto («natalizi», "
@@ -69,9 +75,9 @@ ISTRUZIONI = (
     "Se non ci sono vincoli espliciti, VINCOLI e' vuoto. Non inventare "
     "vincoli.\n"
     "Rispondi SOLO con JSON della forma {\"intent\": \"...\", "
-    "\"intent_termini\": [\"...\",\"...\"], \"vincoli\": "
-    "[{\"attributo\": \"colore\", \"valore\": \"viola\", \"termini\": "
-    "[\"viola\",\"lila\",\"violet\"]}]} senza spiegazioni.\n"
+    "\"intent_termini\": [\"...\",\"...\"], \"contesto\": [\"...\",\"...\"], "
+    "\"vincoli\": [{\"attributo\": \"colore\", \"valore\": \"viola\", "
+    "\"termini\": [\"viola\",\"lila\",\"violet\"]}]} senza spiegazioni.\n"
     # Qwen3 ragiona se non gli si dice di no, e il ragionamento finisce in
     # reasoning_content: content torna VUOTO e l'estrazione fallisce in
     # silenzio. Estrarre vincoli e' meccanico: non serve pensarci.
@@ -122,34 +128,34 @@ def termini_colore(trovati) -> list:
 
 
 def estrae(domanda: str, catalogo=None):
-    """(intent, intent_termini, vincoli) estratti dalla domanda.
+    """(intent, intent_termini, contesto, vincoli) estratti dalla domanda.
 
     `intent_termini` = i modi in cui l'intent puo' essere scritto nei
     cataloghi nelle loro lingue (es. «sassi» -> sassi, pietre, ciottoli,
-    pebbles, river pebbles, stones, kiesel). `catalogo`, se passato, e' l'elenco
-    (documento, descrizione) di cio' che i documenti contengono davvero: serve a
-    far produrre i termini GIUSTI invece di quelli indovinati (il modello sa
-    «nastri» ma non sa che il documento scrive «ribbons, tapes»).
+    pebbles, river pebbles, stones, kiesel). `contesto` = il tema, l'occasione
+    o l'uso (es. «natalizie» -> natale, christmas, weihnachten), che entra
+    nella ricerca come espansione morbida. `catalogo`, se passato, e' l'elenco
+    (documento, descrizione) di cio' che i documenti contengono davvero.
 
     `vincoli` = lista di {"attributo", "valore", "termini"}. Restano solo gli
     attributi enumerabili (colore/misura/formato/prezzo). Se il modello non
-    risponde o risponde male si torna ("", [], []), comportamento di oggi.
+    risponde o risponde male si torna ("", [], [], []), comportamento di oggi.
     """
     if not domanda:
-        return "", [], []
+        return "", [], [], []
     messaggi = [{"role": "system", "content": ISTRUZIONI},
                 {"role": "user", "content": _messaggio(domanda, catalogo)}]
     try:
         testo = _chiedi(messaggi)
     except Exception as e:
         print(f"estrazione vincoli non riuscita ({type(e).__name__}: {e})", flush=True)
-        return "", [], []
+        return "", [], [], []
     testo = testo.split("```")[-2] if "```" in testo else testo
     testo = testo.strip().strip("`")
     try:
         dati = json.loads(testo)
     except Exception:
-        return "", [], []
+        return "", [], [], []
     vincoli = []
     for v in dati.get("vincoli") or []:
         if not isinstance(v, dict):
@@ -165,9 +171,10 @@ def estrae(domanda: str, catalogo=None):
                         "termini": termini})
     intent = str(dati.get("intent", "")).strip()
     intent_termini = _termini(dati.get("intent_termini"))
-    if vincoli or intent:
-        return intent, intent_termini, vincoli
-    return "", [], []
+    contesto = _termini(dati.get("contesto"))
+    if vincoli or intent or contesto:
+        return intent, intent_termini, contesto, vincoli
+    return "", [], [], []
 
 
 def _intervalli_numerici(v: dict) -> list:

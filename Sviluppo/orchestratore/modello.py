@@ -40,14 +40,16 @@ def chiedi(messaggi, max_tokens=4000):
     return (_risposta(messaggi, max_tokens, ragiona=False).get("content") or "").strip()
 
 
-def messaggio(messaggi, max_tokens=2048, tools=None, tool_choice="auto"):
-    """Il messaggio COMPLETO (content + tool_calls), SENZA ragionamento.
+def messaggio(messaggi, max_tokens=2048, tools=None, tool_choice="auto", ragiona=False):
+    """Il messaggio COMPLETO (content + tool_calls).
 
-    La scelta degli strumenti e' meccanica: il ragionamento la rendeva non
-    deterministica e a volte produceva risposte vuote (il 35B si mangiava il
-    budget di token ragionando e non decideva mai). Senza, il modello decide e
-    produce tool_calls affidabili."""
-    return _risposta(messaggi, max_tokens, ragiona=False,
+    Di default SENZA ragionamento: la scelta degli strumenti e' meccanica, il
+    ragionamento la rendeva non deterministica e a volte produceva risposte
+    vuote (il 35B si mangiava il budget di token ragionando e non decideva mai).
+    Con `ragiona=True` il modello pensa prima di chiamare gli strumenti: serve
+    quando deve capire «ho gia' la risposta, mi fermo» invece di cercare ancora.
+    """
+    return _risposta(messaggi, max_tokens, ragiona=ragiona,
                      tools=tools, tool_choice=tool_choice)
 
 

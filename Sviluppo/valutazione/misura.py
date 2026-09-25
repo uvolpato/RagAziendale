@@ -80,8 +80,9 @@ def arricchita(conn, domanda: str):
     _esegui): i termini multilingue del modello (vincoli) piu' quelli del
     glossario del corpus, e il vincolo regex dell'attributo enumerabile.
     Torna (query, vincolo)."""
-    _, intent_termini, trovati = vincoli.estrae(domanda)
+    _, intent_termini, contesto, trovati = vincoli.estrae(domanda)
     termini = glossario.espandi(conn, intent_termini)
+    termini = termini + [c for c in contesto if c not in termini]
     q = domanda
     if termini:
         q = q + " " + " ".join(termini)

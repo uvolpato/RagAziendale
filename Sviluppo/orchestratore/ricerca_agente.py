@@ -242,7 +242,7 @@ def _tool_attributo(conn, domanda, gruppi, qvec, limite):
     arriva solo se la domanda nomina davvero un attributo, quindi il rischio
     dell'estrazione (che in D19 invertiva il senso) e' molto piu' basso."""
     from orchestratore import vincoli as v
-    _, _, trovati = v.estrae(domanda)
+    _, _, _, trovati = v.estrae(domanda)
     if not trovati:
         return None
     regex = v.regex(trovati)
@@ -313,7 +313,7 @@ def _comprensione(conn, domanda, gruppi, qvec, limite, documenti):
     chiamante degrada sul routing a 4 vie, che resta come rete di sicurezza.
     """
     from orchestratore import vincoli as v
-    _, intent_termini, trovati = v.estrae(domanda)
+    _, intent_termini, contesto, trovati = v.estrae(domanda)
     if not intent_termini and not trovati:
         return None
     regex = v.regex(trovati)

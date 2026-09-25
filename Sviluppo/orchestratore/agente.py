@@ -33,7 +33,12 @@ from orchestratore import egress, glossario, modello, recupero
 ROTTA = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
 SECONDI = float(os.environ.get("AGENTE_TIMEOUT", "120"))
 MAX_PASSI = int(os.environ.get("AGENTE_MAX_PASSI", "4"))
-MAX_TOKEN = int(os.environ.get("AGENTE_MAX_TOKEN", "2048"))
+# 1 = l'agente RAGIONA prima di chiamare gli strumenti (ragiona=True). Col
+# ragionamento il modello puo' capire «ho gia' la risposta, mi fermo» invece di
+# continuare a cercare. Reversibile. Costa piu' token, percio' il budget sale.
+AGENTE_RAGIONA = os.environ.get("AGENTE_RAGIONA", "") == "1"
+MAX_TOKEN = int(os.environ.get("AGENTE_MAX_TOKEN",
+                               "8192" if AGENTE_RAGIONA else "2048"))
 # 1 = non espandere i termini col glossario del corpus (solo quelli del modello).
 SENZA_GLOSSARIO = os.environ.get("SENZA_GLOSSARIO", "") == "1"
 # 1 = il guardrail forza la ricerca anche quando non c'e' un oggetto ma c'e' un
@@ -63,6 +68,10 @@ ISTRUZIONI_SISTEMA = (
     "passi con `cerca` e `pagina`, e riassumi il contenuto citando la pagina.\n"
     "\n"
     "- Se la domanda e' un saluto o una chiacchiera, NON chiamare strumenti.\n"
+    "- Quando hai gia' le pagine che rispondono, RISPONDI e fermati: non ripetere "
+    "la stessa ricerca con parole diverse, non inseguire varianti. Se `cerca_figure` "
+    "torna vuota per un oggetto, il prodotto sta nel TESTO: usa `cerca` UNA volta, "
+    "poi rispondi con quello che hai.\n"
     "- Non inventare: se non trovi, dillo. Mai codici o prezzi inventati.\n"
     "- Rispondi in italiano, citando documento e pagina.\n"
 )
@@ -227,7 +236,7 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
 
 def _chiama(messaggi):
     """Una chiamata al modello, con gli strumenti. Torna il messaggio assistant."""
-    m = modello.messaggio(messaggi, MAX_TOKEN, tools=STRUMENTI)
+    m = modello.messaggio(messaggi, MAX_TOKEN, tools=STRUMENTI, ragiona=AGENTE_RAGIONA)
     m.pop("reasoning_content", None)   # il ragionamento non si rimanda al modello
     return m
 
@@ -248,11 +257,15 @@ class Stato(TypedDict):
 def _nodo_capisce(stato: Stato) -> dict:
     """Il passo D19: intent + vincoli dalla domanda. Degrada in silenzio."""
     from orchestratore import vincoli as v
-    intent, intent_termini, trovati = v.estrae(stato["domanda"])
+    intent, intent_termini, contesto, trovati = v.estrae(stato["domanda"])
     # I termini del modello («sassi» -> «pietre») si espandono coi termini del
     # CORPUS («pietre» -> «rocks, dekosteine»), che il modello non sa.
     if not SENZA_GLOSSARIO:
         intent_termini = glossario.espandi(stato["conn"], intent_termini)
+    # Il CONTESTO (tema/occasione/uso: «natalizie» -> christmas, weihnachten)
+    # entra nella query come espansione morbida: senza, «profumatore con essenze
+    # natalizie» cercava solo «profumatore» e non arrivava a «FROZEN WINTER».
+    intent_termini = intent_termini + [c for c in contesto if c not in intent_termini]
     vincolo = v.regex(trovati)
     colore = v.termini_colore(trovati)
     pezzi, messaggi = {}, []
