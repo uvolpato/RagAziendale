@@ -95,6 +95,20 @@ def _chiedi(messaggi):
     return modello.chiedi(messaggi)
 
 
+def _termini(lista) -> list:
+    """I termini dal JSON del modello, spezzando le virgole e scartando vuoti e
+    doppioni. Il modello a volte li manda come una stringa unica con le virgole
+    dentro («transparente, durchsichtig, klar») invece che come array: spezzare
+    qui rende il parsing robusto invece di fidarsi del formato."""
+    out = []
+    for t in (lista or []):
+        for pezzo in str(t).split(","):
+            pezzo = pezzo.strip()
+            if pezzo and pezzo not in out:
+                out.append(pezzo)
+    return out
+
+
 def estrae(domanda: str, catalogo=None):
     """(intent, intent_termini, vincoli) estratti dalla domanda.
 
@@ -131,17 +145,14 @@ def estrae(domanda: str, catalogo=None):
         attr = str(v.get("attributo", "")).strip().lower()
         if attr not in ATTRIBUTI:
             continue
-        termini = [str(t).strip() for t in (v.get("termini") or [])
-                   if isinstance(t, str) and t.strip()]
+        termini = _termini(v.get("termini"))
         if not termini:
             continue
         vincoli.append({"attributo": attr,
                         "valore": str(v.get("valore", "")).strip(),
                         "termini": termini})
     intent = str(dati.get("intent", "")).strip()
-    intent_termini = [str(t).strip() for t in (dati.get("intent_termini")
-                                               or [])
-                      if isinstance(t, str) and t.strip()]
+    intent_termini = _termini(dati.get("intent_termini"))
     if vincoli or intent:
         return intent, intent_termini, vincoli
     return "", [], []

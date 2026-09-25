@@ -52,3 +52,23 @@ non in `if` sparsi nel chiamante.
 
 Regola pratica: davanti a un problema di comportamento, non chiederti «quale
 caso speciale aggiungo?» ma «come lo farei io?».
+
+## Il modello è una variabile, non un muro
+
+Il modello non è un dato di fatto: è una scelta, e si cambia quando serve. C'è
+una GPU con 128 GB di RAM condivisa (costa 5K, non milioni): ci gira un 70B Q4,
+non un 36B Q2 come oggi. Se il limite è il modello, ci si collega a DeepSeek via
+API e si testa.
+
+La decisione deve essere CONSCIA, mai silenziosa. Davanti a un caso che il
+sistema sbaglia, prima si separano le due cause:
+
+- **difetto di codice** (parsing, filtri troppo stretti, un vincolo che scatta
+  su parole generiche): si ripara in codice, il modello non c'entra.
+- **limite di conoscenza** (un salto concettuale che il modello attuale non fa:
+  «sfere trasparenti che trattengono l'acqua» → water beads): è il segnale che
+  il modello è il collo di bottiglia, e lì si prova un 70B Q4 o DeepSeek per
+  vedere se il salto lo fa.
+
+«Il modello non lo sa» vuol dire sempre «il modello ATTUALE non lo sa, misurato
+— vale la pena provarne uno più grande», mai una resa.

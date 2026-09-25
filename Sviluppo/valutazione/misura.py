@@ -38,35 +38,14 @@ import sys
 import time
 import unicodedata
 
-import httpx
 import psycopg
 from psycopg.rows import dict_row
 
 sys.path.insert(0, "/app")
-from orchestratore import recupero      # noqa: E402
+from orchestratore import glossario, recupero, vincoli      # noqa: E402
 
 QUI = pathlib.Path(__file__).parent
 K = int(os.environ.get("VALUTAZIONE_K", "8"))       # quanti pezzi arrivano al modello
-LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
-CHIAVE = os.environ.get("LITELLM_MASTER_KEY", "")
-
-# Bocciata tre volte sulle domande LUNGHE, dove toglie contesto invece di
-# aggiungerne. Qui torna per rispondere a un'altra domanda: sulle domande
-# CORTE, dove il contesto manca davvero, lo aggiunge?
-RISCRITTURA = ("Riscrivi la richiesta come la scriverebbe un catalogo di prodotti per la casa e il "
-               "giardino. Usa i termini merceologici, non il parlato. UNA riga, solo i termini. /no_think")
-
-
-def riscrivi(domanda: str) -> str:
-    r = httpx.post(f"{LITELLM}/chat/completions",
-                   headers={"Authorization": "Bearer " + CHIAVE},
-                   json={"model": os.environ.get("LLM_RAGIONAMENTO", "ragionamento"),
-                         "temperature": 0, "max_tokens": 80,
-                         "messages": [{"role": "system", "content": RISCRITTURA},
-                                      {"role": "user", "content": domanda}]},
-                   timeout=300.0)
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip().replace('\n', " ") or domanda
 
 
 def piatto(s: str) -> str:
@@ -76,7 +55,8 @@ def piatto(s: str) -> str:
     return " ".join(s.lower().split())
 
 
-def trovata(conn, testo: str, gruppi: list, riscontri: list, documento: str, indice: list):
+def trovata(conn, testo: str, gruppi: list, riscontri: list, documento: str, indice: list,
+            vincolo: str = ""):
     """(trovata?, posizione del primo pezzo buono, pezzi).
 
     Il pezzo buono deve venire dal documento giusto e NON dalle pagine
@@ -84,7 +64,8 @@ def trovata(conn, testo: str, gruppi: list, riscontri: list, documento: str, ind
     combacia con quasi tutto e proverebbe zero (visto il 21/09/2026: la
     domanda sulle microplastiche risultava «trovata» a pagina 2, mentre
     l'informazione vera sta a pagina 28)."""
-    pezzi, _ = recupero.cerca(conn, testo, gruppi, recupero.embedding(testo), limite=K)
+    pezzi, _ = recupero.cerca(conn, testo, gruppi, recupero.embedding(testo),
+                              limite=K, vincolo=vincolo)
     attesi = [piatto(x) for x in riscontri]
     for i, p in enumerate(pezzi, 1):
         if p.get("documento") != documento or p.get("page") in indice:
@@ -92,6 +73,19 @@ def trovata(conn, testo: str, gruppi: list, riscontri: list, documento: str, ind
         if any(a in piatto(p.get("content", "")) for a in attesi):
             return True, i, pezzi
     return False, None, pezzi
+
+
+def arricchita(conn, domanda: str):
+    """La domanda come la cerca davvero l'agente (agente.py, _nodo_capisce +
+    _esegui): i termini multilingue del modello (vincoli) piu' quelli del
+    glossario del corpus, e il vincolo regex dell'attributo enumerabile.
+    Torna (query, vincolo)."""
+    _, intent_termini, trovati = vincoli.estrae(domanda)
+    termini = glossario.espandi(conn, intent_termini)
+    q = domanda
+    if termini:
+        q = q + " " + " ".join(termini)
+    return q, vincoli.regex(trovati)
 
 
 def main():
@@ -107,36 +101,42 @@ def main():
 
     print(f"{len(con_risposta)} domande con risposta · primi {K} pezzi · gruppi {gruppi}")
     print(f"(e {len(senza)} senza risposta, che si misurano sulla risposta, non sul recupero)\n")
-    print(f"{'id':>3}  {'lunga':>6}  {'corta':>6}  {'c+ris':>6}  domanda corta -> riscritta")
-    print("-" * 110)
+    print(f"{'id':>3}  {'lunga':>6}  {'corta':>6}  {'arricchita':>10}  {'solo termini':>12}  domanda corta")
+    print("-" * 76)
 
     esiti = []
     for d in con_risposta:
         ok_base, pos_base, _ = trovata(conn, d["domanda"], gruppi, d["riscontro"], documento, indice)
         testo = d.get("corta") or d["domanda"]
         ok_ris, pos_ris, _ = trovata(conn, testo, gruppi, d["riscontro"], documento, indice)
-        risc = riscrivi(testo)
-        ok_cr, pos_cr, _ = trovata(conn, risc, gruppi, d["riscontro"], documento, indice)
-        esiti.append((d, ok_base, ok_ris, ok_cr))
+        q, vincolo = arricchita(conn, testo)
+        ok_arr, pos_arr, _ = trovata(conn, q, gruppi, d["riscontro"], documento, indice,
+                                     vincolo=vincolo)
+        ok_ter, pos_ter, _ = trovata(conn, q, gruppi, d["riscontro"], documento, indice)
+        esiti.append((d, ok_base, ok_ris, ok_arr, ok_ter))
         segno = lambda ok, pos: (f"#{pos}" if ok else "no")     # noqa: E731
         print(f"{d['id']:>3}  {segno(ok_base, pos_base):>6}  {segno(ok_ris, pos_ris):>6}  "
-              f"{segno(ok_cr, pos_cr):>6}  {testo[:30]:30} -> {risc[:42]}")
+              f"{segno(ok_arr, pos_arr):>10}  {segno(ok_ter, pos_ter):>12}  {testo[:28]}")
 
-    b = sum(1 for _, ok, _, _ in esiti if ok)
-    r = sum(1 for _, _, ok, _ in esiti if ok)
-    c = sum(1 for _, _, _, ok in esiti if ok)
+    b = sum(1 for _, ok, _, _, _ in esiti if ok)
+    r = sum(1 for _, _, ok, _, _ in esiti if ok)
+    a = sum(1 for _, _, _, ok, _ in esiti if ok)
+    t = sum(1 for _, _, _, _, ok in esiti if ok)
     n = len(esiti)
-    print("-" * 110)
+    print("-" * 76)
     print(f"trovate: lunga {b}/{n} ({b/n:.0%})   corta {r}/{n} ({r/n:.0%})   "
-          f"corta riscritta {c}/{n} ({c/n:.0%})")
+          f"arricchita {a}/{n} ({a/n:.0%})   solo termini {t}/{n} ({t/n:.0%})")
 
-    meglio = [d["id"] for d, _, oc, ocr in esiti if ocr and not oc]
-    peggio = [d["id"] for d, _, oc, ocr in esiti if oc and not ocr]
-    mai = [d["id"] for d, ob, oc, ocr in esiti if not ob and not oc and not ocr]
-    if meglio:
-        print(f"la riscrittura RECUPERA:   {meglio}")
-    if peggio:
-        print(f"la riscrittura PERDE:      {peggio}")
+    recuperate = [d["id"] for d, _, oc, oa, _ in esiti if oa and not oc]
+    perse = [d["id"] for d, _, oc, oa, _ in esiti if oc and not oa]
+    vincolo_dannoso = [d["id"] for d, _, _, oa, ot in esiti if ot and not oa]
+    mai = [d["id"] for d, ob, oc, oa, ot in esiti if not ob and not oc and not oa and not ot]
+    if recuperate:
+        print(f"l'arricchimento RECUPERA: {recuperate}")
+    if perse:
+        print(f"l'arricchimento PERDE:    {perse}")
+    if vincolo_dannoso:
+        print(f"il vincolo toglie:        {vincolo_dannoso}")
     if mai:
         print(f"non trovate mai:         {mai}")
         print("  (o il pezzo non e' nell'indice, o il `riscontro` e' scritto male: vanno guardate a mano)")
