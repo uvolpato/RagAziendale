@@ -31,6 +31,7 @@ Non e' resilienza di lusso — l'host di inferenza in sviluppo e' LM Studio su
 una postazione che va in sospensione.
 """
 import os
+import re
 
 from psycopg.rows import dict_row
 
@@ -310,23 +311,20 @@ def contiene_interno(righe) -> str | None:
 
 
 def embedding(domanda: str):
-    """Embedding della domanda, chiesto a LiteLLM per nome logico (`embedding`),
-    come fa l'ingestion: il modello vero lo decide litellm-config.yaml.
+    """Embedding della domanda, chiesto DIRETTAMENTE a llama-swap (il modello
+    bge-m3 locale). Senza litellm (tolto il 24/09/2026).
 
-    Restituisce None se LiteLLM o l'host di inferenza non rispondono: il
-    chiamante degrada su BM25 invece di propagare l'errore.
+    Restituisce None se l'host di inferenza non risponde: il chiamante degrada
+    su BM25 invece di propagare l'errore.
     """
     from . import egress
 
-    url = os.environ["LITELLM_BASE_URL"].rstrip("/")
-    modello = os.environ.get("LLM_EMBEDDING", "embedding")
-    token = os.environ.get("LITELLM_MASTER_KEY") or ""
-    testa = {"Authorization": f"Bearer {token}"} if token else {}
+    host = os.environ.get("MODELLI_HOST", "host.docker.internal:1235")
+    modello = os.environ.get("EMBEDDING_MODELLO", "text-embedding-bge-m3-embeddings")
     try:
         with egress.client(timeout=20.0, verify=False) as c:
-            r = c.post(f"{url}/v1/embeddings",
-                       json={"model": modello, "input": [domanda]},
-                       headers=testa)
+            r = c.post(f"http://{host}/v1/embeddings",
+                       json={"model": modello, "input": [domanda]})
             r.raise_for_status()
             return r.json()["data"][0]["embedding"]
     except egress.EgressVietato:
@@ -549,6 +547,40 @@ def grep(conn, termine: str, gruppi: list[str]):
     par |= {"motivo": f"%{pulito}%"}
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(SQL_GREP, par)
+        return cur.fetchall()
+
+
+SQL_FIGURE = f"""
+WITH consentite AS ({_CONSENTITE})
+SELECT i.id, i.documento, i.page, i.descrizione, i.percorso
+FROM immagini i
+JOIN consentite s ON s.id = i.source_id
+WHERE i.descrizione ~* %(oggetto)s
+%%VINC%%
+ORDER BY i.page, i.id
+LIMIT %(limite)s;
+"""
+
+
+def cerca_figure(conn, termini, vincolo="", gruppi=None, limite=12):
+    """Le figure la cui descrizione contiene uno dei `termini` (l'oggetto) e,
+    se c'e', il `vincolo` (l'attributo).
+
+    E' il modo in cui un catalogo va cercato: il prodotto sta nella FIGURA,
+    non nel testo. Qui si trova la pagina da indicare alla persona — «i nastri
+    blu sono qui, qui e qui» — senza estrarre codici."""
+    par = _permessi(gruppi)
+    if par is None or not termini:
+        return []
+    puliti = [t for t in (t.strip() for t in termini) if t]
+    if not puliti:
+        return []
+    par |= {"oggetto": "|".join(re.escape(t) for t in puliti), "limite": limite}
+    vinc = "AND i.descrizione ~* %(vincolo)s" if vincolo else ""
+    if vincolo:
+        par["vincolo"] = vincolo
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(SQL_FIGURE.replace("%%VINC%%", vinc), par)
         return cur.fetchall()
 
 

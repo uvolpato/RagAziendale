@@ -182,19 +182,12 @@ services:
       ORCHESTRATOR_KEY: ${ORCHESTRATOR_KEY}
       # Host pubblico per firmare gli URL delle immagini servite in chat.
       APP_HOST: ${APP_HOST}
-      # --- I modelli si raggiungono SOLO attraverso il proxy, per nome logico.
-      # L'orchestratore non sa quale modello gira ne di quale provider sia:
-      # la scelta vive in litellm-config.yaml. Nessuna chiave di provider qui.
-      LITELLM_BASE_URL: http://litellm:4000
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-      LLM_RAGIONAMENTO: ragionamento
-      # Vuoto finche' non c'e' davvero un modello economico: la rotta `veloce`
-      # e' COMMENTATA in litellm-config.yaml, quindi valorizzarla faceva
-      # chiamare una rotta inesistente e ripiegare sul modello principale dopo
-      # un 400 — due righe di errore nei log a ogni avvio, che sembrano un
-      # guasto e non lo sono (22/09/2026). Si riempie insieme a litellm-config.
-      LLM_VELOCE: ${LLM_VELOCE-}
-      LLM_EMBEDDING: embedding
+      # --- I modelli stanno su llama-swap (host), raggiunti DIRETTAMENTE.
+      # Niente proxy di routing (litellm tolto il 24/09/2026): il modello di
+      # chat e' MODELLO_CHAT, l'embedding e' EMBEDDING_MODELLO.
+      MODELLI_HOST: ${MODELLI_HOST-host.docker.internal:1235}
+      MODELLO_CHAT: ${MODELLO_CHAT-qwen3.6-35b-a3b-gsq-hybrid}
+      EMBEDDING_MODELLO: ${EMBEDDING_MODELLO-text-embedding-bge-m3-embeddings}
       # Fase 1b: i dati 'interno' rispondono solo su questa rotta (gate). In
       # sviluppo punta allo stesso modello locale (GUIDA-MODELLI.md §4).
       LLM_RAGIONAMENTO_INTERNO: ragionamento_interno
@@ -230,8 +223,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      litellm:
-        condition: service_started
 
   amministrazione:
     # Portale dopo il login e amministrazione (decisione 58).
@@ -254,7 +245,6 @@ services:
       # segnaposto dice "non ancora installato" invece di un link rotto.
       DAGSTER_URL: ${DAGSTER_URL:-}
       UPTIME_URL: ${UPTIME_URL:-}
-      LITELLM_URL: ${LITELLM_URL:-}
       # Servizio dei collegamenti: il pannello gli inoltra le password digitate
       # dal Superutente; non ha la chiave dei segreti (decisione 70).
       CONNETTORI_URL: http://connettori:8000
@@ -303,7 +293,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
       AZIONI_KEY: ${AZIONI_KEY}
-      AZIONI_ALLOWED: postgres,keycloak,caddy,mongo,librechat,amministrazione,connettori,dagster-webserver,dagster-daemon,uptime-kuma,litellm
+      AZIONI_ALLOWED: postgres,keycloak,caddy,mongo,librechat,amministrazione,connettori,dagster-webserver,dagster-daemon,uptime-kuma
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -432,30 +422,6 @@ services:
       - keycloak
       - uptime-kuma
 
-  oauth2-proxy-litellm:
-    # SSO per la UI di LiteLLM (stesso pattern di Dagster e Uptime Kuma),
-    # client Keycloak `litellm`. Solo Superutente: basta un utente.
-    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.2
-    restart: unless-stopped
-    command: ["--oidc-extra-audience=account"]
-    environment:
-      OAUTH2_PROXY_PROVIDER: keycloak-oidc
-      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
-      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/${REALM}
-      OAUTH2_PROXY_CLIENT_ID: litellm
-      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_LITELLM_CLIENT_SECRET}
-      OAUTH2_PROXY_REDIRECT_URL: https://modelli.localhost/oauth2/callback
-      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_LITELLM_COOKIE_SECRET}
-      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
-      OAUTH2_PROXY_ALLOWED_GROUP: /amministratori/Superutente
-      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
-      OAUTH2_PROXY_COOKIE_SECURE: "true"
-      OAUTH2_PROXY_UPSTREAMS: http://litellm:4000
-      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: "true"
-      OAUTH2_PROXY_SSL_INSECURE_SKIP_VERIFY: "true"
-    depends_on:
-      - keycloak
-
   dagster-webserver:
     # UI e GraphQL di Dagster (decisione 60): pianifica e mostra le importazioni.
     # La code location sta in ./dagster (definitions.py). In sviluppo e' dietro
@@ -489,9 +455,8 @@ services:
   ingestion:
     # Indicizza le cartelle collegate (decisioni 61-64): un giro ogni
     # INTERVALLO secondi. Legge le cartelle in SOLA LETTURA: chi deposita i
-    # file lo fa sulla condivisione, non qui. I vettori li chiede a LiteLLM,
-    # per nome logico, come l'orchestratore: il modello si cambia in un posto
-    # solo (litellm-config.yaml).
+    # file lo fa sulla condivisione, non qui. I vettori li chiede a llama-swap
+    # diretto (come l'orchestratore, litellm tolto il 24/09/2026).
     #   docker compose logs -f ingestion                      cosa sta facendo
     #   docker compose run --rm ingestion python indicizza.py --una-volta
     build: ./ingestion
@@ -503,9 +468,9 @@ services:
     mem_limit: 4g
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/rag
-      LITELLM_BASE_URL: http://litellm:4000
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-      LLM_EMBEDDING: embedding
+      # I modelli (embedding, VLM) stanno su llama-swap, raggiunti direttamente.
+      MODELLI_HOST: ${MODELLI_HOST-host.docker.internal:1235}
+      EMBEDDING_MODELLO: ${EMBEDDING_MODELLO-text-embedding-bge-m3-embeddings}
       # Le immagini dei cataloghi le descrive Docling con il suo VLM locale
       # (SmolVLM, dentro l'immagine): nessun modello esterno da chiamare.
       # Dove si leggono i documenti (layout, tabelle, OCR): docling-serve su
@@ -530,49 +495,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      litellm:
-        condition: service_started
-
-  litellm:
-    # Owner unico del routing dei modelli, e l'UNICO componente che possiede
-    # le chiavi dei provider. Il modello di ragionamento e una scelta di
-    # progetto, non un vincolo dell'architettura: si cambia qui.
-    image: ghcr.io/berriai/litellm:main-stable
-    restart: unless-stopped
-    command: ["--config", "/app/config.yaml"]
-    environment:
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
-      # Database per utenti/chiavi/spend della UI e per l'SSO (senza, la UI e
-      # l'SSO non funzionano).
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/litellm
-      # Login della UI di amministrazione (credenziali dedicate, non la master
-      # key). L'SSO "vero" della UI e' un passo successivo (LiteLLM SSO/enterprise).
-      UI_USERNAME: ${UI_USERNAME:-admin}
-      UI_PASSWORD: ${UI_PASSWORD}
-      # SSO della UI (generic OIDC verso Keycloak): login aziendale, niente
-      # credenziali dedicate. Autorizzazione (solo Superutente) a monte, in
-      # oauth2-proxy-litellm.
-      PROXY_BASE_URL: https://modelli.localhost
-      GENERIC_CLIENT_ID: litellm-sso
-      GENERIC_CLIENT_SECRET: ${GENERIC_CLIENT_SECRET}
-      GENERIC_CLIENT_STATE: ${GENERIC_CLIENT_STATE}
-      GENERIC_AUTHORIZATION_ENDPOINT: https://${SSO_HOST}/realms/${REALM}/protocol/openid-connect/auth
-      GENERIC_TOKEN_ENDPOINT: http://keycloak:8080/realms/${REALM}/protocol/openid-connect/token
-      GENERIC_USERINFO_ENDPOINT: http://keycloak:8080/realms/${REALM}/protocol/openid-connect/userinfo
-      GENERIC_USER_ID_ATTRIBUTE: sub
-      # Modello principale — scelto in .env, mappato in litellm-config.yaml
-      MODELLO_RAGIONAMENTO: ${MODELLO_RAGIONAMENTO}
-      MODELLO_API_KEY: ${MODELLO_API_KEY}
-      MODELLO_API_BASE: ${MODELLO_API_BASE}
-      # Modello economico per i compiti banali
-      MODELLO_VELOCE: ${MODELLO_VELOCE}
-      MODELLO_VELOCE_API_KEY: ${MODELLO_VELOCE_API_KEY}
-      MODELLO_VELOCE_API_BASE: ${MODELLO_VELOCE_API_BASE}
-      # Embedding: sempre interno
-      EMBEDDING_URL: ${EMBEDDING_URL}
-      INFERENCE_TOKEN: ${INFERENCE_TOKEN}
-    volumes:
-      - ./litellm-config.yaml:/app/config.yaml:ro
 
 volumes:
   pg-data:

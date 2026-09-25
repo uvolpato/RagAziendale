@@ -31,21 +31,9 @@ _intervalli_numerici), altrimenti «sotto i 2 euro» non troverebbe mai
 «1,85 €».
 """
 import json
-import os
 import re
 
-import httpx
-
-from orchestratore import egress
-
-LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
-MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
-# Rotta veloce se c'e', altrimenti il modello principale, come riformula.py.
-# Su un 8B il compito funziona gia' (provato il 23/09/2026: 8/8, incluso
-# «violaceo» -> colore=viola); con un modello economico basta valorizzarla.
-VELOCE = os.environ.get("LLM_VELOCE", "")
-PRINCIPALE = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
-SECONDI = float(os.environ.get("VINCOLI_TIMEOUT", "60"))
+from orchestratore import modello
 
 ATTRIBUTI = {"colore", "misura", "formato", "prezzo"}
 
@@ -101,19 +89,9 @@ def _messaggio(domanda, catalogo):
     INTENT_TERMINI), non spiarla dal catalogo."""
     return f"Richiesta: {domanda}"
 
-# Rotte che hanno gia' risposto male: non si ritentano a ogni turno (stesso
-# meccanismo di riformula.py, stessa ragione).
-_rotte_rotte = set()
-
-
-def _chiedi(rotta, messaggi):
-    testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
-    corpo = {"model": rotta, "messages": messaggi, "temperature": 0,
-             "max_tokens": 4000}
-    with egress.client(timeout=SECONDI, verify=False) as c:
-        r = c.post(f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa)
-        r.raise_for_status()
-        return (r.json()["choices"][0]["message"].get("content") or "").strip()
+def _chiedi(messaggi):
+    # Passi meccanici: sempre al modello locale, senza ragionamento.
+    return modello.chiedi(messaggi)
 
 
 def estrae(domanda: str, catalogo=None):
@@ -134,47 +112,37 @@ def estrae(domanda: str, catalogo=None):
         return "", [], []
     messaggi = [{"role": "system", "content": ISTRUZIONI},
                 {"role": "user", "content": _messaggio(domanda, catalogo)}]
-    for rotta in (VELOCE, PRINCIPALE):
-        if not rotta or rotta in _rotte_rotte:
+    try:
+        testo = _chiedi(messaggi)
+    except Exception as e:
+        print(f"estrazione vincoli non riuscita ({type(e).__name__}: {e})", flush=True)
+        return "", [], []
+    testo = testo.split("```")[-2] if "```" in testo else testo
+    testo = testo.strip().strip("`")
+    try:
+        dati = json.loads(testo)
+    except Exception:
+        return "", [], []
+    vincoli = []
+    for v in dati.get("vincoli") or []:
+        if not isinstance(v, dict):
             continue
-        try:
-            testo = _chiedi(rotta, messaggi)
-        except Exception as e:
-            print(f"estrazione vincoli non riuscita su {rotta}: "
-                  f"{type(e).__name__}: {e}", flush=True)
-            # Un TIMEOUT e' un errore di contorno (host occupato, come il 23/09
-            # col titolo di LibreChat che intasava il modello), non una risposta
-            # sbagliata: non si marca la rotta come rotta, altrimenti una sola
-            # attesa lenta uccide tutte le estrazioni successive della sessione.
-            if not isinstance(e, httpx.TimeoutException):
-                _rotte_rotte.add(rotta)
+        attr = str(v.get("attributo", "")).strip().lower()
+        if attr not in ATTRIBUTI:
             continue
-        testo = testo.split("```")[-2] if "```" in testo else testo
-        testo = testo.strip().strip("`")
-        try:
-            dati = json.loads(testo)
-        except Exception:
+        termini = [str(t).strip() for t in (v.get("termini") or [])
+                   if isinstance(t, str) and t.strip()]
+        if not termini:
             continue
-        vincoli = []
-        for v in dati.get("vincoli") or []:
-            if not isinstance(v, dict):
-                continue
-            attr = str(v.get("attributo", "")).strip().lower()
-            if attr not in ATTRIBUTI:
-                continue
-            termini = [str(t).strip() for t in (v.get("termini") or [])
-                       if isinstance(t, str) and t.strip()]
-            if not termini:
-                continue
-            vincoli.append({"attributo": attr,
-                            "valore": str(v.get("valore", "")).strip(),
-                            "termini": termini})
-        intent = str(dati.get("intent", "")).strip()
-        intent_termini = [str(t).strip() for t in (dati.get("intent_termini")
-                                                   or [])
-                          if isinstance(t, str) and t.strip()]
-        if vincoli or intent:
-            return intent, intent_termini, vincoli
+        vincoli.append({"attributo": attr,
+                        "valore": str(v.get("valore", "")).strip(),
+                        "termini": termini})
+    intent = str(dati.get("intent", "")).strip()
+    intent_termini = [str(t).strip() for t in (dati.get("intent_termini")
+                                               or [])
+                      if isinstance(t, str) and t.strip()]
+    if vincoli or intent:
+        return intent, intent_termini, vincoli
     return "", [], []
 
 

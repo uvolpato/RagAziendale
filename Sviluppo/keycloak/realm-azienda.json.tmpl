@@ -238,47 +238,6 @@
       ]
     },
     {
-      "clientId": "litellm",
-      "name": "LiteLLM (modelli AI)",
-      "description": "Accesso alla UI di LiteLLM via oauth2-proxy. Solo amministratori.",
-      "enabled": true,
-      "protocol": "openid-connect",
-      "publicClient": false,
-      "secret": "${OAUTH2_PROXY_LITELLM_CLIENT_SECRET}",
-      "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false,
-      "redirectUris": ["https://modelli.localhost/oauth2/callback"],
-      "protocolMappers": [
-        {
-          "name": "groups",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-group-membership-mapper",
-          "consentRequired": false,
-          "config": {
-            "claim.name": "groups",
-            "full.path": "true",
-            "access.token.claim": "true",
-            "id.token.claim": "true",
-            "userinfo.token.claim": "true"
-          }
-        }
-      ]
-    },
-    {
-      "clientId": "litellm-sso",
-      "name": "LiteLLM SSO (UI)",
-      "description": "SSO della UI di LiteLLM: generic OIDC verso Keycloak.",
-      "enabled": true,
-      "protocol": "openid-connect",
-      "publicClient": false,
-      "secret": "${GENERIC_CLIENT_SECRET}",
-      "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false,
-      "redirectUris": ["https://modelli.localhost/sso/callback"]
-    },
-    {
       "clientId": "test-token",
       "name": "SOLO SVILUPPO - ottenere token via password grant",
       "enabled": true,

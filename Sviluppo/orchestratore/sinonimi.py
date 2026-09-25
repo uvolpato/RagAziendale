@@ -28,14 +28,7 @@ import json
 import os
 import threading
 
-from orchestratore import egress
-
-LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
-MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
-# La generazione dei sinonimi e' un lavoro meccanico ma e' la stessa rotta
-# principale: `veloce` oggi non e' configurata (come in riformula.py).
-PRINCIPALE = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
-SECONDI = float(os.environ.get("SINONIMI_TIMEOUT", "15"))
+from orchestratore import modello
 
 ISTRUZIONI = (
     "Dammi, nelle lingue italiano, tedesco e inglese, le parole DIVERSE con cui "
@@ -95,13 +88,7 @@ PAROLE_DI_FUNZIONE = {
 
 
 def _chiedi(messaggi) -> str:
-    testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
-    corpo = {"model": PRINCIPALE, "messages": messaggi, "temperature": 0,
-             "max_tokens": 4000}
-    with egress.client(timeout=SECONDI, verify=False) as c:
-        r = c.post(f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa)
-        r.raise_for_status()
-        return (r.json()["choices"][0]["message"].get("content") or "").strip()
+    return modello.chiedi(messaggi)
 
 
 def _genera(parola: str) -> list:

@@ -56,7 +56,6 @@ STRUMENTI = {   # URL vuoto = non ancora installato: la pagina segnaposto lo dic
     "keycloak": (f"https://{SSO_HOST}/admin/{REALM}/console/", "Configurazione avanzata", "Keycloak"),
     "dagster": (os.environ.get("DAGSTER_URL", ""), "Gestione importazioni", "Dagster"),
     "uptime": (os.environ.get("UPTIME_URL", ""), "Monitoraggio sistemi", "Uptime Kuma"),
-    "litellm": (os.environ.get("LITELLM_URL", ""), "Modelli AI", "LiteLLM"),
 }
 # Il servizio `connettori` custodisce i segreti dei collegamenti (decisione 70):
 # il pannello gli INOLTRA le password digitate dal Superutente, non ha la chiave.

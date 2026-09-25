@@ -20,17 +20,17 @@ MATRICE = {
     "admin-importazioni": {"panoramica": "L", "fonti": "L", "anomalie": "L", "registro": "L", "dagster": "L",
                            "importazioni": "M"},
     "admin-anomalie":     {"panoramica": "L", "fonti": "L", "anomalie": "M", "registro": "L"},
-    "admin-sistemi":      {"panoramica": "L", "anomalie": "L", "registro": "L", "aspetto": "M", "uptime": "L", "litellm": "L", "azioni": "M"},
+    "admin-sistemi":      {"panoramica": "L", "anomalie": "L", "registro": "L", "aspetto": "M", "uptime": "L", "azioni": "M"},
     "admin-ruoli":        {"panoramica": "L", "vedicome": "M", "registro": "L",
                            "utenti": "L", "gruppi": "L", "profili": "M"},
     "admin-revisore":     {"panoramica": "L", "fonti": "L", "vedicome": "M", "anomalie": "L", "registro": "L",
                            "aspetto": "L", "utenti": "L", "gruppi": "L", "profili": "L", "aziende": "L",
-                           "collegamenti": "L", "importazioni": "L", "dagster": "L", "uptime": "L", "litellm": "L"},
+                           "collegamenti": "L", "importazioni": "L", "dagster": "L", "uptime": "L"},
     # Superutente: tutto, compresa la "struttura" (creare gruppi, comporre i
     # profili) e la console di Keycloak per i casi rari. Vede tutte le aziende.
     "admin-super":        {v: "M" for v in ("panoramica", "fonti", "vedicome", "anomalie", "registro", "aspetto",
                                              "utenti", "gruppi", "profili", "struttura", "aziende",
-                                             "collegamenti", "importazioni", "keycloak", "dagster", "uptime", "litellm")},
+                                             "collegamenti", "importazioni", "keycloak", "dagster", "uptime")},
     # Gestore di gruppo (chi sta in <nome>-gestori): solo i colleghi e la
     # cartella del SUO gruppo. Non e' un profilo di amministrazione: lo da'
     # il gruppo -gestori (amministrazione/gestori.py).
@@ -74,7 +74,7 @@ TIPI_FONTE = [
 TIPI_DISPONIBILI = {t["id"] for t in TIPI_FONTE if t["disponibile"]}
 
 # Strumenti che non conoscono le aziende (§3.3): solo a chi le ha tutte.
-SENZA_AZIENDE = {"dagster", "uptime", "litellm", "azioni"}
+SENZA_AZIENDE = {"dagster", "uptime", "azioni"}
 
 # Anomalie "della propria area" (§3.4 nota 2). None = tutte.
 AREE_ANOMALIE = {

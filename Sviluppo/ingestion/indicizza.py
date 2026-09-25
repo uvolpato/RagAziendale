@@ -482,7 +482,7 @@ def _opzioni_pdf(device="cpu", descrivi=True):
     # internet. Se l'host non risponde, Docling lo registra e prosegue senza
     # descrizioni (provato staccando la porta): il documento entra lo stesso.
     from docling.datamodel.pipeline_options import PictureDescriptionApiOptions
-    chiave = os.environ.get("INFERENCE_TOKEN") or os.environ.get("LITELLM_MASTER_KEY") or ""
+    chiave = os.environ.get("INFERENCE_TOKEN") or ""
     opzioni.do_picture_description = True
     opzioni.enable_remote_services = True
     opzioni.picture_description_options = PictureDescriptionApiOptions(
@@ -910,39 +910,24 @@ class Lettore:
 
 # ------------------------------------------------------------------ vettori
 def _litellm():
-    """LiteLLM, come l'orchestratore: si chiede il nome LOGICO (`embedding`),
-    il modello vero lo decide litellm-config.yaml. Un posto solo da cambiare."""
-    return (os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/"),
-            {"Authorization": "Bearer " + os.environ.get("LITELLM_MASTER_KEY", "")},
-            os.environ.get("LLM_EMBEDDING", "embedding"))
+    """I modelli locali via llama-swap DIRETTO (litellm tolto il 24/09/2026).
+    Il nome e' quello del modello embedding su llama-swap."""
+    host = os.environ.get("MODELLI_HOST", "host.docker.internal:1235")
+    return (f"http://{host}", {},
+            os.environ.get("EMBEDDING_MODELLO", "text-embedding-bge-m3-embeddings"))
 
 
 def _litellm_visione():
-    """Il VLM via LiteLLM, per nome logico `visione`, come l'embedding.
-
-    Il VLM passava direttamente da llama-swap (`VLM_URL`), ma llama-swap ascolta
-    su loopback e i container non lo raggiungono: le descrizioni delle figure
-    restavano vuote (23/09/2026, nessun colore nell'indice dei nastri). LiteLLM
-    sa raggiungere i modelli, e la rotta `visione` sta in litellm-config.yaml.
-    """
-    testa = {"Authorization": "Bearer " + os.environ.get("LITELLM_MASTER_KEY", ""),
-             "Content-Type": "application/json"}
-    return (os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/"),
-            testa,
-            os.environ.get("LLM_VISIONE", "visione"))
+    """Il VLM via llama-swap diretto: `VLM_MODELLO` (es. qwen/qwen3-vl-4b)."""
+    host = os.environ.get("MODELLI_HOST", "host.docker.internal:1235")
+    return (f"http://{host}",
+            {"Content-Type": "application/json"},
+            os.environ.get("VLM_MODELLO", "qwen/qwen3-vl-4b"))
 
 
 def modello_vero():
-    """Il modello dietro il nome logico, da /model/info di LiteLLM (es.
-    'text-embedding-bge-m3-embeddings'): e' questo che l'indice registra, non
-    il nome logico, che resta uguale anche quando il modello cambia."""
-    url, testa, logico = _litellm()
-    r = httpx.get(f"{url}/model/info", headers=testa, timeout=30)
-    r.raise_for_status()
-    for m in r.json()["data"]:
-        if m["model_name"] == logico:
-            return m["litellm_params"]["model"].split("/", 1)[-1]
-    raise RuntimeError(f"LiteLLM non ha il modello logico {logico!r}")
+    """Il nome del modello embedding locale (e' quello che l'indice registra)."""
+    return os.environ.get("EMBEDDING_MODELLO", "text-embedding-bge-m3-embeddings")
 
 
 def vettori(testi):

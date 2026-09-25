@@ -137,9 +137,3 @@ uptime.localhost {
 	tls internal
 	reverse_proxy oauth2-proxy-uptime:4180
 }
-
-# LiteLLM: UI dei modelli AI (decisioni 13/40), SSO come gli altri strumenti.
-modelli.localhost {
-	tls internal
-	reverse_proxy oauth2-proxy-litellm:4180
-}

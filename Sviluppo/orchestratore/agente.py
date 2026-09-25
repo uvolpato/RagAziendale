@@ -28,7 +28,7 @@ from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from orchestratore import egress, recupero
+from orchestratore import egress, modello, recupero
 
 LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
 MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
@@ -38,21 +38,22 @@ MAX_PASSI = int(os.environ.get("AGENTE_MAX_PASSI", "4"))
 MAX_TOKEN = int(os.environ.get("AGENTE_MAX_TOKEN", "2048"))
 
 ISTRUZIONI_SISTEMA = (
-    "Sei un assistente che cerca nei cataloghi aziendali (decorazioni, nastri, "
-    "vasi, sassi, candele, profumatori, ghirlande, etichette).\n"
-    "Usa gli strumenti per trovare cio' che la persona chiede.\n"
+    "Sei un assistente che cerca in un archivio aziendale di cataloghi e documenti.\n"
+    "Il tuo compito e' INDICARE dove stanno le cose, non estrarre codici o dati: "
+    "dai i riferimenti (documento e pagina), poi e' la persona a guardare.\n"
     "\n"
-    "- Se la domanda e' un saluto o una chiacchiera (non una ricerca), NON "
-    "chiamare strumenti: rispondi direttamente.\n"
-    "- Cerca e leggi solo finche' non hai abbastanza per rispondere: appena "
-    "hai trovato (o capito che non c'e') cio' che serve, SMETTI di chiamare "
-    "strumenti e rispondi. Non cercare infinite variazioni della stessa domanda.\n"
-    "- Se una ricerca non ti convince, usa `grep` per vedere se la parola esiste "
-    "davvero e dove, oppure `pagina` per leggere il contesto.\n"
-    "- Se non trovi cio' che la persona chiede, dillo onestamente: NON inventare "
-    "articoli, codici o prezzi che non hai visto.\n"
-    "- Rispondi in italiano. Quando ti basi sui documenti, cita documento e "
-    "pagina.\n"
+    "Strategia, che decidi TU secondo il tipo di domanda:\n"
+    "- PRODOTTO o oggetto (es. «nastri blu», «vasi»): cerca PRIMA le figure con "
+    "`cerca_figure`, e solo se non basta il testo. Rispondi indicando le pagine.\n"
+    "- ASTRATTA (un bisogno senza oggetto, es. «un regalo per una trentenne»): "
+    "parti dal contesto, arriva a prodotti concreti con `cerca_figure`. Rispondi "
+    "indicando le pagine.\n"
+    "- TESTO (come si fa una cosa, cosa dice una policy o un manuale): leggi i "
+    "passi con `cerca` e `pagina`, e riassumi il contenuto citando la pagina.\n"
+    "\n"
+    "- Se la domanda e' un saluto o una chiacchiera, NON chiamare strumenti.\n"
+    "- Non inventare: se non trovi, dillo. Mai codici o prezzi inventati.\n"
+    "- Rispondi in italiano, citando documento e pagina.\n"
 )
 
 
@@ -89,6 +90,14 @@ STRUMENTI = [
         "name": "documenti",
         "description": "Elenca i cataloghi disponibili e quanti passi ha ciascuno.",
         "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "cerca_figure",
+        "description": "Cerca le FIGURE (immagini dei prodotti) che corrispondono "
+                       "all'oggetto. Per i cataloghi: trova dove sta il prodotto e la "
+                       "sua pagina. I vincoli di colore/misura sono gia' applicati.",
+        "parameters": {"type": "object",
+                       "properties": {"oggetto": {"type": "string"}},
+                       "required": ["oggetto"]}}},
 ]
 
 
@@ -104,6 +113,21 @@ def _formatta(righe):
         doc = r.get("documento", "?")
         pag = f", pagina {r['page']}" if r.get("page") is not None else ""
         testo = " ".join((r.get("content") or "").split())
+        if len(testo) > ASSAGGIO:
+            testo = testo[:ASSAGGIO] + " …"
+        fuori.append(f"[{doc}{pag}] {testo}")
+    return "\n".join(fuori)
+
+
+def _formatta_figure(righe):
+    """Le figure in forma leggibile: documento, pagina, descrizione."""
+    if not righe:
+        return "(nessuna figura)"
+    fuori = []
+    for r in righe:
+        doc = r.get("documento", "?")
+        pag = f", pagina {r['page']}" if r.get("page") is not None else ""
+        testo = " ".join((r.get("descrizione") or "").split())
         if len(testo) > ASSAGGIO:
             testo = testo[:ASSAGGIO] + " …"
         fuori.append(f"[{doc}{pag}] {testo}")
@@ -128,6 +152,12 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
         righe, _ = recupero.cerca(conn, q, gruppi, qvec=recupero.embedding(q),
                                   limite=8, vincolo=vincolo)
         return righe, _formatta(righe)
+    if nome == "cerca_figure":
+        oggetto = str(argomenti.get("oggetto", "")).strip()
+        if not oggetto:
+            return [], "(oggetto vuoto)"
+        righe = recupero.cerca_figure(conn, [oggetto] + sinonimi, vincolo, gruppi)
+        return righe, _formatta_figure(righe)
     if nome == "cerca_esatta":
         t = str(argomenti.get("termine", "")).strip()
         if not t:
@@ -157,14 +187,8 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
 
 def _chiama(messaggi):
     """Una chiamata al modello, con gli strumenti. Torna il messaggio assistant."""
-    testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
-    corpo = {"model": ROTTA, "messages": messaggi, "tools": STRUMENTI,
-             "tool_choice": "auto", "temperature": 0, "max_tokens": MAX_TOKEN}
-    with egress.client(timeout=SECONDI, verify=False) as c:
-        r = c.post(f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa)
-        r.raise_for_status()
-        m = r.json()["choices"][0]["message"]
-    m.pop("reasoning_content", None)   # il 27B "rco" ragiona ad alta voce
+    m = modello.messaggio(messaggi, MAX_TOKEN, tools=STRUMENTI)
+    m.pop("reasoning_content", None)   # il ragionamento non si rimanda al modello
     return m
 
 

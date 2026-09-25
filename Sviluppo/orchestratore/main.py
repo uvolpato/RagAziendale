@@ -27,7 +27,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from orchestratore import documento as documento_mod
-from orchestratore import egress, gate, identita, immagini, immagini_articoli, indice, prompt, recupero, ricerca_agente, riformula, sinonimi, vincoli
+from orchestratore import agente, egress, gate, identita, immagini, immagini_articoli, indice, modello, prompt, recupero, ricerca_agente, riformula, sinonimi, vincoli
 
 app = FastAPI()
 
@@ -253,6 +253,35 @@ def _titolo_librechat(domanda):
             yield f"data: {json.dumps({'error': {'message': str(e), 'type': 'upstream_error'}})}\n\n"
             yield "data: [DONE]\n\n"
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+def _e_chiacchiera(domanda) -> bool:
+    """Saluto o chiacchiera (non una ricerca)? Una risposta secca del modello,
+    senza ragionamento: costa ~1,5 s e salva l'intera ricerca sui saluti."""
+    if not domanda or len(domanda.strip()) > 120:
+        return False
+    try:
+        testo = modello.chiedi([{
+            "role": "system",
+            "content": ("Rispondi SOLO «si» o «no».\n"
+                        "«si» = e' un saluto, un ringraziamento o una chiacchiera "
+                        "che NON chiede di cercare nei documenti (es. «ciao», "
+                        "«grazie», «come stai», «ok»).\n"
+                        "«no» = chiede qualcosa da cercare nei documenti."),
+        }, {"role": "user", "content": domanda}], max_tokens=8)
+        return testo.strip().lower().startswith("si")
+    except Exception:
+        return False
+
+
+def _chiacchiera(domanda):
+    """Risposta diretta a un saluto: niente ricerca, niente ragionamento."""
+    try:
+        testo = modello.chiedi([{"role": "system", "content": SUFFISSO_SISTEMA},
+                                {"role": "user", "content": domanda}])
+    except Exception:
+        testo = "Ciao! Come posso aiutarti?"
+    return _risposta_unica(testo)
 
 
 # Le immagini non si attaccano piu' a ogni risposta: si OFFRONO, e si mostrano
@@ -598,60 +627,33 @@ def _immagini_del_turno(righe):
 
 
 def _stream_litellm(messages, rotta, uso):
-    """Chiama LiteLLM in streaming e cede i chunk OpenAI-compatible cosi come
-    arrivano, riscrivendo solo il nome del modello (assistente-v1). `uso` e' un
-    dict da riempire con token_in/token_out letti dall'ultimo chunk. Il [DONE]
-    lo emette il chiamante: qui si cede solo il flusso del modello."""
-    testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
-    corpo = {
-        "model": rotta,
-        "messages": messages,
-        "stream": True,
-        # Temperatura e penalita' si dichiarano QUI, non si lasciano al server.
-        # Senza, valgono i valori predefiniti di llama.cpp — temperatura alta e
-        # repeat_penalty 1.0, cioe' disattivata — e il 22/09/2026 sono successe
-        # due cose: la stessa domanda ha dato risposte diverse a distanza di
-        # minuti, e a «ma sono tutti di sassi rossi?» il modello e' entrato in
-        # loop ripetendo «verde foglia (FSA1050), verde acero (FSA1050)» per
-        # decine di righe, bruciando tutto il budget di token.
-        #
-        # Qui il modello deve RIPORTARE quello che sta nel contesto, non
-        # inventare: la creativita' non serve e la ripetibilita' si'.
-        "temperature": TEMPERATURA,
-        "max_tokens": MAX_TOKEN,
-        # Con include_usage LiteLLM manda l'uso dei token nell'ultimo chunk:
-        # serve alla traccia (token_in/token_out) senza una seconda chiamata.
-        "stream_options": {"include_usage": True},
-    }
-    with egress.client(timeout=300.0, verify=False) as c:
-        with c.stream("POST", f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa) as r:
-            r.raise_for_status()
-            for riga in r.iter_lines():
-                if not riga:
-                    continue
-                if riga.startswith("data: "):
-                    dato = riga[6:]
-                    if dato.strip() == "[DONE]":
-                        continue
-                    try:
-                        pezzo = json.loads(dato)
-                    except ValueError:
-                        continue
-                    if pezzo.get("usage"):
-                        uso["token_in"] = pezzo["usage"].get("prompt_tokens")
-                        uso["token_out"] = pezzo["usage"].get("completion_tokens")
-                        continue  # il chunk di usage non porta testo
-                    if pezzo.get("model"):
-                        pezzo["model"] = MODEL_NAME
-                    # Il 27B "rco" emette il ragionamento in
-                    # delta.reasoning_content prima del testo vero. LibreChat non
-                    # lo conosce: lo si scarta, cosi' arriva solo la risposta.
-                    delta = (pezzo.get("choices") or [{}])[0].get("delta")
-                    if isinstance(delta, dict):
-                        delta.pop("reasoning_content", None)
-                        if "content" not in delta and not delta.get("tool_calls"):
-                            continue  # solo ragionamento (o chunk vuoto): non si mostra
-                    yield f"data: {json.dumps(pezzo)}\n\n"
+    """Streaming DIRETTO da llama-swap, cedendo i chunk OpenAI-compatible.
+    `rotta` resta per compatibilita': il modello e' uno solo (locale). `uso` e'
+    un dict da riempire con token_in/token_out letti dall'ultimo chunk."""
+    for riga in modello.stream(messages, max_tokens=MAX_TOKEN,
+                               temperature=TEMPERATURA):
+        dato = riga[6:]
+        if dato.strip() == "[DONE]":
+            continue
+        try:
+            pezzo = json.loads(dato)
+        except ValueError:
+            continue
+        if pezzo.get("usage"):
+            uso["token_in"] = pezzo["usage"].get("prompt_tokens")
+            uso["token_out"] = pezzo["usage"].get("completion_tokens")
+            continue  # il chunk di usage non porta testo
+        if pezzo.get("model"):
+            pezzo["model"] = MODEL_NAME
+        # Il modello ragiona ad alta voce: il ragionamento viaggia in
+        # delta.reasoning_content. LibreChat non lo conosce: lo si scarta,
+        # cosi' arriva solo la risposta.
+        delta = (pezzo.get("choices") or [{}])[0].get("delta")
+        if isinstance(delta, dict):
+            delta.pop("reasoning_content", None)
+            if "content" not in delta and not delta.get("tool_calls"):
+                continue  # solo ragionamento (o chunk vuoto): non si mostra
+        yield f"data: {json.dumps(pezzo)}\n\n"
 
 
 def _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
@@ -734,128 +736,42 @@ async def chat(request: Request):
                 for i, (iid, d, r) in enumerate(ids)}
         return _risposta_unica("Ecco le figure delle pagine citate:\n\n" + _blocco_immagini(urls))
 
-    # 2. La domanda per la RICERCA: in una conversazione l'ultima frase da sola
-    # non basta ("ne ho bisogno in auto"). Si riscrive con le battute
-    # precedenti; se non si puo', resta com'era.
-    # (Prova A/B: con SENZA_ESTRAZIONE=1 si salta e si usa la domanda vera.)
-    cercata, riscritta = (domanda, False) if SENZA_ESTRAZIONE else \
-        riformula.per_la_ricerca(domanda, storico_messaggi, SUFFISSO_SISTEMA)
-    if riscritta:
-        print(f"riformulata: {domanda!r} -> {cercata!r}", flush=True)
+    # L'agente vero: capisce la domanda e decide da se' — cerca le figure per i
+    # prodotti, legge il testo per i documenti, risponde ai saluti senza
+    # cercare. Sostituisce la catena fissa (riformula -> vincoli -> sinonimi ->
+    # ricerca -> gate -> prompt).
+    righe, risposta = agente.cerca(conn, domanda, gruppi,
+                                   limite=pezzi_da_recuperare(domanda))
 
-    # 3. D19: i vincoli di attributo (colore, misura, formato, prezzo) diventano
-    # un ramo del RECUPERO, non un augurio nel prompt. Si estrae il vincolo
-    # ("colore=viola"), si proiettano i termini nelle lingue dei cataloghi
-    # ("lila|violet|purple"), e il recupero resta SOLO dentro i pezzi che li
-    # contengono. Misurato il 23/09/2026: un vero natalizio viola stava a
-    # posizione 753 su 1434 per coseno — nessun peso l'avrebbe portato in cima,
-    # il must-match sulla parola sì. Se i vincoli falliscono (modello giu',
-    # risposta non JSON) si torna alla ricerca di oggi: degradano in silenzio.
-    # (Prova A/B: con SENZA_ESTRAZIONE=1 niente estrazione, niente vincolo.)
-    if SENZA_ESTRAZIONE:
-        _, intent_termini, vincoli_trovati = "", [], []
-        vincolo_regex, query = "", cercata
-    else:
-        _, intent_termini, vincoli_trovati = vincoli.estrae(cercata)
-        vincolo_regex = vincoli.regex(vincoli_trovati)
-        # La query da dare a embedding e rerank parla anche le lingue dei
-        # cataloghi: la domanda da sola non raggiunge «sassi rossi» scritti
-        # «river pebbles dunkelrot dark red» (misurato il 23/09/2026).
-        query = vincoli.query_di_ricerca(cercata, intent_termini, vincoli_trovati)
+    if risposta:
+        def gen():
+            try:
+                yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': risposta}, 'index': 0}], 'model': MODEL_NAME})}\n\n"
+                finale = _fonti_citate(righe, f"https://{APP_HOST}", utente)
+                if finale:
+                    yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': finale}, 'index': 0}]})}\n\n"
+                yield "data: [DONE]\n\n"
+            finally:
+                _registra_traccia(conn, conversation_id, utente, domanda, righe,
+                                  {"rotta": "agente"}, None, None,
+                                  int((time.monotonic() - inizio) * 1000))
+                conn.close()
+        return StreamingResponse(gen(), media_type="text/event-stream")
 
-    # D20: la query si estende coi SINONIMI multilingue delle parole di
-    # contenuto (dizionario in tabella, popolato dall'8B una volta per parola).
-    # E' il collegamento linguistico che ne' il vettore ne' il reranker fanno
-    # da soli («sassi» -> «pietre, pebbles, kiesel»). Vale in entrambe le
-    # modalita', perche' il difetto e' della LINGUA, non dell'estrazione.
-    # (Prova: SENZA_SINONIMI=1 bypassa questa fonte — la via unica dell'agente
-    # passa il CATALOGO al modello e i termini giusti escono da li', senza
-    # tabella. Non si butta nulla: per tornare indietro si leva la variabile.)
-    if not SENZA_SINONIMI:
-        query = sinonimi.arricchisci(conn, query)
-
-    # 4. Embedding della domanda (puo degradare a full-text) e ricerca con ACL.
-    qvec = recupero.embedding(query)
-    # D21: indice dei documenti. Primo passaggio: QUALI cataloghi c'entrano,
-    # cercando fra le descrizioni dei documenti (34 righe, non migliaia di
-    # chunk). Secondo passaggio: la ricerca dettagliata resta DENTRO quelli.
-    # Senza descrizioni generate (indice vuoto) `pertinenti` torna lista vuota
-    # e la ricerca resta su tutto: comportamento di oggi, zero regressione.
-    documenti = indice.pertinenti(conn, qvec, gruppi)
-    # pertinenti torna (source_id, documento): il filtro della ricerca vuole i
-    # NOMI documento, non i source_id. `for _, d` e non `for d, _`.
-    ristretti = [d for _, d in documenti] or None
-    righe, degradato = ricerca_agente.cerca(conn, query, gruppi, qvec=qvec,
-                                            limite=pezzi_da_recuperare(domanda),
-                                            vincolo=vincolo_regex,
-                                            documenti=ristretti,
-                                            domanda_vera=domanda)
-    # Fallback: l'indice può escludere per sbaglio il documento giusto (misurato
-    # il 23/09/2026: «decorazioni sotto i 2 euro» non includeva EUROSAND, che
-    # e' dove stanno i prezzi 1,99). Se la ricerca ristretta non trova niente,
-    # si riprova su tutto: il restringimento e' un acceleratore, non un filtro
-    # di correttezza. Le ACL restano nella WHERE in entrambi i casi.
-    if ristretti and not righe:
-        righe, degradato = ricerca_agente.cerca(
-            conn, query, gruppi, qvec=qvec,
-            limite=pezzi_da_recuperare(domanda),
-            vincolo=vincolo_regex)
-
-    # 5. Barriera di coerenza: se c'era un vincolo e il must-match non trova
-    # NESSUN pezzo, non c'e' riscontro nei documenti — e il modello, chiamato
-    # comunque, sarebbe tentato di inventarlo. Meglio la verita' secca, senza
-    # modello. Solo se il vincolo c'era: una ricerca vuota per altri motivi
-    # resta del flusso normale.
-    if vincoli_trovati and not righe:
-        conn.close()
-        return _risposta_unica(vincoli.messaggio_vuoto(vincoli_trovati))
-
-    # 6. Gate: contaminazione e rotta. Puo rifiutare il turno.
-    try:
-        decisione = gate.applica(conn, conversation_id, righe)
-    except gate.RispostaRifiutata as e:
-        conn.close()
-        return JSONResponse(
-            {"error": {"message": str(e), "type": "risposta_rifiutata"}}, status_code=403)
-
-    # 7. Prompt: system + contesto + la cronologia dei messaggi.
-    ids_immagini = _immagini_per_la_domanda(conn, qvec, gruppi, righe, cercata)
-    url_per_pos = {i + 1: (immagini.firma_url(iid, f"https://{APP_HOST}", utente),
-                           _sotto_la_figura(r, d), _pagina_url(r, utente))
-                   for i, (iid, d, r) in enumerate(ids_immagini)}
+    # L'agente ha raccolto i pezzi ma non ha prodotto una risposta: la si
+    # costruisce qui, come faceva la catena — contesto + modello.
     messaggi = [{"role": "system",
                  "content": prompt.SYSTEM + "\n" + prompt.contesto(righe) + SUFFISSO_SISTEMA}]
     storico = [_senza_aggiunte(m) for m in corpo.get("messages", [])
                if isinstance(m.get("content"), str) and m.get("role") in ("user", "assistant")]
     messaggi += storico
 
-    chieste = chiede_le_immagini(domanda)
-    # Offerta gia' fatta nel turno precedente per le STESSE figure: ripeterla a
-    # ogni risposta e' rumore (sei risposte, sei offerte identiche, viste il
-    # 20/09/2026). Chi voleva vederle ha gia' avuto l'occasione di dirlo.
-    gia_offerte = MARCA_OFFERTA in _ultima_risposta(storico_messaggi)
-
-    def _immagini_finali():
-        """Coda della risposta: le figure se le ha chieste l'utente (o se
-        SU_RICHIESTA e' spento), altrimenti l'offerta."""
-        if not url_per_pos:
-            # Le ha chieste e non ce ne sono: meglio dirlo che tacere.
-            return "\n\n_Non ho figure collegate a questa risposta._" if chieste else ""
-        if not SU_RICHIESTA or chieste:
-            return "\n\n" + _blocco_immagini(url_per_pos)
-        if gia_offerte:
-            return ""
-        quante = len(url_per_pos)
-        return (f"\n\n_Ci sono {quante} {MARCA_OFFERTA}"
-                f"{' (figure, schemi, foto dei prodotti)' if quante > 1 else ''}: "
-                f"scrivi «mostra» se vuoi vederle._")
-
     def gen():
         uso = {}
         try:
-            for pezzo in _stream_litellm(messaggi, decisione["rotta"], uso):
+            for pezzo in _stream_litellm(messaggi, "ragionamento", uso):
                 yield pezzo
-            finale = _fonti_citate(righe, f"https://{APP_HOST}", utente) + _immagini_finali()
+            finale = _fonti_citate(righe, f"https://{APP_HOST}", utente)
             if finale:
                 yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': finale}, 'index': 0}]})}\n\n"
             yield "data: [DONE]\n\n"
@@ -863,9 +779,10 @@ async def chat(request: Request):
             yield f"data: {json.dumps({'error': {'message': str(e), 'type': 'upstream_error'}})}\n\n"
             yield "data: [DONE]\n\n"
         finally:
-            _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
-                              uso.get("token_in"), uso.get("token_out"),
-                              int((time.monotonic() - inizio) * 1000), riscritta, cercata)
+            _registra_traccia(conn, conversation_id, utente, domanda, righe,
+                              {"rotta": "ragionamento"}, uso.get("token_in"),
+                              uso.get("token_out"),
+                              int((time.monotonic() - inizio) * 1000))
             conn.close()
 
     return StreamingResponse(gen(), media_type="text/event-stream")

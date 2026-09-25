@@ -36,7 +36,7 @@ quando una risposta e' sbagliata.
 import json
 import os
 
-from orchestratore import egress, recupero
+from orchestratore import egress, modello, recupero
 
 LITELLM = os.environ.get("LITELLM_BASE_URL", "http://litellm:4000").rstrip("/")
 MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
@@ -104,13 +104,7 @@ ISTRUZIONI = (
 
 
 def _chiedi(messaggi, max_tokens=800):
-    testa = {"Authorization": f"Bearer {MASTER_KEY}"} if MASTER_KEY else {}
-    corpo = {"model": ROTTA, "messages": messaggi, "temperature": 0,
-             "max_tokens": max_tokens}
-    with egress.client(timeout=SECONDI, verify=False) as c:
-        r = c.post(f"{LITELLM}/v1/chat/completions", json=corpo, headers=testa)
-        r.raise_for_status()
-        return (r.json()["choices"][0]["message"].get("content") or "").strip()
+    return modello.chiedi(messaggi, max_tokens)
 
 
 # La classificazione della domanda: QUALE via usare. E' il cervello dell'agente
