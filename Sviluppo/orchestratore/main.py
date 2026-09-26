@@ -407,11 +407,12 @@ def _fonti_citate(righe, base: str = "", utente: str = "") -> str:
 
 
 def _figura_in_breve(descrizione) -> str:
-    """La descrizione della figura: e' il contenuto che il VLM ha gia' letto
-    (Object + Material + Shape/size + Colours). Si mostra quasi per intero."""
+    """La descrizione della figura: solo l'OGGETTO, non il testo tecnico
+    (Material/Shape/Colours stanno nella pagina, a cui porta il link)."""
     d = descrizione or ""
     if "Object:" in d:
         d = d.split("Object:", 1)[1]
+    d = d.split("Material:", 1)[0]
     return " ".join(d.split())[:220]
 
 
@@ -813,12 +814,16 @@ async def chat(request: Request):
     # perche' il modello inventava la pagina; col guardrail + Qwen3-14B la
     # risposta e' affidabile. L'elenco grezzo resta come ripiego.
     if risposta:
+        # Per i CATALOGHI (figure) la risposta si chiude con l'elenco dei
+        # prodotti + link alla pagina; per i documenti basta la citazione
+        # nelle fonti.
+        elenco = _elenco_figure(righe, f"https://{APP_HOST}", utente)
+        coda = ("\n\n" + elenco) if elenco else _fonti_citate(righe, f"https://{APP_HOST}", utente)
         def gen():
             try:
                 yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': risposta}, 'index': 0}], 'model': MODEL_NAME})}\n\n"
-                finale = _fonti_citate(righe, f"https://{APP_HOST}", utente)
-                if finale:
-                    yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': finale}, 'index': 0}]})}\n\n"
+                if coda:
+                    yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': coda}, 'index': 0}]})}\n\n"
                 yield "data: [DONE]\n\n"
             finally:
                 _registra_traccia(conn, conversation_id, utente, domanda, righe,
