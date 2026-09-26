@@ -1693,7 +1693,8 @@ ISTRUZIONI_FIGURA = (
     "\n"
     "Only if there is a short PRODUCT CODE or product name printed near the object, "
     "write it as «Code: ». Do NOT transcribe addresses, phone numbers, or long text.\n"
-    "Never invent anything that is not visible. Do not repeat. Keep the answer short."
+    "Never invent anything that is not visible. Do not repeat. Be COMPLETE: list ALL "
+    "the distinct colours you see, do not abbreviate the list."
 )
 SECONDI_PER_FIGURA = int(os.environ.get("SECONDI_PER_FIGURA", "120"))
 
@@ -2118,7 +2119,7 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
         try:
             b64 = base64.b64encode((RADICE / percorso).read_bytes()).decode()
             corpo = json.dumps({
-                "model": logico, "max_tokens": 160, "temperature": 0,
+                "model": logico, "max_tokens": 300, "temperature": 0,
                 "messages": [{"role": "user", "content": [
                     {"type": "text", "text": ISTRUZIONI_FIGURA.format(titolo=titolo)},
                     {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}}]}],
