@@ -218,6 +218,25 @@ models:
       ${gpu}
     ttl: 0
 
+  # ---- chat: Qwen3 14B DENSO -----------------------------------------
+  # Denso: 14B ATTIVI per token, contro i 3B del MoE 35B-A3B. Il difetto del
+  # 35B nell'agente (flaila, non si ferma, inventa) e' il 35B, non il flusso:
+  # un 14B denso ha 4-5 volte piu' parametri attivi. ~9 GiB in Q4_K_M, lascia
+  # spazio a embedding + reranker + VLM in 16 GB.
+  "qwen3-14b":
+    name: "Chat (Qwen3 14B)"
+    cmd: |
+      ${llama}
+      --model ${modelli}/Qwen/Qwen3-14B-GGUF/Qwen3-14B-Q4_K_M.gguf
+      --port ${PORT}
+      --ctx-size 32768
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      --parallel 1
+      --repeat-penalty 1.1
+      ${gpu}
+    ttl: 0
+
 routing:
   router:
     use: group
@@ -252,3 +271,4 @@ routing:
           exclusive: true
           members:
             - "qwen3.6-35b-a3b-gsq-hybrid"
+            - "qwen3-14b"
