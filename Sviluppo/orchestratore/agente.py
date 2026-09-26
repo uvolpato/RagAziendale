@@ -202,7 +202,11 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
             limite = int(argomenti.get("limite") or 12)
         except (TypeError, ValueError):
             limite = 12
-        documenti = _pre_seleziona(conn, recupero.embedding(oggetto), gruppi)
+        # Pre-selezione sull'INTERA query (oggetto + termini + contesto), non sul
+        # solo oggetto: per «oggetti natalizi» l'oggetto e' «oggetti» (generico) e
+        # l'embedding da solo tirava EUROSAND (decorativi) invece dei cataloghi
+        # natalizi (misurato il 25/09/2026).
+        documenti = _pre_seleziona(conn, recupero.embedding(" ".join([oggetto] + termini)), gruppi)
         righe = recupero.cerca_figure(conn, [oggetto] + termini, vincolo, gruppi,
                                       limite=limite, documenti=documenti)
         return righe, _formatta_figure(righe)
