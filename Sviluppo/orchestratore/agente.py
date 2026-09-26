@@ -174,21 +174,25 @@ def _pre_seleziona(conn, qvec, gruppi):
     return [d[1] for d in doc] if doc else None
 
 
-def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
+def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None,
+            contesto=None):
     """Esegue uno strumento e torna (righe, testo_per_il_modello).
 
-    `gruppi`, `vincolo` e `intent_termini` arrivano dalla chiusura, non dal
-    modello: e' il guardrail. I termini multilingue dell'oggetto (intent_termini)
-    si aggiungono alla query perche' il catalogo scrive «ribbons» dove la persona
-    dice «nastri» (D19, query_di_ricerca).
+    `gruppi`, `vincolo`, `intent_termini` e `contesto` arrivano dalla chiusura,
+    non dal modello: e' il guardrail. I termini multilingue dell'oggetto
+    (intent_termini) si aggiungono alla query perche' il catalogo scrive
+    «ribbons» dove la persona dice «nastri» (D19, query_di_ricerca).
     """
     termini = intent_termini or []
+    contesto = contesto or []
     if nome == "cerca":
         q = str(argomenti.get("query", "")).strip()
         if not q:
             return [], "(query vuota)"
         if termini:
             q = q + " " + " ".join(termini)
+        if contesto:
+            q = q + " " + " ".join(contesto)
         qvec = recupero.embedding(q)
         documenti = _pre_seleziona(conn, qvec, gruppi)
         righe, _ = recupero.cerca(conn, q, gruppi, qvec=qvec,
@@ -202,11 +206,12 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None):
             limite = int(argomenti.get("limite") or 12)
         except (TypeError, ValueError):
             limite = 12
-        # Pre-selezione sull'INTERA query (oggetto + termini + contesto), non sul
-        # solo oggetto: per «oggetti natalizi» l'oggetto e' «oggetti» (generico) e
-        # l'embedding da solo tirava EUROSAND (decorativi) invece dei cataloghi
-        # natalizi (misurato il 25/09/2026).
-        documenti = _pre_seleziona(conn, recupero.embedding(" ".join([oggetto] + termini)), gruppi)
+        # Pre-selezione sull'INTERA query (oggetto + termini + contesto), ma il
+        # REGEX della figura resta sul solo oggetto: il contesto («christmas»)
+        # serve a scegliere il catalogo, non a tirare su figure natalizie quando
+        # si cerca un diffusore (misurato il 25/09/2026).
+        documenti = _pre_seleziona(
+            conn, recupero.embedding(" ".join([oggetto] + termini + contesto)), gruppi)
         righe = recupero.cerca_figure(conn, [oggetto] + termini, vincolo, gruppi,
                                       limite=limite, documenti=documenti)
         return righe, _formatta_figure(righe)
@@ -253,6 +258,7 @@ class Stato(TypedDict):
     domanda: str
     intent: str               # l'oggetto estratto da vincoli.estrae (per il guardrail)
     colore: list              # termini degli attributi enumerabili (guardia senza oggetto)
+    contesto: list            # tema/occasione/uso: per la PRE-SELEZIONE, non nel regex
     messaggi: Annotated[list, operator.add]
     conn: Any
     gruppi: list
@@ -270,10 +276,10 @@ def _nodo_capisce(stato: Stato) -> dict:
     # CORPUS («pietre» -> «rocks, dekosteine»), che il modello non sa.
     if not SENZA_GLOSSARIO:
         intent_termini = glossario.espandi(stato["conn"], intent_termini)
-    # Il CONTESTO (tema/occasione/uso: «natalizie» -> christmas, weihnachten)
-    # entra nella query come espansione morbida: senza, «profumatore con essenze
-    # natalizie» cercava solo «profumatore» e non arrivava a «FROZEN WINTER».
-    intent_termini = intent_termini + [c for c in contesto if c not in intent_termini]
+    # Il CONTESTO resta SEPARATO dall'oggetto: serve alla PRE-SELEZIONE del
+    # catalogo, non al regex della figura. Se finisse nel regex («christmas»)
+    # tirerebbe su le decorazioni natalizie invece dei diffusori (misurato
+    # il 25/09/2026: «profumatore con essenze natalizie»).
     vincolo = v.regex(trovati)
     colore = v.termini_colore(trovati)
     pezzi, messaggi = {}, []
@@ -291,7 +297,8 @@ def _nodo_capisce(stato: Stato) -> dict:
             intent_termini = intent_termini + [c for c in colore if c not in intent_termini]
         if oggetto:
             righe, testo = _esegui("cerca_figure", {"oggetto": oggetto},
-                                   stato["conn"], stato["gruppi"], vincolo, intent_termini)
+                                   stato["conn"], stato["gruppi"], vincolo,
+                                   intent_termini, contesto)
             pezzi = {r["id"]: r for r in righe}
             messaggi = [
                 {"role": "assistant", "content": "", "tool_calls": [{
@@ -305,7 +312,8 @@ def _nodo_capisce(stato: Stato) -> dict:
             # prosa). Si cerca anche nel testo e si passa il risultato.
             if not righe:
                 righe2, testo2 = _esegui("cerca", {"query": oggetto},
-                                         stato["conn"], stato["gruppi"], vincolo, intent_termini)
+                                         stato["conn"], stato["gruppi"], vincolo,
+                                         intent_termini, contesto)
                 pezzi = {r["id"]: r for r in righe2}
                 messaggi += [
                     {"role": "assistant", "content": "", "tool_calls": [{
@@ -315,7 +323,7 @@ def _nodo_capisce(stato: Stato) -> dict:
                     {"role": "tool", "tool_call_id": "forza_ricerca_testo", "content": testo2},
                 ]
     return {"vincolo": vincolo, "intent_termini": intent_termini,
-            "intent": intent, "colore": colore,
+            "intent": intent, "colore": colore, "contesto": contesto,
             "pezzi": pezzi, "messaggi": messaggi}
 
 
@@ -353,7 +361,8 @@ def _nodo_strumenti(stato: Stato) -> dict:
         except (TypeError, ValueError):
             argomenti = {}
         righe, testo = _esegui(nome, argomenti, stato["conn"], stato["gruppi"],
-                               stato.get("vincolo", ""), stato.get("intent_termini", []))
+                               stato.get("vincolo", ""), stato.get("intent_termini", []),
+                               stato.get("contesto", []))
         for r in righe:
             pezzi.setdefault(r["id"], r)
         messaggi.append({"role": "tool", "tool_call_id": tc.get("id", ""),
@@ -395,6 +404,7 @@ def cerca(conn, domanda: str, gruppi: list, limite: int = 8, storia: list = None
         "domanda": domanda,
         "intent": "",
         "colore": [],
+        "contesto": [],
         "messaggi": messaggi,
         "conn": conn, "gruppi": gruppi, "vincolo": "", "intent_termini": [],
         "pezzi": {}, "passi": 0,
