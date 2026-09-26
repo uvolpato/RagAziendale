@@ -227,7 +227,7 @@ models:
     name: "Chat (Qwen3 14B)"
     cmd: |
       ${llama}
-      --model ${modelli}/Qwen/Qwen3-14B-GGUF/Qwen3-14B-Q4_K_M.gguf
+      --model ${modelli}/lmstudio-community/Qwen3-14B-GGUF/Qwen3-14B-Q4_K_M.gguf
       --port ${PORT}
       --ctx-size 32768
       --cache-type-k q8_0
