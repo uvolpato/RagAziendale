@@ -808,15 +808,17 @@ async def chat(request: Request):
                                    limite=pezzi_da_recuperare(domanda),
                                    storia=memoria.comprimi(storico_messaggi))
 
-    # I PRODOTTI (figure) si rispondono con l'ELENCO: descrizione + link alla
-    # pagina, non col riassunto del modello (che inventa la pagina). L'elenco
-    # e' la risposta.
-    elenco = _elenco_figure(righe, f"https://{APP_HOST}", utente)
-    if elenco:
-        testo = "Ecco cosa ho trovato:\n\n" + elenco
+    # La RISPOSTA del modello (articolata), con i link alle pagine come Fonti.
+    # Prima si rispondeva coi PRODOTTI sempre con l'elenco grezzo delle figure
+    # perche' il modello inventava la pagina; col guardrail + Qwen3-14B la
+    # risposta e' affidabile. L'elenco grezzo resta come ripiego.
+    if risposta:
         def gen():
             try:
-                yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': testo}, 'index': 0}], 'model': MODEL_NAME})}\n\n"
+                yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': risposta}, 'index': 0}], 'model': MODEL_NAME})}\n\n"
+                finale = _fonti_citate(righe, f"https://{APP_HOST}", utente)
+                if finale:
+                    yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': finale}, 'index': 0}]})}\n\n"
                 yield "data: [DONE]\n\n"
             finally:
                 _registra_traccia(conn, conversation_id, utente, domanda, righe,
@@ -825,13 +827,12 @@ async def chat(request: Request):
                 conn.close()
         return StreamingResponse(gen(), media_type="text/event-stream")
 
-    if risposta:
+    elenco = _elenco_figure(righe, f"https://{APP_HOST}", utente)
+    if elenco:
+        testo = "Ecco cosa ho trovato:\n\n" + elenco
         def gen():
             try:
-                yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': risposta}, 'index': 0}], 'model': MODEL_NAME})}\n\n"
-                finale = _fonti_citate(righe, f"https://{APP_HOST}", utente)
-                if finale:
-                    yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': finale}, 'index': 0}]})}\n\n"
+                yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': testo}, 'index': 0}], 'model': MODEL_NAME})}\n\n"
                 yield "data: [DONE]\n\n"
             finally:
                 _registra_traccia(conn, conversation_id, utente, domanda, righe,
