@@ -188,6 +188,9 @@ services:
       MODELLI_HOST: ${MODELLI_HOST-host.docker.internal:1235}
       MODELLO_CHAT: ${MODELLO_CHAT-qwen3.6-35b-a3b-gsq-hybrid}
       EMBEDDING_MODELLO: ${EMBEDDING_MODELLO-text-embedding-bge-m3-embeddings}
+      # Se presente, il modello di chat passa a DeepSeek via API (reversibile).
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY-}
+      DEEPSEEK_MODELLO: ${DEEPSEEK_MODELLO-deepseek-chat}
       # Fase 1b: i dati 'interno' rispondono solo su questa rotta (gate). In
       # sviluppo punta allo stesso modello locale (GUIDA-MODELLI.md §4).
       LLM_RAGIONAMENTO_INTERNO: ragionamento_interno

@@ -72,6 +72,10 @@ ISTRUZIONI_SISTEMA = (
     "la stessa ricerca con parole diverse, non inseguire varianti. Se `cerca_figure` "
     "torna vuota per un oggetto, il prodotto sta nel TESTO: usa `cerca` UNA volta, "
     "poi rispondi con quello che hai.\n"
+    "- Se trovi l'OGGETTO ma non il QUALIFICATORE chiesto (es. i «diffusori» ma "
+    "non «natalizi»), dillo in modo distinto: «ho trovato i diffusori a pagina P, "
+    "ma non specificamente natalizi». NON mescolare un risultato generico con uno "
+    "del qualificatore per far credere che esista cio' che non hai trovato.\n"
     "- Non inventare: se non trovi, dillo. Mai codici o prezzi inventati.\n"
     "- Rispondi in italiano, citando documento e pagina.\n"
 )
