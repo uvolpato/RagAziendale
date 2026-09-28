@@ -695,99 +695,18 @@ class Lettore:
             print(f"modello di chat scaricato per fare spazio: {libera} MB liberi, "
                   f"ne servono {VRAM_MINIMA_MB}", flush=True)
 
-    def pezzi(self, p: pathlib.Path, progresso=None, solo_gpu=False, dentro=None, lettura=None,
+    def pezzi(self, p: pathlib.Path, progresso=None, solo_gpu=False, dentro=None,
               progresso_figure=None):
         """progresso(fatte, totali) se c'e', chiamata ad ogni blocco completato.
         solo_gpu: file che fuori dalla finestra si legge SOLO finche' la GPU e'
         libera; se la perde a meta', si ferma e si riprende dopo (Rimandato).
         dentro: cartella (relativa alla radice) dove scrivere le immagini man
         mano che escono; si torna il METADATO, non l'immagine, cosi' la memoria
-        non cresce con le pagine.
-        lettura: `docling` o `pagina`; None = quello che dice la configurazione.
-        Lo decide la FONTE, non il file: vedi come_leggere()."""
+        non cresce con le pagine."""
         if p.suffix.lower() in TESTO:
             testo = p.read_text(encoding="utf-8", errors="replace")
             return ([(t, p, None) for t, p in unisci([(x, None) for x in re.split(r"\n\s*\n", testo)])], [], None)
         self._fai_spazio()
-        if (lettura or LETTURA) == "pagina" and p.suffix.lower() == ".pdf":
-            # Il TESTO lo legge il VLM guardando la pagina; le IMMAGINI continua
-            # a estrarle Docling, che su quelle e' affidabile e serve per
-            # mostrarle in chat. Due letture della stessa pagina, ognuna per
-            # quello che sa fare.
-            # I DUE testi, non uno al posto dell'altro. Misurato il 21/09/2026
-            # sulle 24 domande vere: il solo VLM fa 5/20 contro i 10/20 di
-            # Docling, ma recupera le domande su formati e assortimenti che
-            # Docling sbagliava tutte (categoria «Logistica» 0 su 5). Sono due
-            # sguardi sulla stessa pagina e trovano cose diverse:
-            #   Docling   frammenti CON le descrizioni delle figure — prosa,
-            #             che risponde alle domande descrittive
-            #   VLM       tabelle pulite con codici, misure e prezzi — che
-            #             rispondono alle domande strutturate
-            # Con il solo VLM i pezzi erano tabelle al 98% e ZERO contenevano
-            # una descrizione: il vettore non aveva piu' niente da mordere.
-            # Il testo di Docling si paga comunque, perche' e' la stessa
-            # chiamata che estrae le immagini: buttarlo era spreco.
-            # La barra si divide fra le due passate: il VLM la porta a meta',
-            # Docling dalla meta' alla fine. Senza, il pannello segna «finito»
-            # mentre c'e' ancora la seconda passata da fare — e chi guarda
-            # pensa che sia bloccato (visto il 22/09/2026).
-            def meta(offset):
-                if not progresso:
-                    return None
-                return lambda fatte, totali: progresso(round(offset * totali + fatte / 2), totali)
-
-            testi = self._pagine_col_vlm(p, meta(0), dentro)
-            # Le figure le descriviamo NOI, con davanti il titolo della pagina
-            # da cui vengono: Docling usa un prompt unico per tutto il
-            # documento e non puo' saperlo. Senza contesto un ritaglio di
-            # 221x149 px di sassi rossi diventa «possibly dried fruit or
-            # processed food» (misurato il 22/09/2026).
-            #
-            # E le nostre descrizioni entrano anche nel TESTO, prendendo il
-            # posto di quelle di Docling: il suo chunker le includeva nei pezzi
-            # — 159 su EUROSAND — quindi l'indice conteneva quelle sbagliate.
-            # Lasciarle avrebbe voluto dire cercare fra descrizioni che
-            # sappiamo false. Nessun doppione, perche' Docling qui non ne
-            # produce piu' (descrivi=False), e una chiamata invece di due.
-            titoli = _titoli_di_pagina(dentro)
-            # Il VLM ha finito: le pagine sono lette. Ora tocca a Docling, e i
-            # due non lavorano MAI insieme — quindi si libera la VRAM che il
-            # VLM tiene (4,3 GB) invece di quella del modello di chat.
-            #
-            # Misurato il 22/09/2026: con tutti e quattro i modelli caricati
-            # restavano 1,9 GB liberi e Docling, che ne chiede 6,1, superava i
-            # 600 secondi per blocco. Togliendo il VLM restano 8,5 GB e ci sta
-            # comodo — mentre chi chatta continua ad avere risposta, che e' il
-            # contrario di quello che faceva la vecchia finestra notturna.
-            #
-            # llama-swap lo ricarica da solo alla prima pagina del documento
-            # dopo. Le descrizioni delle figure arrivano DOPO questa riga e lo
-            # riaccendono: e' voluto, a quel punto Docling ha finito.
-            if _scarica_modello(VLM_MODELLO, "che legge le pagine"):
-                print("    VLM scaricato: la VRAM va a Docling", flush=True)
-            _, immagini, markdown = self._con_docling(p, meta(0.5), solo_gpu, dentro,
-                                                      descrivi=False)
-            immagini = _descrivi_figure(immagini, titoli, dentro, progresso_figure)
-            # Le descrizioni vanno NEI SEGNAPOSTO del Markdown di Docling, che
-            # li mette dove stanno le figure: cosi' ogni descrizione resta
-            # accanto al suo codice articolo invece di galleggiare nella
-            # pagina. Poi si indicizza quel Markdown, ed e' lo stesso file che
-            # si salva su disco: quello che leggi e' quello che viene cercato.
-            # Senza il testo di Docling restano le sole descrizioni, staccate:
-            # e' la forma di prima, e serve a misurare se quel testo aiuti.
-            if TESTO_DOCLING:
-                figure, immagini = _pezzi_dal_markdown_figure(dentro, markdown,
-                                                              immagini, titoli)
-            else:
-                figure = _pezzi_dalle_figure(immagini, titoli)
-            # Ogni pezzo dice CHI lo ha scritto. I due testi qui hanno origini
-            # diverse: `testi` li ha scritti il VLM guardando la pagina, `figure`
-            # escono dal markdown di Docling. Metterli insieme senza dire da dove
-            # viene ciascuno e' cio' che rende impossibile misurare se il VLM
-            # pagina per pagina serva: senza la provenienza la domanda non ha
-            # risposta, perche' le due famiglie di pezzi sono indistinguibili.
-            return ([(t, p, "vlm") for t, p in testi]
-                    + [(t, p, "docling") for t, p in figure]), immagini, "misto"
         # Le figure le descriviamo NOI anche in questo percorso, non Docling.
         # Il suo prompt e' unico per tutto il documento e non puo' sapere il
         # titolo della pagina da cui viene la figura, e con le icone non parte
@@ -802,43 +721,6 @@ class Lettore:
         return ([(t, p, "docling") for t, p in pezzi],
                 _descrivi_figure(immagini, _titoli_da_markdown(markdown), dentro, progresso_figure),
                 "docling")
-
-    def _pagine_col_vlm(self, p, progresso=None, dentro=None):
-        """[(testo, pagina)] dal VLM che LEGGE la pagina, una alla volta.
-
-        Una pagina per volta e non un blocco: il Markdown di ognuna si salva
-        appena pronto, quindi un giro interrotto riprende da dove era invece di
-        ricominciare (30 minuti a catalogo)."""
-        import pypdfium2
-        pdf = pypdfium2.PdfDocument(str(p))
-        n = len(pdf)
-        pdf.close()
-        if progresso:
-            progresso(0, n)
-        fuori = []
-        errori = 0
-        for pagina in range(1, n + 1):
-            try:
-                md = _markdown_pagina(p, pagina, dentro)
-            except Exception as e:
-                # Una pagina illeggibile non fa fallire il documento: entra
-                # senza quella, con l'avviso nel registro.
-                print(f"    {p.name}: pagina {pagina} non letta ({type(e).__name__}: {e})", flush=True)
-                md = ""
-                errori += 1
-            fuori += _pezzi_da_markdown(md, pagina)
-            if progresso:
-                progresso(pagina, n)
-            if pagina % 6 == 0 or pagina == n:
-                print(f"    {p.name}: pagina {pagina} di {n} (VLM)", flush=True)
-        # Tutte le pagine fallite non sono un catalogo illeggibile: sono il
-        # VLM che non risponde (o che non e' mai stato raggiunto). Se il
-        # documento entrasse lo stesso, l'impronta lo marchierebbe «fatto» e il
-        # giro dopo lo saltarrebbe senza testo — come successo il 22/09/2026.
-        # Un file davvero rovinato si rivede al ritorno del VLM e va in errore.
-        if errori == n:
-            raise Rimandato("VLM non raggiungibile: nessuna pagina letta")
-        return fuori
 
     def _con_docling(self, p, progresso=None, solo_gpu=False, dentro=None, descrivi=True):
         """La lettura storica: Docling a blocchi di pagine, in un processo
@@ -1040,10 +922,9 @@ def _butta_sorgenti(percorso_fonte, rel, tieni_lavorato=False):
     ora che stanno nelle cartelle di lavoro si vedono.
 
     `tieni_lavorato`: il documento non e' cambiato, quindi si rifanno le immagini
-    ma NON si richiama il VLM. Vale per il markdown (trenta minuti di lettura
-    per catalogo, contro pochi secondi per rispezzare quello che c'e' gia') e per
-    la carta d'identita' (che vale finche' il file non cambia, e senza cui il
-    riuso dell'indagine non avrebbe niente da riusare)."""
+    ma NON si richiama il VLM. Vale per la carta d'identita' e per le descrizioni
+    delle figure (il costo vero: le chiamate al modello visivo), che restano
+    finche' il file non cambia."""
     import shutil
     base = RADICE / _cartella_sorgenti(percorso_fonte, rel)
     if tieni_lavorato:
@@ -1379,18 +1260,12 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         # Si riparte pulito: le immagini si scrivono blocco per blocco, quindi
         # i residui della lettura precedente (o di una interrotta) vanno tolti
         # PRIMA, non a fine file.
-        # Il Markdown del VLM si butta quando cambia il DOCUMENTO, non quando
-        # si rilegge: e' il risultato costoso (~20 minuti a catalogo) e se il
-        # PDF e' lo stesso vale ancora. Le immagini invece si rifanno sempre,
-        # che costano poco e hanno nomi dipendenti dall'ordine.
-        #
-        # Prima dipendeva da TIENI_MARKDOWN, cioe' da una variabile da
-        # ricordarsi: il 22/09/2026 un --forza ha ributtato tutte e 105 le
-        # pagine gia' lette e le ha richieste al modello da capo. Il
-        # comportamento giusto non si chiede a chi lancia il comando, si deduce
-        # dall'impronta.
+        # Se il documento e' lo stesso, si rifanno le immagini ma si tengono la
+        # carta d'identita' e le descrizioni delle figure: sono il costo vero
+        # (le chiamate al VLM), e il giudizio giusto si deduce dall'impronta,
+        # non si chiede a chi lancia il comando.
         stesso_documento = bool(vecchio) and vecchio[1] == impronta
-        _butta_sorgenti(percorso, rel, tieni_lavorato=stesso_documento and not TIENI_MARKDOWN_NO)
+        _butta_sorgenti(percorso, rel, tieni_lavorato=stesso_documento)
         # PRIMA di leggere, e' il tipo che decide. Non e' metadato: e' la
         # risposta che l'assistente da' quando il documento finisce in una
         # risposta, e su un catalogo sbagliarla significa descrivere un listino
@@ -1403,7 +1278,6 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         try:
             pezzi, immagini, chi_li_ha_letti = lettore.pezzi(p, _progresso, solo_gpu=grosso,
                                                              dentro=_cartella_sorgenti(percorso, rel),
-                                                             lettura=come_leggere(fid),
                                                              progresso_figure=_progresso_figure)
         except Rimandato as e:
             if vecchio:
@@ -1803,22 +1677,6 @@ def main():
 # 9-13 mm», i formati «E5500 5,5 l € 13,80» e i colori «DST2001 rot» — le tre
 # cose che mancavano alle domande vere.
 
-LETTURA = os.environ.get("LETTURA", "docling")     # docling | pagina
-# Le fonti che si leggono a PAGINA invece che con Docling, separate da virgola
-# (id della fonte, come in `sources`). Non e' globale di proposito: misurato il
-# 22/09/2026, sui cataloghi il percorso a due sguardi porta il recupero da
-# 10/20 a 17/20, ma sui documenti di PROSA — policy, procedure — Docling da
-# solo fa gia' 4/4, e il prompt «catalogo» li' imporrebbe una griglia che non
-# c'e' (sulle pagine non-prodotto di EUROSAND produceva tabelle vuote).
-# Questa variabile e' la D16 in piccolo: quando ci sara' l'impostazione per
-# fonte nel pannello, sparisce e il valore arriva da `sources`.
-FONTI_A_PAGINA = {x.strip() for x in os.environ.get("LETTURA_PAGINA", "").split(",") if x.strip()}
-# Nel percorso a pagina, il TESTO di Docling serve ancora? Le sue descrizioni
-# delle figure ora le scriviamo noi, per pagina e con il titolo del prodotto;
-# quello che resta del suo contributo e' l'OCR e i frammenti che il VLM
-# potrebbe aver saltato. Con `no` Docling fa SOLO l'estrazione delle immagini.
-# Da decidere con le 24 domande vere, non a naso: il riferimento e' 17/20.
-TESTO_DOCLING = os.environ.get("TESTO_DOCLING", "si") != "no"
 # Come si spezzano i pezzi del percorso Docling. "chunker" = HierarchicalChunker
 # sul documento (prosa, com'e' sempre stato); "markdown" = _pezzi_da_markdown
 # pagina per pagina, quindi le tabelle di Docling diventano UNA RIGA per pezzo
@@ -1828,43 +1686,7 @@ TESTO_DOCLING = os.environ.get("TESTO_DOCLING", "si") != "no"
 CHUNK_DOCLING = os.environ.get("CHUNK_DOCLING", "chunker")
 
 
-def come_leggere(fonte: str) -> str:
-    """`pagina` per le fonti dichiarate a griglia, altrimenti quello che dice
-    LETTURA. Un solo posto che lo decide."""
-    return "pagina" if fonte in FONTI_A_PAGINA else LETTURA
 DPI_PAGINA = int(os.environ.get("DPI_PAGINA", "150"))
-# Il Markdown del VLM si tiene finche' il documento e' lo stesso: e' il
-# risultato costoso (~20 minuti a catalogo) e non dipende da come spezziamo i
-# pezzi. Si butta da solo quando cambia il PDF (impronta diversa) o quando
-# cambiano le istruzioni al modello (l'impronta del prompt e' nel nome della
-# cartella). Questa variabile serve solo a forzarne la rilettura a mano, per
-# esempio se si sospetta che il modello abbia letto male.
-TIENI_MARKDOWN_NO = os.environ.get("RILEGGI_MARKDOWN", "") == "1"
-
-ISTRUZIONI_PAGINA = (
-    "Read this page and report its content faithfully, in Markdown.\n"
-    "\n"
-    "RULES:\n"
-    "- Transcribe the text you see, in every language present. Do NOT translate, "
-    "do NOT summarise, do NOT reinterpret.\n"
-    "- If the page contains a real TABLE, write it as a Markdown table with its "
-    "own columns and rows. If there is no table, do NOT invent one.\n"
-    "- If the page is a photo, a scan, or an image with no readable text, write "
-    "«Immagine» on one line and then ONE short description of what is visible "
-    "(objects, colours, material). Do NOT invent text, codes, numbers, prices.\n"
-    "- If a text repeats many times (for example a repeated greeting or slogan), "
-    "write it ONCE. Never repeat the same line.\n"
-    "- Never invent anything that is not visible: no codes, no prices, no rows, "
-    "no numbers.\n"
-    "- Keep the answer as long as the page requires, no longer. Stop when you "
-    "have reported everything once.\n"
-)
-# Il Markdown salvato dipende da QUESTE istruzioni: se cambiano, i file
-# vecchi sono di un'altra forma e rileggerli darebbe pezzi incoerenti con i
-# nuovi. L'impronta entra nel nome della cartella, cosi' un prompt diverso
-# rilegge da solo e i file vecchi restano li' per il confronto.
-IMPRONTA_PROMPT = hashlib.sha256(ISTRUZIONI_PAGINA.encode()).hexdigest()[:8]
-
 
 # Le istruzioni per descrivere UNA figura, con il titolo della pagina da cui
 # viene. Il titolo serve a capire COSA sono gli oggetti: senza, un ritaglio di
@@ -1903,18 +1725,6 @@ SECONDI_PER_FIGURA = int(os.environ.get("SECONDI_PER_FIGURA", "120"))
 DESCRIVI_FIGURE = os.environ.get("DESCRIVI_FIGURE", "1") != "0"
 
 
-def rispetta_la_forma(md: str) -> bool:
-    """Il modello ha seguito le istruzioni? Non si giudica il CONTENUTO — non
-    sapremmo — si controlla il CONTRATTO, che e' oggettivo: `<br>` dentro la
-    risposta e' vietato esplicitamente, perche' significa piu' valori schiacciati
-    in una casella invece che in colonne separate.
-
-    Serve perche' il modello non e' coerente: sulla stessa pagina, a temperatura
-    zero, il 21/09/2026 ha prodotto una tabella in una chiamata e righe nude con
-    `<br>` nella successiva."""
-    return "<br>" not in (md or "")
-
-
 def _immagine_pagina(percorso, n):
     """La pagina n come PNG in base64. 150 dpi: sotto, i codici articolo
     piccoli si perdono; sopra, l'immagine supera il contesto del VLM."""
@@ -1931,58 +1741,11 @@ def _immagine_pagina(percorso, n):
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def _markdown_pagina(percorso, n, dentro):
-    """Il Markdown della pagina n, dal VLM. Si SALVA su disco
-    (`<sorgenti>/markdown/NNN.md`) e al giro dopo si rilegge da li'.
-
-    Salvarlo non e' cautela: e' il risultato costoso. Trenta minuti di VLM per
-    catalogo. Se cambia il modo di spezzare i pezzi — ed e' cambiato tre volte
-    il 21/09/2026 — si riscrive l'indice senza rileggere le pagine. Ed e'
-    leggibile da una persona: quando un prezzo sara' sbagliato si apre il file
-    invece di dedurlo."""
-    import json
-    import urllib.request
-    fuori = RADICE / dentro / f"markdown-{IMPRONTA_PROMPT}" / f"{n:04d}.md"
-    if fuori.is_file():
-        return fuori.read_text(encoding="utf-8")
-    b64 = _immagine_pagina(percorso, n)
-
-    def chiedi(istruzioni):
-        corpo = json.dumps({
-            "model": VLM_MODELLO, "max_tokens": 3000, "temperature": 0,
-            "messages": [{"role": "user", "content": [
-                {"type": "text", "text": istruzioni},
-                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}}]}],
-        }).encode()
-        req = urllib.request.Request(f"{VLM_URL.rstrip('/')}/chat/completions", data=corpo,
-                                     headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=SECONDI_PER_BLOCCO) as r:
-            return json.load(r)["choices"][0]["message"]["content"]
-
-    md = chiedi(ISTRUZIONI_PAGINA)
-    if not rispetta_la_forma(md):
-        # Il modello non e' coerente fra una chiamata e l'altra: sulla STESSA
-        # pagina 7 ha prodotto una volta una tabella e una volta righe nude con
-        # `<br>` dentro (21/09/2026). Righe nude vuol dire ventisei articoli in
-        # un pezzo solo, cioe' il difetto da cui siamo partiti.
-        # Non si indovina cosa intendeva: si richiede la forma. La violazione e'
-        # oggettiva — `<br>` e' vietato dalle istruzioni — quindi non serve
-        # nessuna soglia ne' ipotesi sul contenuto.
-        print(f"    pagina {n}: forma non rispettata, richiedo", flush=True)
-        md = chiedi(ISTRUZIONI_PAGINA + "\nATTENZIONE: la risposta precedente conteneva `<br>`. "
-                                        "Ogni valore in una COLONNA sua, un articolo per riga.")
-    try:
-        fuori.parent.mkdir(parents=True, exist_ok=True)
-        fuori.write_text(md, encoding="utf-8")
-    except OSError as e:      # sola lettura: si legge lo stesso, senza cache
-        print(f"  markdown non salvato ({type(e).__name__}: {e})", flush=True)
-    return md
-
 
 def _righe_di_tabella(righe, titolo, pagina):
     """Una tabella Markdown -> pezzi. Se sta in un pezzo solo resta intera:
-    «quali formati offrite» vuole vedere tutti i formati insieme. Se e' lunga
-    si spezza per RIGA, ognuna con il titolo e l'intestazione davanti —
+    ┬½quali formati offrite┬╗ vuole vedere tutti i formati insieme. Se e' lunga
+    si spezza per RIGA, ognuna con il titolo e l'intestazione davanti ÔÇö
     altrimenti il vettore di venti articoli non significa nessun articolo."""
     intero = "\n".join(righe)
     if len(intero) <= MAX_PEZZO:
@@ -2003,7 +1766,7 @@ def _pezzi_da_markdown(md, pagina):
     righe di tabella diventano pezzi distinti con quel contesto davanti.
 
     E' la versione generica di quello che prima faceva un'espressione regolare
-    sul codice articolo — che funzionava su un catalogo e si rompeva sul
+    sul codice articolo ÔÇö che funzionava su un catalogo e si rompeva sul
     successivo (21/09/2026: i codici a una lettera dei formati non li vedeva)."""
     fuori, blocco, titolo = [], [], ""
 
@@ -2052,136 +1815,6 @@ def _pezzi_da_markdown(md, pagina):
     return fuori
 
 
-SEGNAPOSTO = "<!-- image -->"
-# Quanto testo PRIMA del segnaposto si tiene.
-INTORNO = 120
-
-
-def attorno_ai_segnaposti(markdown: str) -> list:
-    """Il testo che PRECEDE ogni segnaposto, uno per segnaposto, in ordine.
-
-    Serve a dare un'identita' alla figura. Il modello visivo descrive un
-    RITAGLIO, e nel ritaglio il codice articolo c'e' solo se il layout della
-    pagina ce l'ha messo dentro: misurato il 22/09/2026, le descrizioni di
-    EUROSAND contengono FSA1043 e FSA1041 ma non FSA1001, DST2001, RAD1001.
-    Chiedendo la figura di FSA1001 uscivano quattro prodotti diversi della
-    stessa pagina — la ricerca non sbagliava a cercare, mancava proprio il
-    dato.
-
-    Nel Markdown della pagina il codice c'e' sempre, e sta PRIMA della sua
-    figura. Su EUROSAND pagina 7:
-
-        Immagine: ...pietre bianche...      <- il ritaglio ha il suo codice
-        DST2043 creme cream                 <- codice
-        Immagine: ...pietre beige...        <- beige = creme = DST2043
-        DST2012 hellgrau light grey         <- codice
-        Immagine: ...pietre grigio chiaro...
-
-    Fra un segnaposto e l'altro c'e' esattamente UN codice, quindi la finestra
-    va delimitata dal segnaposto precedente: non e' una scelta di stile, e' la
-    differenza fra un'etichetta e un'ambiguita'.
-
-    La prima versione prendeva 120 caratteri da ENTRAMBI i lati e si portava
-    dietro anche il prodotto successivo. Misurato sulle 890 figure di EUROSAND
-    il 22/09/2026:
-
-                              un codice solo   nessuno   piu' di uno
-        entrambi i lati              171         520         199
-        solo quello che precede      194         643           0
-
-    Piu' figure identificate e zero ambigue: non e' un compromesso, e' un
-    difetto che se ne va. Le 199 ambigue sono il motivo per cui, chiedendo
-    «sassi rossi», uscivano due figure BLU che si portavano dietro «DST2001
-    rot red» dalla riga del prodotto accanto.
-
-    Torna una COPPIA per figura: (prima, dopo). I due lati servono a due cose
-    diverse, e per un pezzo della serata ho provato a farli fare dallo stesso
-    testo — sbagliando.
-
-        prima   l'ETICHETTA. Delimitata dal segnaposto precedente, quindi
-                porta al massimo il codice di UN prodotto. E' quella che si
-                mostra sotto la miniatura in chat, dove una parola di troppo
-                e' un'affermazione falsa.
-        dopo    contesto in piu' per la RICERCA. Su 891 figure di EUROSAND,
-                123 hanno il codice solo da questo lato: tagliarlo faceva
-                scendere le figure trovate da 11/12 a 10/12 e le pertinenti
-                dal 79 al 58 per cento (misurato il 22/09/2026).
-
-    La ricerca vuole recall, la didascalia vuole precisione. Non e' un
-    compromesso da trovare: sono due campi, e si tengono separati.
-    """
-    pezzi = (markdown or "").split(SEGNAPOSTO)
-    return [(" ".join(pezzi[i].split())[-INTORNO:],
-             " ".join(pezzi[i + 1].split())[:INTORNO])
-            for i in range(len(pezzi) - 1)]
-
-
-def nei_segnaposti(markdown: str, descrizioni: list) -> str:
-    """Le descrizioni al posto dei segnaposto, nell'ordine in cui compaiono.
-
-    Cosi' la descrizione di una figura finisce DOVE sta la figura: accanto al
-    suo codice articolo, non genericamente dentro la pagina. Sulla pagina 7 di
-    EUROSAND il segnaposto e' seguito da «DST2043 creme cream», quindi il
-    pezzo che ne esce lega la descrizione al codice giusto.
-
-    Se i conti non tornano — piu' segnaposto che descrizioni o viceversa — si
-    sostituisce solo quello che combacia e il resto dei segnaposto sparisce:
-    meglio una pagina con qualche descrizione in meno che una con le
-    descrizioni attaccate all'articolo sbagliato.
-    """
-    fuori, resto = [], list(descrizioni)
-    for pezzo in (markdown or "").split(SEGNAPOSTO):
-        fuori.append(pezzo)
-        if resto:
-            d = " ".join((resto.pop(0) or "").split())
-            fuori.append(f"\n\nImmagine: {d}\n\n" if d else "")
-    return "".join(fuori).strip()
-
-
-def _pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli):
-    """Il Markdown di Docling con le descrizioni al posto dei segnaposto,
-    salvato per pagina e spezzato dallo stesso chunker della lettura a pagina.
-
-    Un artefatto solo per pagina, leggibile da una persona e identico a quello
-    che finisce nell'indice: quando una risposta sara' sbagliata si apre quel
-    file invece di dedurre.
-
-    Torna anche le immagini con la descrizione ARRICCHITA del testo che
-    circonda il loro segnaposto — il codice articolo, quando nel ritaglio
-    non c'e' (vedi attorno_ai_segnaposti).
-    """
-    per_pagina = {}
-    for i, (_percorso, pagina, descr, _vd) in enumerate(immagini):
-        per_pagina.setdefault(pagina, []).append((i, descr or ""))
-    arricchite = list(immagini)
-    fuori = []
-    for pagina, md in sorted(markdown.items()):
-        qui = per_pagina.get(pagina, [])
-        completo = nei_segnaposti(md, [d for _, d in qui])
-        if not completo:
-            continue
-        # Il testo attorno al segnaposto si mette DAVANTI alla descrizione:
-        # e' quello che identifica la figura, e quel che viene dal modello
-        # visivo resta a descriverla. Va nell'indice delle IMMAGINI, non nel
-        # Markdown, dove sarebbe la stessa riga scritta due volte.
-        for (i, descr), (prima, dopo) in zip(qui, attorno_ai_segnaposti(md)):
-            percorso, pag, _, verdetto = immagini[i]
-            # Tre parti, separatore SEMPRE presente: l'etichetta (che puo'
-            # essere vuota), il contesto dopo, e la descrizione del modello.
-            # Il separatore e' quello che distingue «non ho trovato
-            # un'etichetta» da «l'etichetta e' questa», e la didascalia in chat
-            # si regge su quella distinzione.
-            # NIENTE strip a sinistra: con l'etichetta vuota il separatore
-            # iniziale e' il segno che l'etichetta non c'e'. Toglierlo faceva
-            # scambiare il contesto DOPO per l'etichetta.
-            unita = f"{prima} — {dopo} — {descr}".rstrip(" ")
-            arricchite[i] = (percorso, pag, unita, verdetto)
-        titolo = titoli.get(pagina, "")
-        if titolo:
-            completo = titolo + '\n\n' + completo
-        _salva_markdown(dentro, "figure", pagina, completo)
-        fuori += _pezzi_da_markdown(completo, pagina)
-    return fuori, arricchite
 
 
 def _salva_markdown(dentro, quale, pagina, testo):
@@ -2220,30 +1853,8 @@ def _pezzi_dalle_figure(immagini, titoli):
     return fuori
 
 
-def _titoli_di_pagina(dentro):
-    """{pagina: titolo} dal Markdown che il VLM ha gia' prodotto per ogni
-    pagina. Non costa niente: i file sono gia' sul disco."""
-    titoli = {}
-    base = RADICE / dentro / f"markdown-{IMPRONTA_PROMPT}"
-    if not base.is_dir():
-        return titoli
-    for f in base.glob("*.md"):
-        try:
-            n = int(f.stem)
-        except ValueError:
-            continue
-        titolo = _titolo_da_markdown(f.read_text(encoding="utf-8"))
-        if titolo:
-            titoli[n] = titolo
-    return titoli
-
-
 def _titolo_da_markdown(testo):
-    """Il titolo di una pagina: le prime tre righe di testo vero.
-
-    Stessa regola per il Markdown del VLM, che sta su disco, e per quello di
-    Docling, che arriva in memoria: il titolo non e' un concetto nuovo, e' la
-    stessa domanda posta a due fonti diverse."""
+    """Il titolo di una pagina: le prime tre righe di testo vero."""
     righe = [r.strip() for r in testo.splitlines()
              if r.strip() and not r.strip().startswith("```")]
     return " ".join(righe[:3])[:160] if righe else None

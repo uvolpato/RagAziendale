@@ -143,17 +143,15 @@ def test_il_lavorato_di_un_documento_sta_in_una_cartella_sola(tmp_path):
     indicizza.RADICE = tmp_path
     base = tmp_path / a
     (base / "immagini").mkdir(parents=True)
-    (base / f"markdown-{indicizza.IMPRONTA_PROMPT}").mkdir(parents=True)
+    (base / f"descrizioni-{indicizza.IMPRONTA_FIGURA}.json").write_text("{}", encoding="utf-8")
     (base / f"identita-{indicizza.IMPRONTA_INDAGINE}.json").write_text("{}", encoding="utf-8")
     (base / "immagini/9_99.png").write_bytes(b"residuo")
-    (base / f"markdown-{indicizza.IMPRONTA_PROMPT}/0007.md").write_text("# DEKOSTEINE", encoding="utf-8")
 
-    # Rispezzare senza rileggere: le immagini si rifanno, il Markdown e la carta
-    # d'identita' restano. Trenta minuti di VLM per catalogo contro pochi secondi,
-    # e senza la carta il riuso dell'indagine non avrebbe niente da riusare.
+    # Rispezzare senza rileggere: le immagini si rifanno, la carta d'identita' e
+    # le descrizioni delle figure restano (il costo vero: le chiamate al VLM).
     _butta_sorgenti("decobrands/acquisti", "catalogo.pdf", tieni_lavorato=True)
     assert not (base / "immagini").exists()
-    assert (base / f"markdown-{indicizza.IMPRONTA_PROMPT}/0007.md").is_file()
+    assert (base / f"descrizioni-{indicizza.IMPRONTA_FIGURA}.json").is_file()
     assert (base / f"identita-{indicizza.IMPRONTA_INDAGINE}.json").is_file()
 
     # Il documento esce dall'indice: via tutto.
@@ -260,49 +258,6 @@ def test_pagina_vuota_non_produce_pezzi():
 
 
 
-def test_si_riconosce_quando_il_modello_non_rispetta_la_forma():
-    """Il VLM non e' coerente: sulla STESSA pagina, a temperatura zero, il
-    21/09/2026 ha prodotto una tabella in una chiamata e righe nude con `<br>`
-    nella successiva. Righe nude significano ventisei articoli in un pezzo
-    solo, cioe' il difetto di partenza.
-
-    Non si indovina cosa intendeva: si controlla il CONTRATTO, che e'
-    oggettivo (`<br>` e' vietato dalle istruzioni) e non dipende dal
-    contenuto della pagina ne' da soglie."""
-    from indicizza import rispetta_la_forma
-    buona = "# DEKOSTEINE\n\n| codice | colore |\n| --- | --- |\n| DST2001 | rot / red |"
-    assert rispetta_la_forma(buona)
-    cattiva = "# DEKOSTEINE\n\nDST2001 rot<br>red\nDST2050 gruen<br>green"
-    assert not rispetta_la_forma(cattiva)
-    assert rispetta_la_forma("")      # pagina vuota: niente da richiedere
-
-
-def test_il_markdown_salvato_dipende_dalle_istruzioni():
-    """Cambiando il prompt cambia la FORMA del Markdown: rileggere i file
-    vecchi darebbe pezzi incoerenti con i nuovi. L'impronta delle istruzioni
-    sta nel nome della cartella, cosi' un prompt diverso rilegge da solo."""
-    from indicizza import IMPRONTA_PROMPT
-    assert len(IMPRONTA_PROMPT) == 8 and IMPRONTA_PROMPT.isalnum()
-
-
-
-def test_il_modo_di_leggere_lo_decide_la_fonte():
-    """Sui cataloghi il percorso a due sguardi porta il recupero da 10/20 a
-    17/20; sui documenti di prosa Docling da solo fa gia' 4/4, e il prompt
-    «catalogo» li' imporrebbe una griglia che non c'e'. Quindi non e' una
-    scelta globale: la dichiara chi sa cosa contiene la cartella."""
-    indicizza.FONTI_A_PAGINA = {"acquisti-decobrands"}
-    indicizza.LETTURA = "docling"
-    assert indicizza.come_leggere("acquisti-decobrands") == "pagina"
-    assert indicizza.come_leggere("sicurezza-luis") == "docling"
-    # LETTURA resta la rete di sicurezza per le fonti non dichiarate.
-    indicizza.LETTURA = "pagina"
-    assert indicizza.come_leggere("sicurezza-luis") == "pagina"
-    indicizza.LETTURA = "docling"
-    indicizza.FONTI_A_PAGINA = set()
-
-
-
 def test_con_scarica_chat_no_il_modello_di_chat_non_si_tocca():
     """Da quando i modelli stanno tutti in VRAM insieme, scaricare quello di
     chat faceva pagare 34 secondi di ricarica a OGNI messaggio, perche'
@@ -327,35 +282,6 @@ def test_con_scarica_chat_no_il_modello_di_chat_non_si_tocca():
 
 
 
-def test_il_titolo_di_pagina_arriva_a_chi_descrive_le_figure(tmp_path):
-    """Un ritaglio di 221x149 px senza contesto inganna: il 22/09/2026 un
-    primo piano di sassi rossi e' stato descritto come «possibly dried fruit or
-    processed food». Con il titolo della pagina davanti lo stesso ritaglio
-    diventa «reddish-brown decorative stones, approximately 9-13 mm».
-
-    Il titolo si prende dal Markdown che il VLM ha gia' scritto: non costa una
-    chiamata in piu'."""
-    indicizza.RADICE = tmp_path
-    dentro = "fonte/_sorgenti/abc123"
-    md = tmp_path / dentro / f"markdown-{indicizza.IMPRONTA_PROMPT}"
-    md.mkdir(parents=True)
-    (md / "0007.md").write_text(
-        "```markdown\n# DEKOSTEINE\ndeco rocks | pietre decorative\n9 - 13 mm\n\n| a | b |\n",
-        encoding="utf-8")
-    (md / "0012.md").write_text("# FARBSAND\nsabbia colorata\n", encoding="utf-8")
-
-    titoli = indicizza._titoli_di_pagina(dentro)
-    assert set(titoli) == {7, 12}, titoli
-    assert "DEKOSTEINE" in titoli[7] and "9 - 13 mm" in titoli[7], titoli[7]
-    assert "```" not in titoli[7], "i recinti del modello non fanno parte del titolo"
-    assert "FARBSAND" in titoli[12]
-
-    # Una pagina senza Markdown non ha titolo: la figura si descrive come prima.
-    assert 99 not in titoli
-    # E una cartella che non esiste non fa saltare niente.
-    assert indicizza._titoli_di_pagina("fonte/_sorgenti/mai-vista") == {}
-
-
 def test_senza_vlm_le_figure_restano_come_sono():
     """Senza VLM non si chiama nessuno, ma il file non si dichiara letto: si
     rimanda. Le figure senza descrizione sono pezzi che il retrieval non puo'
@@ -373,71 +299,6 @@ def test_senza_vlm_le_figure_restano_come_sono():
     finally:
         indicizza.VLM_MODELLO = vero
 
-
-
-def test_la_figura_prende_il_codice_dal_testo_attorno():
-    """Il modello visivo descrive un RITAGLIO, e il codice articolo ci finisce
-    dentro solo se il layout della pagina ce l'ha messo. Il 22/09/2026 le
-    descrizioni di EUROSAND contenevano FSA1043 e FSA1041 ma NON FSA1001: chi
-    chiedeva la figura di FSA1001 riceveva quattro prodotti diversi della
-    stessa pagina, e la ricerca non poteva fare di meglio perche' il dato non
-    c'era.
-
-    Nel Markdown il codice c'e' sempre, accanto al segnaposto."""
-    md = """| EK-9915 | nero |
-<!-- image -->
-
-| EK-9916 | rosso |
-<!-- image -->
-"""
-    intorni = indicizza.attorno_ai_segnaposti(md)
-    assert len(intorni) == 2, intorni
-    prima = [p for p, _ in intorni]
-    assert "EK-9915" in prima[0]
-    assert "EK-9916" in prima[1]
-    # SOLO quello che precede, delimitato dal segnaposto prima. La prima
-    # versione prendeva anche il lato dopo e si portava dietro il prodotto
-    # successivo: misurato sulle 890 figure di EUROSAND, 199 finivano con PIU'
-    # di un codice — ed e' il motivo per cui a «sassi rossi» uscivano due
-    # figure BLU che si trascinavano «DST2001 rot red» dalla riga accanto.
-    assert "EK-9916" not in prima[0], "l'ETICHETTA non prende il prodotto dopo"
-    assert "EK-9915" not in prima[1], "e nemmeno quello di prima"
-    # Il lato DOPO invece c'e', e serve alla ricerca: su 891 figure, 123 hanno
-    # il codice solo li', e senza si perdono.
-    assert "EK-9916" in intorni[0][1], "il contesto dopo serve a cercare"
-
-    # Nessun segnaposto: niente, e non deve esplodere.
-    assert indicizza.attorno_ai_segnaposti("solo testo") == []
-    assert indicizza.attorno_ai_segnaposti("") == []
-
-
-def test_le_descrizioni_finiscono_dove_stava_la_figura():
-    """Il punto di tutto: la descrizione deve restare ACCANTO al suo codice.
-
-    Staccata in fondo alla pagina, «ciottoli neri con effetto specchio» e
-    «EK-9915» sono due pezzi diversi e il rerank ne sceglie uno solo. Docling
-    i segnaposto li mette gia' al posto giusto: ci si infila la nostra
-    descrizione e si indicizza quello."""
-    md = """| codice | colore |
-| EK-9915 | nero |
-<!-- image -->
-
-| EK-9916 | rosso |
-<!-- image -->
-"""
-    fuori = indicizza.nei_segnaposti(md, ["ciottoli neri lucidi", "ciottoli rossi opachi"])
-    assert fuori.index("EK-9915") < fuori.index("ciottoli neri") < fuori.index("EK-9916")
-    assert "ciottoli rossi opachi" in fuori
-    assert indicizza.SEGNAPOSTO not in fuori
-
-    # Meno descrizioni che segnaposto (una figura scartata): il resto non slitta
-    # di una posizione, i segnaposto in piu' spariscono e basta.
-    fuori = indicizza.nei_segnaposti(md, ["ciottoli neri lucidi"])
-    assert fuori.index("EK-9915") < fuori.index("ciottoli neri") < fuori.index("EK-9916")
-    assert indicizza.SEGNAPOSTO not in fuori
-
-    # Nessuna descrizione: resta il testo, senza segnaposto orfani.
-    assert indicizza.SEGNAPOSTO not in indicizza.nei_segnaposti(md, [])
 
 
 def test_le_descrizioni_delle_figure_entrano_nel_testo_col_prodotto():
