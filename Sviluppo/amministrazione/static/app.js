@@ -564,7 +564,12 @@
             }
           });
         }
-        if (inLettura) setTimeout(function () { if (document.body.contains(p)) carica(); }, 4000);
+        /* Ripollisce ANCHE a sorgente ferma (18/09/2026: giro forzato avviato
+           con il pannello gia' aperto, il pannello non ha mai visto il file
+           in elaborazione perche' al suo ultimo fetch non c'era niente da
+           leggere, e il setTimeout non era stato armato). Con niente da fare
+           basta una lontana sguardo: l'avvio di un lavoro lo si vede subito. */
+        setTimeout(function () { if (document.body.contains(p)) carica(); }, inLettura ? 4000 : 20000);
       }).catch(function (e) { p.innerHTML = '<div class="notice notice-crit">' + ic('err') + '<span>' + esc(e.message) + '</span></div>'; });
     }
     carica();

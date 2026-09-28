@@ -16,8 +16,8 @@ prima di attivare, cosi' chi approva vede cosa entra) legge la cartella
   - file illeggibile        -> anomalia sul pannello, gli altri proseguono
   - stesso file due volte   -> anomalia "doppione": due copie = due citazioni
 Le cartelle che iniziano con '_' (_bozze, _archivio) non si leggono. I fogli
-di calcolo si leggono, tranne quelli con i prezzi (decisione 72): i prezzi
-vengono dal gestionale, un listino letto come testo sbaglia i preventivi.
+di calcolo si leggono come qualsiasi altro testo: su un catalogo di fornitore il
+prezzo e' contenuto legittimo, e chi vede la pagina vede anche quello.
 
 I vettori si chiedono a LiteLLM per nome logico (`embedding`), come fa
 l'orchestratore. Se non risponde i pezzi entrano senza vettore: la ricerca
@@ -50,7 +50,6 @@ INTERVALLO = int(os.environ.get("INTERVALLO", "300"))
 LOTTO_VETTORI = 16
 DOCLING = {".pdf", ".docx", ".pptx", ".html", ".htm", ".md", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 TESTO = {".txt"}
-# Fogli di calcolo (decisione 72): si leggono, a meno che contengano prezzi.
 FOGLI = {".xlsx", ".xlsm", ".csv"}
 # Formati che Docling non legge: compaiono nella scheda Documenti come esclusi,
 # con il motivo, invece di sparire senza dire niente.
@@ -108,6 +107,22 @@ VLM_MODELLO = os.environ.get("VLM_MODELLO", "")             # identificatore del
 # Un blocco che non finisce entro questo tempo si chiude: vicino al tetto di
 # memoria il processo non muore, si blocca (CPU all'1%, visto il 19/09/2026).
 SECONDI_PER_BLOCCO = int(os.environ.get("SECONDI_PER_BLOCCO", "600"))
+# Un errore che dipende da FUORI — il modello irraggiungibile, la rete che
+# salta, un blocco scaduto — non si risolve aspettando che il file cambi: il
+# file e' identico, e' cambiato il mondo. La regola "l'impronta decide", da
+# sola, li rendeva DEFINITIVI: il 27/09/2026, 14 errori su 20 erano
+# `ConnectError: Name or service not known` e nessuno avrebbe piu' riprovato
+# senza un intervento. Si ritentano, ma non a ogni giro: un timeout da 600
+# secondi ripreso ogni 5 minuti mangerebbe la GPU senza finire mai.
+RITENTO_ORE = int(os.environ.get("RITENTO_ORE", "6"))
+# Eccezioni che valgono un nuovo tentativo. Quello che manca e' apposta: un
+# difetto nostro (ValueError) o un file non leggibile (Word 97-2003) darebbero
+# lo stesso identico errore, e riprovarlo costerebbe la GPU per niente.
+ERRORI_DA_RITENTARE = (
+    "ConnectError", "ConnectionError", "APIConnectionError", "ReadTimeout",
+    "Timeout", "HTTPError", "ServiceUnavailable", "MemoryError",
+    "FileNotFoundError",
+)
 # Segno messo su un file PRIMA di leggerlo: se il processo muore mentre lo
 # legge (memoria), al giro dopo il file risulta non leggibile invece di far
 # ripartire il servizio all'infinito sullo stesso file.
@@ -141,28 +156,6 @@ def _riavvio_voluto(_segnale, _frame):
     sys.exit(0)
 
 
-# Colonne che parlano di soldi. Con \b davanti: "costo" si', "incostante" no.
-INTESTAZIONE_PREZZO = re.compile(r"\b(prezz\w*|listin\w*|cost[oi]\b|scont[oi]\b|nett[oi]\b|importi?\b|tariff\w*|"
-                                 r"eur\b|euro\b|imponibil\w*)|€", re.I)
-RIGHE_ESAMINATE = 200
-# Prezzi dentro la descrizione di un'immagine. Di regola restano fuori: i
-# prezzi vengono dal gestionale (decisione 72), e un listino fotografato
-# rientrerebbe dalla finestra — successo davvero, una descrizione conteneva
-# "F0305 370 ml 12 EUR 2,15 F0405 500 ml..." (20/09/2026).
-# Ma su un catalogo FORNITORE quel prezzo puo' essere l'unico che esiste: nel
-# gestionale non c'e'. Percio' e' una scelta, non una regola muta:
-#   escludi (predefinito)  la descrizione con prezzi si scarta
-#   ammetti                entra, e l'assistente potra' rispondere a domande
-#                          come "dieci articoli sotto i 10 euro"
-# Vale per fonte (decisione D16): si ammette sui cataloghi fornitore, non sui
-# documenti dove il prezzo autorevole sta nel gestionale.
-PREZZI_DESCRIZIONI = os.environ.get("PREZZI_DESCRIZIONI", "escludi")   # escludi | ammetti
-# Prezzi dentro la descrizione di un'immagine: un listino fotografato rientra
-# dalla finestra che la decisione 72 ha chiuso (i prezzi vengono dal
-# gestionale). Successo davvero: una descrizione conteneva "F0305 370 ml 12
-# € 2,15 F0405 500 ml 12 € 2,85..." (20/09/2026).
-PREZZO_IN_DESCRIZIONE = re.compile(r"(€|\beur\b|\bprezz\w*|\bcost[oi]\b|\bprice\b|\bpreis\b)[\s:]*[\d.,]+"
-                                   r"|[\d.,]+\s*(€|\beur\b)", re.I)
 PERCORSO_VALIDO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._/-]*$")   # relativo: niente UNC, lettere di unita', '..'
 MIN_PEZZO, MAX_PEZZO = 300, 1800
 
@@ -286,63 +279,6 @@ def _pagine(pezzi):
         gruppo.append((testo, pagina))
     if gruppo:
         yield gruppo
-
-
-def _numero(v):
-    if isinstance(v, (int, float)) and not isinstance(v, bool):
-        return True
-    t = str(v or "").strip().replace("€", "").replace(".", "").replace(",", ".").strip()
-    try:
-        float(t)
-        return bool(t)
-    except ValueError:
-        return False
-
-
-def _prezzi_in_righe(righe):
-    """righe: liste di (valore, formato). Prezzi = una cella in formato valuta,
-    oppure un'intestazione da soldi con numeri sotto nella stessa colonna.
-    L'intestazione da sola non basta: un registro dei rischi puo' avere una
-    colonna "costo stimato" vuota o descrittiva."""
-    righe = list(righe)
-    for r, riga in enumerate(righe):
-        for c, (valore, formato) in enumerate(riga):
-            if formato and ("€" in formato or "EUR" in formato.upper()) and _numero(valore):
-                return f"celle in formato valuta (riga {r + 1})"
-            if isinstance(valore, str) and len(valore) <= 60 and INTESTAZIONE_PREZZO.search(valore):
-                sotto = [x[c][0] for x in righe[r + 1:r + 51] if len(x) > c and x[c][0] not in (None, "")]
-                if sotto and sum(_numero(x) for x in sotto) >= max(1, len(sotto) // 2):
-                    return f"colonna «{valore.strip()}» con valori numerici (riga {r + 1})"
-    return None
-
-
-def motivo_prezzi(p: pathlib.Path):
-    """Il motivo per cui un foglio di calcolo ha i prezzi, o None."""
-    if p.suffix.lower() == ".csv":
-        import csv
-        with open(p, encoding="utf-8", errors="replace", newline="") as f:
-            campione = f.read(64 * 1024)
-        try:
-            dialetto = csv.Sniffer().sniff(campione.split("\n", 1)[0] or ",", delimiters=";,\t|")
-        except csv.Error:
-            dialetto = csv.excel
-        righe = list(csv.reader(campione.splitlines()[:RIGHE_ESAMINATE], dialetto))
-        if any("€" in cella and _numero(cella) for riga in righe for cella in riga):
-            return "importi in euro nel file"
-        return _prezzi_in_righe([[(x, None) for x in riga] for riga in righe])
-    import openpyxl
-    wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
-    try:
-        for ws in wb.worksheets:
-            righe = []
-            for riga in ws.iter_rows(max_row=RIGHE_ESAMINATE):
-                righe.append([(getattr(x, "value", None), getattr(x, "number_format", None)) for x in riga])
-            motivo = _prezzi_in_righe(righe)
-            if motivo:
-                return f"foglio «{ws.title}»: {motivo}"
-    finally:
-        wb.close()
-    return None
 
 
 # ------------------------------------------------- GPU, finestra, modelli
@@ -533,14 +469,18 @@ def _opzioni_pdf(device="cpu", descrivi=True):
     return opzioni
 
 
-def _converti(percorso, blocco, device="cpu", descrivi=True):
+def _converti(percorso, blocco, device="cpu", descrivi=True, dentro=None):
     """Converte UN blocco di pagine (o un file intero) con Docling e restituisce
     [(testo, pagina)] e le immagini [(PIL.Image, pagina)]. Gira in un processo a
     parte che muore subito dopo: Docling non restituisce la memoria fra un
     blocco e l'altro (misurato: da 1,3 a oltre 6 GB, swap compreso, su un PDF di
     266 pagine), e un processo che finisce la restituisce tutta. Vale anche per
     la VRAM: il contesto CUDA se ne va con il processo, quindi fra un blocco e
-    l'altro la GPU torna libera per chi sta chattando."""
+    l'altro la GPU torna libera per chi sta chattando.
+
+    Il documento STRUTTURATO (testo, etichette, tabelle, figure) si salva anche
+    come JSON su disco, accanto al markdown: e' tutto quello che Docling ha
+    tirato fuori, e rileggerlo non costa una riconversione."""
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.settings import settings
     from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
@@ -550,33 +490,73 @@ def _converti(percorso, blocco, device="cpu", descrivi=True):
         InputFormat.PDF: PdfFormatOption(pipeline_options=opzioni),
         InputFormat.IMAGE: ImageFormatOption(pipeline_options=opzioni)})
     ris = conv.convert(percorso, page_range=blocco) if blocco else conv.convert(percorso)
-    tolte = togli_prezzi(ris.document)
-    if tolte:
-        print(f"    {tolte} descrizioni con prezzi scartate (decisione 72)", flush=True)
+    if dentro:
+        _salva_docling_json(ris.document, dentro, blocco)
     return _chunk(ris.document), _immagini(ris.document), _markdown_per_pagina(ris.document, blocco)
 
 
+def _salva_docling_json(documento, dentro, blocco):
+    """Il DoclingDocument intero, in JSON, su disco. Un file per blocco di pagine
+    (il documento nasce a blocchi per tenere bassa la memoria)."""
+    import json as _json
+    nome = f"docling-{blocco[0]:04d}-{blocco[1]:04d}.json" if blocco else "docling.json"
+    try:
+        fuori = RADICE / dentro / nome
+        fuori.parent.mkdir(parents=True, exist_ok=True)
+        fuori.write_text(_json.dumps(documento.export_to_dict(), ensure_ascii=False),
+                         encoding="utf-8")
+    except Exception as e:
+        print(f"  docling.json non salvato ({type(e).__name__}: {e})", flush=True)
+
+
 def _markdown_per_pagina(documento, blocco):
-    """{pagina: markdown} con i SEGNAPOSTO delle figure al loro posto.
+    """{pagina: TUTTO il testo che Docling ha estratto}, caption comprese.
 
-    `export_to_markdown(page_no=N)` estrae una pagina sola da un documento gia'
-    convertito: i segnaposto per pagina si ottengono pagando UNA conversione
-    ogni sei pagine, non una per pagina. Misurato il 22/09/2026: un blocco di
-    sei pagine costa 61 s, una pagina sola 56 — quasi tutto avvio. Una pagina
-    per blocco sarebbe costata 80 minuti in piu' per catalogo.
-
-    Il conto torna: sulle pagine 7-12 di EUROSAND i segnaposto sono 28, 11, 5,
-    4, 6, 8 — esattamente le figure di quelle pagine.
+    `export_to_markdown` butta le didascalie (label 'caption') trasformandole in
+    segnaposto immagine: su IPURO pagina 4 i FORMATI («Room fragrance 240 ml»,
+    «Scented candle 270 g», «Refill 240 ml», «Sticks 240 ml») sparivano, e sono
+    proprio cio' che un buyer chiede. Qui si prende OGNI item di testo, qualunque
+    etichetta, e le tabelle come Markdown: quello che esce dal documento finisce
+    nel testo, senza scarti.
     """
     fuori = {}
     pagine = range(blocco[0], blocco[1] + 1) if blocco else sorted(
         {p.prov[0].page_no for p in documento.pictures if p.prov} or {1})
+    per_pagina = {}
+    for item in documento.texts:
+        pag = item.prov[0].page_no if item.prov else None
+        if pag is None:
+            continue
+        lab, testo = item.label.value, item.text
+        if lab == "section_header":
+            per_pagina.setdefault(pag, []).append(f"## {testo}")
+        elif lab == "title":
+            per_pagina.setdefault(pag, []).append(f"# {testo}")
+        elif lab == "list_item":
+            per_pagina.setdefault(pag, []).append(f"- {testo}")
+        else:
+            # caption, text, page_footer, formula...: il testo, punto. La
+            # didascalia e' testo come il resto, non un segnaposto da buttare.
+            per_pagina.setdefault(pag, []).append(testo)
+    for tab in documento.tables:
+        pag = tab.prov[0].page_no if tab.prov else None
+        if pag is not None:
+            per_pagina.setdefault(pag, []).append(tab.export_to_markdown())
     for n in pagine:
-        try:
-            fuori[n] = documento.export_to_markdown(page_no=n)
-        except Exception as e:
-            print(f"    markdown della pagina {n} non estratto ({type(e).__name__}: {e})", flush=True)
+        fuori[n] = "\n\n".join(per_pagina.get(n, []))
     return fuori
+
+
+def _pezzi_da_markdown_docling(markdown, dentro):
+    """I pezzi dal Markdown di Docling, pagina per pagina: le tabelle diventano
+    una riga per pezzo. Ogni pagina si salva anche su disco (`markdown-docling/`),
+    cosi' si puo' guardare cosa ha letto Docling senza rifare la conversione."""
+    pezzi = []
+    for pagina in sorted(markdown):
+        md = markdown[pagina]
+        _salva_markdown(dentro, "docling", pagina, md)
+        pezzi += _pezzi_da_markdown(md, pagina)
+    return pezzi
 
 
 def _immagini(documento):
@@ -592,7 +572,7 @@ def _immagini(documento):
             continue
         pagina = pic.prov[0].page_no if pic.prov else None
         descr = (pic.meta.description.text if pic.meta and pic.meta.description else None)
-        out.append((img, pagina, descr))
+        out.append((img, pagina, descr, None))
     for tab in documento.tables:
         try:
             img = tab.get_image(documento)
@@ -601,27 +581,8 @@ def _immagini(documento):
         if img is None:
             continue
         pagina = tab.prov[0].page_no if tab.prov else None
-        out.append((img, pagina, None))
+        out.append((img, pagina, None, None))
     return out
-
-
-def togli_prezzi(documento):
-    """Cancella le descrizioni delle immagini che contengono prezzi, PRIMA che
-    il chunker le metta nel testo. I prezzi vengono dal gestionale (decisione
-    72): un listino trascritto da una foto del catalogo li farebbe rientrare
-    nell'indice senza che nessuno se ne accorga. Si scarta tutta la descrizione,
-    non solo il numero: meglio perdere una didascalia che indicizzare un prezzo
-    sbagliato. L'immagine resta, e resta mostrabile in chat."""
-    if PREZZI_DESCRIZIONI == "ammetti":
-        return 0
-    tolte = 0
-    for pic in getattr(documento, "pictures", []):
-        descrizione = getattr(getattr(pic, "meta", None), "description", None)
-        testo = getattr(descrizione, "text", None)
-        if testo and PREZZO_IN_DESCRIZIONE.search(testo):
-            pic.meta.description = None
-            tolte += 1
-    return tolte
 
 
 def _chunk(documento):
@@ -647,7 +608,7 @@ def _chunk(documento):
     return out
 
 
-def _converti_remoto(percorso, blocco):
+def _converti_remoto(percorso, blocco, dentro=None):
     """Un blocco di pagine (o un file intero) a docling-serve: layout, tabelle
     e OCR sulla GPU. Torna il documento strutturato; i pezzi si fanno qui."""
     from docling_core.types.doc import DoclingDocument
@@ -667,16 +628,18 @@ def _converti_remoto(percorso, blocco):
     if ris.get("status") not in ("success", "partial_success"):
         raise RuntimeError(f"docling-serve: {ris.get('status')} {str(ris.get('errors'))[:300]}")
     doc = DoclingDocument.model_validate(ris["document"]["json_content"])
+    if dentro:
+        _salva_docling_json(doc, dentro, blocco)
     return _chunk(doc), _immagini(doc), {}
 
 
-def _in_processo(percorso, blocco, device, descrivi=True):
+def _in_processo(percorso, blocco, device, descrivi=True, dentro=None):
     """_converti in un processo figlio, chiuso a forza se non finisce in tempo."""
     import multiprocessing
     pool = multiprocessing.get_context("spawn").Pool(1, maxtasksperchild=1)
     dove = f" (pagine {blocco[0]}-{blocco[1]})" if blocco else ""
     try:
-        return pool.apply_async(_converti, (percorso, blocco, device, descrivi)).get(timeout=SECONDI_PER_BLOCCO)
+        return pool.apply_async(_converti, (percorso, blocco, device, descrivi, dentro)).get(timeout=SECONDI_PER_BLOCCO)
     except multiprocessing.TimeoutError:
         # Il messaggio dice COSA e' successo, non perche'. «Probabile memoria
         # esaurita» e' un'ipotesi, e in due occasioni ha mandato a cercare la
@@ -744,7 +707,7 @@ class Lettore:
         Lo decide la FONTE, non il file: vedi come_leggere()."""
         if p.suffix.lower() in TESTO:
             testo = p.read_text(encoding="utf-8", errors="replace")
-            return unisci([(x, None) for x in re.split(r"\n\s*\n", testo)]), []
+            return ([(t, p, None) for t, p in unisci([(x, None) for x in re.split(r"\n\s*\n", testo)])], [], None)
         self._fai_spazio()
         if (lettura or LETTURA) == "pagina" and p.suffix.lower() == ".pdf":
             # Il TESTO lo legge il VLM guardando la pagina; le IMMAGINI continua
@@ -804,7 +767,7 @@ class Lettore:
                 print("    VLM scaricato: la VRAM va a Docling", flush=True)
             _, immagini, markdown = self._con_docling(p, meta(0.5), solo_gpu, dentro,
                                                       descrivi=False)
-            immagini = _descrivi_col_titolo(immagini, titoli, dentro, progresso_figure)
+            immagini = _descrivi_figure(immagini, titoli, dentro, progresso_figure)
             # Le descrizioni vanno NEI SEGNAPOSTO del Markdown di Docling, che
             # li mette dove stanno le figure: cosi' ogni descrizione resta
             # accanto al suo codice articolo invece di galleggiare nella
@@ -817,8 +780,28 @@ class Lettore:
                                                               immagini, titoli)
             else:
                 figure = _pezzi_dalle_figure(immagini, titoli)
-            return testi + figure, immagini
-        return self._con_docling(p, progresso, solo_gpu, dentro)
+            # Ogni pezzo dice CHI lo ha scritto. I due testi qui hanno origini
+            # diverse: `testi` li ha scritti il VLM guardando la pagina, `figure`
+            # escono dal markdown di Docling. Metterli insieme senza dire da dove
+            # viene ciascuno e' cio' che rende impossibile misurare se il VLM
+            # pagina per pagina serva: senza la provenienza la domanda non ha
+            # risposta, perche' le due famiglie di pezzi sono indistinguibili.
+            return ([(t, p, "vlm") for t, p in testi]
+                    + [(t, p, "docling") for t, p in figure]), immagini, "misto"
+        # Le figure le descriviamo NOI anche in questo percorso, non Docling.
+        # Il suo prompt e' unico per tutto il documento e non puo' sapere il
+        # titolo della pagina da cui viene la figura, e con le icone non parte
+        # nemmeno: le descrive solo se le classifica come Picture. Il 27/09/2026
+        # su 25 immagini di una presentazione di sicurezza, 23 erano icone e
+        # banner ed erano rimaste senza descrizione, quindi senza vettore e non
+        # trovabili con una domanda. Il catalogo gia' fa cosi' (descrivi=False):
+        # due descrittori diversi darebbero due stili diversi nello stesso
+        # indice. Una chiamata al modello per figura, come prima: cambia il
+        # prompt, non il conto.
+        pezzi, immagini, markdown = self._con_docling(p, progresso, solo_gpu, dentro, descrivi=False)
+        return ([(t, p, "docling") for t, p in pezzi],
+                _descrivi_figure(immagini, _titoli_da_markdown(markdown), dentro, progresso_figure),
+                "docling")
 
     def _pagine_col_vlm(self, p, progresso=None, dentro=None):
         """[(testo, pagina)] dal VLM che LEGGE la pagina, una alla volta.
@@ -874,7 +857,7 @@ class Lettore:
         grezzi, immagini, markdown = [], [], {}
         if DOCLING_URL:
             for blocco in blocchi:
-                g, im, md = _converti_remoto(str(p), blocco)
+                g, im, md = _converti_remoto(str(p), blocco, dentro)
                 markdown.update(md)
                 grezzi += g
                 immagini += _scrivi_immagini(dentro, im, len(immagini)) if dentro else im
@@ -882,20 +865,22 @@ class Lettore:
                     print(f"    {p.name}: pagine {blocco[0]}-{blocco[1]} di {blocchi[-1][1]} (GPU)", flush=True)
                 if progresso and blocco:
                     progresso(blocco[1], blocchi[-1][1])
+            if CHUNK_DOCLING == "markdown":
+                return _pezzi_da_markdown_docling(markdown, dentro), immagini, markdown
             return unisci(grezzi), immagini, markdown
         for blocco in blocchi:
             device = dove_leggere()
             if solo_gpu and device != "cuda":
                 raise Rimandato(f"GPU occupata dopo {blocco[0] - 1 if blocco else 0} pagine")
             try:
-                g, im, md = _in_processo(str(p), blocco, device, descrivi)
+                g, im, md = _in_processo(str(p), blocco, device, descrivi, dentro)
             except Exception as e:
                 if not _gpu_piena(e):
                     raise
                 print(f"    {p.name}: la GPU non ce l'ha fatta ({type(e).__name__}), questo blocco in CPU",
                       flush=True)
                 device = "cpu"
-                g, im, md = _in_processo(str(p), blocco, "cpu", descrivi)
+                g, im, md = _in_processo(str(p), blocco, "cpu", descrivi, dentro)
             grezzi += g
             markdown.update(md)
             immagini += _scrivi_immagini(dentro, im, len(immagini)) if dentro else im
@@ -905,6 +890,8 @@ class Lettore:
                       f"{' (GPU)' if device == 'cuda' else ''}", flush=True)
             if progresso and blocco:
                 progresso(blocco[1], blocchi[-1][1])
+        if CHUNK_DOCLING == "markdown":
+            return _pezzi_da_markdown_docling(markdown, dentro), immagini, markdown
         return unisci(grezzi), immagini, markdown
 
 
@@ -995,6 +982,28 @@ def impronta_file(p):
     return h.hexdigest()
 
 
+def _ritentare(stato, errore, indicizzato_il):
+    """Se il documento va riletto ANCHE se il file non e' cambiato.
+
+    Di solito non si rilegge: stesso file, nessun lavoro. Ma un errore
+    causato da FUORI non cambia con il file, quindi aspettare che il file
+    cambi significa aspettare per sempre: se il modello non rispondeva, il
+    giro dopo lo rilegge perche' il mondo e' cambiato, non perche' il file.
+
+    Non si ritenta un errore che sta nel file o nel codice (formato non
+    leggibile, difetto nostro): rifarebbe la stessa domanda e riceverebbe la
+    stessa risposta, spendendo la GPU. Ritentano solo le eccezioni in
+    ERRORI_DA_RITENTARE, e non piu' di una volta ogni RITENTO_ORE: il servizio
+    gira ogni 5 minuti e un timeout da 600 secondi ripreso ogni 5 minuti non
+    finisce mai.
+    """
+    if stato != "errore" or not errore or not indicizzato_il:
+        return False
+    if not any(k in errore for k in ERRORI_DA_RITENTARE):
+        return False
+    return (datetime.now(timezone.utc) - indicizzato_il).total_seconds() >= RITENTO_ORE * 3600
+
+
 MAX_LATO = 1600          # le immagini di catalogo sono enormi: si riducono una volta per tutte
 
 
@@ -1024,21 +1033,160 @@ def _cartella_sorgenti(percorso_fonte, rel):
     return f"{percorso_fonte}/_sorgenti/{hashlib.sha256(rel.encode()).hexdigest()[:16]}"
 
 
-def _butta_sorgenti(percorso_fonte, rel, tieni_markdown=False):
+def _butta_sorgenti(percorso_fonte, rel, tieni_lavorato=False):
     """Via il lavorato di un documento. Si chiama prima di rifarlo e quando il
     documento esce dall'indice: i nomi delle immagini dipendono da pagina e
     ordine, quindi un PDF con meno figure di prima lascerebbe file orfani — e
     ora che stanno nelle cartelle di lavoro si vedono.
 
-    `tieni_markdown`: si rifanno i pezzi SENZA richiamare il VLM. Trenta minuti
-    di lettura per catalogo, contro pochi secondi per rispezzare quello che
-    c'e' gia'."""
+    `tieni_lavorato`: il documento non e' cambiato, quindi si rifanno le immagini
+    ma NON si richiama il VLM. Vale per il markdown (trenta minuti di lettura
+    per catalogo, contro pochi secondi per rispezzare quello che c'e' gia') e per
+    la carta d'identita' (che vale finche' il file non cambia, e senza cui il
+    riuso dell'indagine non avrebbe niente da riusare)."""
     import shutil
     base = RADICE / _cartella_sorgenti(percorso_fonte, rel)
-    if tieni_markdown:
+    if tieni_lavorato:
         shutil.rmtree(base / "immagini", ignore_errors=True)
         return
     shutil.rmtree(base, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- l'indagine
+# Che tipo di documento e' e che cosa deve produrre la sua lettura. Non e' un
+# passaggio di comodo: `documenti.tipo` e' cio' che l'orchestratore usa per
+# impaginare la risposta (schede prodotto o citazioni), quindi sbagliare qui
+# cambia il modo in cui l'assistente risponde. Finche' lo decideva la domanda
+# "ha delle immagini?", la risposta dipendeva da quale reader era passato:
+# `Catalogo Gasper Autunno Natale 2026.pdf` finiva `documento` con 761 pezzi
+# e zero figure solo perche' il reader del giorno non le estraeva.
+#
+# Il tipo e' una SCELTA CHIARA del documento, non una misura: si chiede al VLM
+# su un campione di pagine e si tiene il tipo che ha vinto per voti, con i voti
+# per pagina accanto, per poter vedere quanto la cosa era convinta. I dettagli
+# grossi (voti, misure, dove sta la carta) vanno in `documenti.indagine`; le
+# risposte grezze stanno nella carta su disco, e la colonna dice solo dove.
+
+TIPI = ("manuale", "catalogo", "tabella prezzi", "ordine", "fattura", "scheda", "altro")
+TESTI = ("leggibile", "non leggibile", "misto")
+PRODUCE = ("testo", "testo+immagini", "dati")
+PAGINE_MIN, PAGINE_MAX, PERCENTO_INDAGINE = 5, 12, 0.05
+# Cambiare questo numero invalida le carte: il campione e' cambiato, quindi i
+# voti di ieri non sono piu' quelli che darebbe oggi.
+REGOLE_INDAGINE = "2"
+
+ISTRUZIONI_INDAGINE = (
+    "Guarda questa pagina di un documento aziendale e rispondi su quattro righe, "
+    "nient'altro.\n"
+    "TIPO: uno solo fra " + ", ".join(TIPI) + ".\n"
+    "COSA: il documento in due parole.\n"
+    "TESTO: " + ", ".join(TESTI) + ".\n"
+    "PRODUCE: " + ", ".join(PRODUCE) + "."
+)
+
+# L'impronta delle istruzioni: se cambiano, la carta vale un'altra cosa e va
+# rifatta. Cambiare REGOLE_INDAGINE a mano serve per lo stesso motivo.
+IMPRONTA_INDAGINE = hashlib.sha256((ISTRUZIONI_INDAGINE + REGOLE_INDAGINE).encode()).hexdigest()[:8]
+
+
+def _campione_pagine(n, minimo=PAGINE_MIN, massimo=PAGINE_MAX, percentuale=PERCENTO_INDAGINE):
+    """Le pagine da guardare: 5 se sono poche, 12 se sono tante, e nel mezzo un
+    5% del documento. Il campione parte dall'inizio e si spande: i cataloghi
+    hanno tutte le pagine uguali, e i registri/inventari differiscono soprattutto
+    in coda."""
+    if n <= 0:
+        return []
+    quante = min(n, max(minimo, min(massimo, int(n * percentuale))))
+    return sorted({min(n - 1, i * n // quante) for i in range(quante)})
+
+
+def _valore(grezzo, chiave, valori):
+    """La riga che il modello ha scritto, se e' una di quelle che sapevamo chiedere.
+
+    Non si controlla solo se c'e' la parola: se il modello inventa un tipo
+    ('brochure', 'listino') non lo foriamo in `tipi` e non lasciamo la pagina
+    senza voto. Per lo stesso motivo, quando la riga c'e' ma non e' leggibile,
+    si tiene il testo cosi' com'e' (una risposta spostata a capo non e' una
+    risposta assente).
+
+    Si prova dalla sequenza piu' lunga: nell'elenco c'e' «tabella prezzi», e se si
+    guardassero le parole una per una nessuna corrisponderebbe — la pagina
+    risponderebbe bene e il suo voto andrebbe perso."""
+    riga = next((r for r in grezzo.splitlines() if r.strip().upper().startswith(chiave)), "")
+    testo = riga.split(":", 1)[1] if ":" in riga else ""
+    parole = testo.split()
+    cercati = {v: v for v in valori}
+    for n in range(max((len(v.split()) for v in valori), default=1), 0, -1):
+        for i in range(len(parole) - n + 1):
+            frase = " ".join(parole[i:i + n]).strip(" .:;,*").lower()
+            if frase in cercati:
+                return cercati[frase]
+    return testo.strip()[:60]
+
+
+def _chiedi_indagine(b64):
+    url, testa, modello = _litellm_visione()
+    r = httpx.post(f"{url}/v1/chat/completions",
+                   json={"model": modello, "temperature": 0, "max_tokens": 120,
+                         "messages": [{"role": "user", "content": [
+                             {"type": "text", "text": ISTRUZIONI_INDAGINE},
+                             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}]}]},
+                   headers=testa, timeout=180)
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"] or ""
+
+
+def indaga_documento(p, dentro, impronta, noto=None, forza=False):
+    """Il tipo di `p` e come va letto, con riuso per impronta.
+
+    `noto` e' l'indagine gia' in banca dati: se riguarda lo stesso file (stessa
+    impronta) ed e' stata fatta con le stesse istruzioni, si riusa e non si
+    richiama il VLM. Il file che cambia si rilegge da solo; `--forza` rilegge
+    anche quando il file e' lo stesso, per quando l'etichetta e' sbagliata.
+
+    La carta su disco e' la prova, `documenti.indagine` e' la copia interrogabile.
+    Senza VLM non si butta via quello che c'era: torna quello, e se non c'era
+    niente il documento resta col tipo di ripiego."""
+    carta = RADICE / dentro / f"identita-{IMPRONTA_INDAGINE}.json"
+    if (noto and not forza and carta.exists()
+            and noto.get("impronta") == impronta and noto.get("impronta_istruzioni") == IMPRONTA_INDAGINE):
+        return noto
+    if p.suffix.lower() != ".pdf":
+        return None                      # il campione di pagine si sa solo sui PDF
+    try:
+        import pypdfium2
+        pdf = pypdfium2.PdfDocument(str(p))
+        quante = len(pdf)
+        pagine = _campione_pagine(quante)
+        voti, grezzi, misure = [], [], []
+        for n in pagine:
+            testo = pdf[n].get_textpage().get_text_range()
+            b64 = _immagine_pagina(str(p), n + 1)
+            grezzo = _chiedi_indagine(b64)
+            grezzi.append({"pagina": n + 1, "grezzo": grezzo,
+                           "tipo": _valore(grezzo, "TIPO", TIPI), "produce": _valore(grezzo, "PRODUCE", PRODUCE),
+                           "cosa": _valore(grezzo, "COSA", ()), "testo": _valore(grezzo, "TESTO", TESTI)})
+            voti.append(_valore(grezzo, "TIPO", TIPI))
+            misure.append({"pagina": n + 1, "caratteri": len(testo)})
+        pdf.close()
+    except Exception as e:
+        print(f"  indagine non riuscita su {p.name} ({type(e).__name__}: {e})")
+        return noto
+    validi = [v for v in voti if v in TIPI]
+    if not validi:
+        # Il modello ha risposto qualcosa che non e' un tipo che avevamo chiesto.
+        # Meglio dirlo che lasciare il documento col tipo di ripiego: se e' un
+        # difetto delle istruzioni, la riga la si legge qui.
+        print(f"  nessun tipo riconosciuto su {p.name}: {voti}")
+        return noto
+    tipo = max(set(validi), key=validi.count)            # il piu' votato, non il primo
+    esito = {"tipo": tipo, "impronta": impronta, "impronta_istruzioni": IMPRONTA_INDAGINE,
+             "pagine": quante, "campione": [n + 1 for n in pagine], "voti": voti,
+             "produce": [g["produce"] for g in grezzi], "carta": f"{dentro}/{carta.name}"}
+    carta.parent.mkdir(parents=True, exist_ok=True)
+    carta.write_text(json.dumps(esito | {"grezzi": grezzi, "misure": misure}, ensure_ascii=False, indent=1),
+                     encoding="utf-8")
+    return esito
 
 
 def _scrivi_immagini(dentro, immagini, da_indice):
@@ -1059,10 +1207,10 @@ def _scrivi_immagini(dentro, immagini, da_indice):
     out = []
     try:
         radice.mkdir(parents=True, exist_ok=True)
-        for n, (img, pagina, descr) in enumerate(immagini, start=da_indice):
+        for n, (img, pagina, descr, verdetto) in enumerate(immagini, start=da_indice):
             nome = f"{pagina or 0}_{n}.png"
             _riduci(img).save(radice / nome)
-            out.append((f"{dentro}/immagini/{nome}", pagina, descr))
+            out.append((f"{dentro}/immagini/{nome}", pagina, descr, verdetto))
     except OSError as e:
         print(f"  immagini non salvate in {dentro} ({type(e).__name__}: {e}): "
               f"la cartella e' scrivibile?", flush=True)
@@ -1080,7 +1228,7 @@ def _registra_immagini(conn, fid, rel, immagini):
     «immagine 1, immagine 2» e nei log una fila di 404 (visto il 20/09/2026).
     Il percorso e' deterministico (`<pagina>_<n>.png`), quindi serve da chiave:
     l'immagine che torna uguale tiene la sua riga, quella sparita esce."""
-    percorsi = [p for p, _pagina, _descr in immagini]
+    percorsi = [p for p, _pagina, _descr, _vd in immagini]
     conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s"
                  " AND NOT (percorso = ANY(%s))", (fid, rel, percorsi))
     # La descrizione serve a SCEGLIERE quale figura mostrare, non solo a
@@ -1088,17 +1236,18 @@ def _registra_immagini(conn, fid, rel, immagini):
     # (bge-m3), quindi "sassi rossi" puo' incontrare "dark red lava rocks".
     # Se i vettori non si possono fare (host giu'), le immagini entrano lo
     # stesso: si completano al giro dopo, come i pezzi senza vettore.
-    descrizioni = [d for _p, _pagina, d in immagini if d]
+    descrizioni = [d for _p, _pagina, d, _vd in immagini if d]
     vettori_descr = vettori(descrizioni) if descrizioni else None
     prossimo = iter(vettori_descr) if vettori_descr else None
-    for percorso, pagina, descr in immagini:
+    for percorso, pagina, descr, verdetto in immagini:
         v = next(prossimo, None) if (descr and prossimo) else None
-        conn.execute("""INSERT INTO immagini (source_id, documento, page, percorso, descrizione, embedding)
-                        VALUES (%s, %s, %s, %s, %s, %s::vector)
+        conn.execute("""INSERT INTO immagini (source_id, documento, page, percorso, descrizione, embedding, verdetto)
+                        VALUES (%s, %s, %s, %s, %s, %s::vector, %s)
                         ON CONFLICT (source_id, percorso) DO UPDATE SET page = EXCLUDED.page,
                           documento = EXCLUDED.documento,
-                          descrizione = EXCLUDED.descrizione, embedding = EXCLUDED.embedding""",
-                     (fid, rel, pagina, percorso, descr, vettore_sql(v) if v else None))
+                          descrizione = EXCLUDED.descrizione, embedding = EXCLUDED.embedding,
+                          verdetto = EXCLUDED.verdetto""",
+                     (fid, rel, pagina, percorso, descr, vettore_sql(v) if v else None, verdetto))
     return len(immagini)
 
 
@@ -1122,9 +1271,16 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         conn.execute("UPDATE documenti SET errore = %s WHERE source_id = %s AND documento = %s",
                      (IN_LETTURA.replace("lettura interrotta", "non letto"), fid, rel))
     noti = {r[0]: r for r in conn.execute(
-        "SELECT documento, impronta, dimensione, modificato_il, stato FROM documenti WHERE source_id = %s", (fid,))}
+        "SELECT documento, impronta, dimensione, modificato_il, stato, errore, indicizzato_il, indagine"
+        " FROM documenti WHERE source_id = %s", (fid,))}
     presenti = file_da_leggere(cartella)
-    conteggi = {"fonte": fid, "nuovi": 0, "cambiati": 0, "uguali": 0, "tolti": 0, "errori": 0}
+    # L'impronta (contenuto) come identita' del documento, per riconoscere gli
+    # spostamenti DENTRO la fonte: un file spostato in una sottocartella cambia
+    # percorso ma non contenuto, quindi non va riletto — si rinomina il percorso
+    # nell'indice e basta.
+    per_impronta = {r[1]: rel for rel, r in noti.items() if r[1]}
+    spostati = set()
+    conteggi = {"fonte": fid, "nuovi": 0, "cambiati": 0, "uguali": 0, "tolti": 0, "spostati": 0, "errori": 0}
     # Cartella che si presenta VUOTA dove prima c'erano documenti: quasi sempre
     # e' la condivisione di rete montata male (il percorso esiste, il contenuto
     # no). Cancellare sarebbe corretto per la regola "il file sparito esce
@@ -1146,12 +1302,33 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         st = p.stat()
         quando = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).replace(microsecond=0)
         vecchio = noti.get(rel)
-        # Stesso file di prima: non si rilegge, nemmeno se era illeggibile (si
-        # riprova quando cambia: riprovarlo a ogni giro non lo aggiusta).
-        # Con --forza si rilegge lo stesso: chi lo chiede vuole proprio quello,
-        # di solito su un file che era andato in errore o rimandato.
-        if not forza and vecchio and vecchio[2] == st.st_size and vecchio[3] == quando:
+        riprova = _ritentare(vecchio[4], vecchio[5], vecchio[6]) if vecchio else False
+        # Stesso file di prima: non si rilegge (si riprova quando il file
+        # cambia). Con --forza si rilegge lo stesso: chi lo chiede vuole
+        # proprio quello, di solito su un file andato in errore o rimandato.
+        # `riprova` e' l'eccezione: l'errore non era nel file, era FUORI (vedi
+        # _ritentare), quindi il file identico non e' una scusa per non riprovare.
+        if not forza and vecchio and not riprova and vecchio[2] == st.st_size and vecchio[3] == quando:
             conteggi["uguali"] += 1
+            continue
+        impronta = impronta_file(p)
+        # Spostato DENTRO la fonte (sottocartella, rinomina): stesso contenuto,
+        # percorso diverso. Non si rilegge: si rinomina il percorso nell'indice.
+        # Le immagini restano dove sono (il loro `percorso` su disco non cambia),
+        # i pezzi pure — cambia solo il `documento` che li etichetta.
+        vecchio_rel = per_impronta.get(impronta)
+        if vecchio_rel and vecchio_rel != rel:
+            with conn.transaction():
+                conn.execute("UPDATE documenti SET documento = %s WHERE source_id = %s AND documento = %s",
+                             (rel, fid, vecchio_rel))
+                conn.execute("UPDATE chunks SET documento = %s WHERE source_id = %s AND documento = %s",
+                             (rel, fid, vecchio_rel))
+                conn.execute("UPDATE immagini SET documento = %s WHERE source_id = %s AND documento = %s",
+                             (rel, fid, vecchio_rel))
+            per_impronta[impronta] = rel
+            spostati.add(vecchio_rel)
+            conteggi["spostati"] += 1
+            print(f"  spostato: {fid}/{vecchio_rel} -> {rel}")
             continue
         grosso = rimanda(st.st_size, lettore.finestra, gpu=False)   # grosso e fuori finestra
         if grosso and dove_leggere() != "cuda":
@@ -1160,20 +1337,13 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
             conteggi["rimandati"] = conteggi.get("rimandati", 0) + 1
             print(f"  rimandato: {fid}/{rel} ({st.st_size // (1024 * 1024)} MB, GPU occupata)")
             continue
-        impronta = impronta_file(p)
-        if not forza and vecchio and vecchio[1] == impronta:
+        if not forza and vecchio and not riprova and vecchio[1] == impronta:
             conn.execute("UPDATE documenti SET modificato_il = %s WHERE source_id = %s AND documento = %s",
                          (quando, fid, rel))
             conteggi["uguali"] += 1
             continue
         chiave = f"illeggibile:{fid}:{rel}"
         escluso = NON_LEGGIBILI.get(p.suffix.lower())
-        if not escluso and p.suffix.lower() in FOGLI:
-            try:
-                escluso = motivo_prezzi(p)
-                escluso = f"contiene prezzi: {escluso}" if escluso else None
-            except Exception as e:
-                escluso = f"non si riesce a controllare se contiene prezzi ({type(e).__name__}): per prudenza resta fuori"
         if escluso:
             with conn.transaction():
                 conn.execute("DELETE FROM chunks WHERE source_id = %s AND documento = %s", (fid, rel))
@@ -1220,13 +1390,21 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         # comportamento giusto non si chiede a chi lancia il comando, si deduce
         # dall'impronta.
         stesso_documento = bool(vecchio) and vecchio[1] == impronta
-        _butta_sorgenti(percorso, rel, tieni_markdown=stesso_documento and not TIENI_MARKDOWN_NO)
+        _butta_sorgenti(percorso, rel, tieni_lavorato=stesso_documento and not TIENI_MARKDOWN_NO)
+        # PRIMA di leggere, e' il tipo che decide. Non e' metadato: e' la
+        # risposta che l'assistente da' quando il documento finisce in una
+        # risposta, e su un catalogo sbagliarla significa descrivere un listino
+        # come se fosse un manuale. Costa fino a 12 pagine di VLM su un file che
+        # poi costa decine di minuti a leggere: una domanda ogni venti.
+        indagine = indaga_documento(p, _cartella_sorgenti(percorso, rel), impronta,
+                                    noto=vecchio[7] if vecchio else None, forza=forza)
+        tipo = (indagine or {}).get("tipo")
         IN_CORSO.update(fid=fid, rel=rel, stato=vecchio[4] if vecchio else None)
         try:
-            pezzi, immagini = lettore.pezzi(p, _progresso, solo_gpu=grosso,
-                                            dentro=_cartella_sorgenti(percorso, rel),
-                                            lettura=come_leggere(fid),
-                                            progresso_figure=_progresso_figure)
+            pezzi, immagini, chi_li_ha_letti = lettore.pezzi(p, _progresso, solo_gpu=grosso,
+                                                             dentro=_cartella_sorgenti(percorso, rel),
+                                                             lettura=come_leggere(fid),
+                                                             progresso_figure=_progresso_figure)
         except Rimandato as e:
             if vecchio:
                 conn.execute("UPDATE documenti SET impronta = %s, dimensione = %s, modificato_il = %s,"
@@ -1245,13 +1423,16 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
             print(f"  ERRORE {fid}/{rel}: {type(e).__name__}: {e}")
             with conn.transaction():
                 conn.execute("DELETE FROM chunks WHERE source_id = %s AND documento = %s", (fid, rel))
-                conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi)
-                                VALUES (%s,%s,%s,%s,%s,'errore',%s,0)
+                conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi, tipo, indagine)
+                                VALUES (%s,%s,%s,%s,%s,'errore',%s,0,%s,%s::jsonb)
                                 ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
                                   dimensione = EXCLUDED.dimensione, modificato_il = EXCLUDED.modificato_il,
                                   stato = 'errore', errore = EXCLUDED.errore, pezzi = 0,
+                                  tipo = COALESCE(EXCLUDED.tipo, documenti.tipo),
+                                  indagine = COALESCE(EXCLUDED.indagine, documenti.indagine),
                                   in_lettura = NULL, indicizzato_il = now()""",
-                             (fid, rel, impronta, st.st_size, quando, f"{type(e).__name__}: {e}"[:500]))
+                             (fid, rel, impronta, st.st_size, quando, f"{type(e).__name__}: {e}"[:500],
+                              tipo, json.dumps(indagine) if indagine else None))
                 IN_CORSO.clear()
                 anomalia(conn, chiave, "attenzione", f"File non leggibile: {rel}",
                          "Aprire il file: se e' danneggiato o protetto da password, sostituirlo con una copia "
@@ -1259,7 +1440,7 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
                          {"errore": f"{type(e).__name__}: {e}"[:300]})
             continue
 
-        vett = vettori([t for t, _ in pezzi]) if pezzi and stato_vettori["ok"] else None
+        vett = vettori([t for t, _, _ in pezzi]) if pezzi and stato_vettori["ok"] else None
         if pezzi and vett is None:
             stato_vettori["ok"] = False          # host giu': non si riprova file per file in questo giro
         if vett and not stato_vettori["verificato"]:
@@ -1268,28 +1449,32 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
                 vett = None
         with conn.transaction():
             conn.execute("DELETE FROM chunks WHERE source_id = %s AND documento = %s", (fid, rel))
-            for i, (testo, pagina) in enumerate(pezzi):
-                conn.execute("""INSERT INTO chunks (source_id, documento, page, content, content_hash, embedding)
-                                VALUES (%s, %s, %s, %s, %s, %s::vector)
+            for i, (testo, pagina, chi) in enumerate(pezzi):
+                conn.execute("""INSERT INTO chunks (source_id, documento, page, content, content_hash, embedding, lettore)
+                                VALUES (%s, %s, %s, %s, %s, %s::vector, %s)
                                 ON CONFLICT (source_id, documento, page, content_hash) DO NOTHING""",
                              (fid, rel, pagina, testo, hashlib.sha256(testo.encode()).hexdigest(),
-                              vettore_sql(vett[i]) if vett else None))
+                              vettore_sql(vett[i]) if vett else None, chi))
             _registra_immagini(conn, fid, rel, immagini)
-            conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi)
-                            VALUES (%s,%s,%s,%s,%s,%s,NULL,%s)
+            conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi, tipo, indagine)
+                            VALUES (%s,%s,%s,%s,%s,%s,NULL,%s,%s,%s::jsonb)
                             ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
                               dimensione = EXCLUDED.dimensione, modificato_il = EXCLUDED.modificato_il,
                               stato = EXCLUDED.stato, errore = NULL, pezzi = EXCLUDED.pezzi,
+                              tipo = COALESCE(EXCLUDED.tipo, documenti.tipo),
+                              indagine = COALESCE(EXCLUDED.indagine, documenti.indagine),
                               in_lettura = NULL, indicizzato_il = now()""",
-                         (fid, rel, impronta, st.st_size, quando, "indicizzato" if pezzi else "vuoto", len(pezzi)))
+                           (fid, rel, impronta, st.st_size, quando, "indicizzato" if pezzi else "vuoto",
+                            len(pezzi), tipo, json.dumps(indagine) if indagine else None))
             chiudi(conn, chiave)
         IN_CORSO.clear()        # letto: da qui in poi un riavvio non lo riguarda
         conteggi["cambiati" if vecchio else "nuovi"] += 1
         print(f"  {'aggiornato' if vecchio else 'nuovo'}: {fid}/{rel} ({len(pezzi)} pezzi, {len(immagini)} immagini"
               f"{'' if vett else ', senza vettori'})")
 
-    # Cancellati dalla cartella: via dall'indice.
-    for rel in set(noti) - {r for r, _ in presenti}:
+    # Cancellati dalla cartella: via dall'indice. Gli `spostati` no: il loro
+    # contenuto e' rimasto, ha solo cambiato percorso (gestito sopra).
+    for rel in set(noti) - {r for r, _ in presenti} - spostati:
         with conn.transaction():
             conn.execute("DELETE FROM chunks WHERE source_id = %s AND documento = %s", (fid, rel))
             conn.execute("DELETE FROM immagini WHERE source_id = %s AND documento = %s", (fid, rel))
@@ -1634,6 +1819,13 @@ FONTI_A_PAGINA = {x.strip() for x in os.environ.get("LETTURA_PAGINA", "").split(
 # potrebbe aver saltato. Con `no` Docling fa SOLO l'estrazione delle immagini.
 # Da decidere con le 24 domande vere, non a naso: il riferimento e' 17/20.
 TESTO_DOCLING = os.environ.get("TESTO_DOCLING", "si") != "no"
+# Come si spezzano i pezzi del percorso Docling. "chunker" = HierarchicalChunker
+# sul documento (prosa, com'e' sempre stato); "markdown" = _pezzi_da_markdown
+# pagina per pagina, quindi le tabelle di Docling diventano UNA RIGA per pezzo
+# con il titolo davanti, come fa il VLM. Serve a misurare se le tabelle di
+# Docling bastano al posto del VLM. Reversibile: si torna a "chunker" e si
+# reindicizza.
+CHUNK_DOCLING = os.environ.get("CHUNK_DOCLING", "chunker")
 
 
 def come_leggere(fonte: str) -> str:
@@ -1694,9 +1886,21 @@ ISTRUZIONI_FIGURA = (
     "Only if there is a short PRODUCT CODE or product name printed near the object, "
     "write it as «Code: ». Do NOT transcribe addresses, phone numbers, or long text.\n"
     "Never invent anything that is not visible. Do not repeat. Be COMPLETE: list ALL "
-    "the distinct colours you see, do not abbreviate the list."
+    "the distinct colours you see, do not abbreviate the list.\n"
+    "\n"
+    "Finally, answer with ONE word — «informazione» or «corredo» — after the line "
+    "«Verdetto: ».\n"
+    "- «informazione» if this image shows something the page text does NOT already say "
+    "(a product, a code, a colour, a value): the image IS the information.\n"
+    "- «corredo» if this image is decorative or repeats what the text already says "
+    "(an icon, a logo, a generic illustration): it only accompanies the text.\n"
+    "If you are not sure, choose «informazione»."
 )
 SECONDI_PER_FIGURA = int(os.environ.get("SECONDI_PER_FIGURA", "120"))
+# 0 = le figure entrano nell'indice con la descrizione di Docling (o senza) e il
+# VLM non viene chiamato una volta per immagine. Serve per le prove: vedi
+# _descrivi_figure.
+DESCRIVI_FIGURE = os.environ.get("DESCRIVI_FIGURE", "1") != "0"
 
 
 def rispetta_la_forma(md: str) -> bool:
@@ -1947,7 +2151,7 @@ def _pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli):
     non c'e' (vedi attorno_ai_segnaposti).
     """
     per_pagina = {}
-    for i, (_percorso, pagina, descr) in enumerate(immagini):
+    for i, (_percorso, pagina, descr, _vd) in enumerate(immagini):
         per_pagina.setdefault(pagina, []).append((i, descr or ""))
     arricchite = list(immagini)
     fuori = []
@@ -1961,7 +2165,7 @@ def _pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli):
         # visivo resta a descriverla. Va nell'indice delle IMMAGINI, non nel
         # Markdown, dove sarebbe la stessa riga scritta due volte.
         for (i, descr), (prima, dopo) in zip(qui, attorno_ai_segnaposti(md)):
-            percorso, pag, _ = immagini[i]
+            percorso, pag, _, verdetto = immagini[i]
             # Tre parti, separatore SEMPRE presente: l'etichetta (che puo'
             # essere vuota), il contesto dopo, e la descrizione del modello.
             # Il separatore e' quello che distingue «non ho trovato
@@ -1971,7 +2175,7 @@ def _pezzi_dal_markdown_figure(dentro, markdown, immagini, titoli):
             # iniziale e' il segno che l'etichetta non c'e'. Toglierlo faceva
             # scambiare il contesto DOPO per l'etichetta.
             unita = f"{prima} — {dopo} — {descr}".rstrip(" ")
-            arricchite[i] = (percorso, pag, unita)
+            arricchite[i] = (percorso, pag, unita, verdetto)
         titolo = titoli.get(pagina, "")
         if titolo:
             completo = titolo + '\n\n' + completo
@@ -2007,8 +2211,8 @@ def _pezzi_dalle_figure(immagini, titoli):
     dice di che prodotto si parla.
     """
     fuori = []
-    for _percorso, pagina, descr in immagini:
-        if not descr:
+    for _percorso, pagina, descr, verdetto in immagini:
+        if not descr or verdetto == "corredo":
             continue
         titolo = titoli.get(pagina or 0, "")
         testo = " ".join(descr.split())
@@ -2028,11 +2232,21 @@ def _titoli_di_pagina(dentro):
             n = int(f.stem)
         except ValueError:
             continue
-        righe = [r.strip() for r in f.read_text(encoding="utf-8").splitlines()
-                 if r.strip() and not r.strip().startswith("```")]
-        if righe:
-            titoli[n] = " ".join(righe[:3])[:160]
+        titolo = _titolo_da_markdown(f.read_text(encoding="utf-8"))
+        if titolo:
+            titoli[n] = titolo
     return titoli
+
+
+def _titolo_da_markdown(testo):
+    """Il titolo di una pagina: le prime tre righe di testo vero.
+
+    Stessa regola per il Markdown del VLM, che sta su disco, e per quello di
+    Docling, che arriva in memoria: il titolo non e' un concetto nuovo, e' la
+    stessa domanda posta a due fonti diverse."""
+    righe = [r.strip() for r in testo.splitlines()
+             if r.strip() and not r.strip().startswith("```")]
+    return " ".join(righe[:3])[:160] if righe else None
 
 
 IMPRONTA_FIGURA = hashlib.sha256(ISTRUZIONI_FIGURA.encode()).hexdigest()[:8]
@@ -2073,6 +2287,24 @@ def _salva_descrizioni(dentro, mappa):
         print(f"    descrizioni non salvate ({type(e).__name__}: {e})", flush=True)
 
 
+def _estrae_verdetto(descr):
+    """Separa la descrizione dal verdetto che il prompt chiede in coda
+    («Verdetto: informazione|corredo|tabella»). Torna (descrizione, verdetto).
+    Il verdetto decide a che cosa serve la descrizione (pezzo cercabile o solo
+    da mostrare), mai se esiste. Se non c'e', verdetto None e la descrizione
+    resta cosi' com'e'."""
+    verdetto = None
+    pulite = []
+    for r in (descr or "").splitlines():
+        if r.strip().lower().startswith("verdetto"):
+            v = r.strip().split(":", 1)[-1].strip().lower()
+            if v in ("informazione", "corredo", "tabella"):
+                verdetto = v
+            continue
+        pulite.append(r)
+    return "\n".join(pulite).strip(), verdetto
+
+
 def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
     """Le figure descritte da NOI, dicendo al modello da che pagina vengono.
 
@@ -2097,14 +2329,15 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
     url, testa, logico = _litellm_visione()
     salvate = _descrizioni_salvate(dentro)
     fuori, falliti, riusate, fatte = [], 0, 0, 0
-    for percorso, pagina, vecchia in immagini:
+    for percorso, pagina, vecchia, _vd in immagini:
         fatte += 1
         if progresso:
             progresso(fatte, len(immagini))
         nome = pathlib.PurePath(percorso).name
         if nome in salvate:
             riusate += 1
-            fuori.append((percorso, pagina, salvate[nome]))
+            descr, verdetto = _estrae_verdetto(salvate[nome])
+            fuori.append((percorso, pagina, descr, verdetto))
             continue
         # ATTENZIONE: qui le figure sono gia' SU DISCO. _scrivi_immagini le ha
         # salvate blocco per blocco e ha sostituito l'immagine con il suo
@@ -2112,10 +2345,11 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
         # un catalogo da 107 pagine. Trattarle come immagini PIL fallirebbe
         # dentro la `except` qui sotto, e sembrerebbe che non risponda il
         # modello (quasi successo il 22/09/2026).
-        titolo = titoli.get(pagina or 0)
-        if not titolo:
-            fuori.append((percorso, pagina, vecchia))
-            continue
+        # Il titolo aiuta (sa COSA sta guardando: una figura di 221x149 px
+        # senza contesto diventa «dried fruit»), ma la sua assenza non e' un
+        # motivo per non descrivere: l'immagine la si manda lo stesso, e una
+        # descrizione mediocre serve piu' di nessuna descrizione.
+        titolo = titoli.get(pagina or 0) or ""
         try:
             b64 = base64.b64encode((RADICE / percorso).read_bytes()).decode()
             corpo = json.dumps({
@@ -2129,12 +2363,13 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
             with urllib.request.urlopen(req, timeout=SECONDI_PER_FIGURA) as r:
                 descr = json.load(r)["choices"][0]["message"]["content"].strip()
             salvate[nome] = descr or vecchia
-            fuori.append((percorso, pagina, descr or vecchia))
+            pulita, verdetto = _estrae_verdetto(descr or vecchia)
+            fuori.append((percorso, pagina, pulita, verdetto))
         except Exception as e:
             falliti += 1
             if falliti == 1:      # il primo con il motivo, gli altri solo contati
                 print(f"    figura non descritta ({type(e).__name__}: {e})", flush=True)
-            fuori.append((percorso, pagina, vecchia))
+            fuori.append((percorso, pagina, vecchia, None))
     if riusate:
         print(f"    {riusate} descrizioni riprese da disco (niente VLM)", flush=True)
     if falliti:
@@ -2146,6 +2381,57 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
         raise Rimandato(f"VLM non raggiungibile: {falliti} figure senza descrizione")
     _salva_descrizioni(dentro, salvate)
     return fuori
+
+
+def _descrivi_figure(immagini, titoli, dentro, progresso=None):
+    """UN posto solo dove le figure vengono descritte.
+
+    Sul percorso 'pagina' (cataloghi) e su quello 'docling' (prosa) si
+    descrive con lo stesso prompt, lo stesso modello e la stessa cache:
+    descrivere un'immagine e' lo stesso lavoro, e farlo in due modi aveva
+    prodotto due stili diversi nello stesso indice. Il caso che lo ha
+    smascherato: Docling descrive solo quello che classifica come Picture,
+    quindi su 25 immagini di una presentazione di sicurezza 23 icone e banner
+    erano rimaste senza descrizione, quindi senza vettore e non trovabili con
+    una domanda.
+
+    Il titolo della pagina aiuta — sa COSA sta guardando, e una figura di
+    221x149 px senza contesto diventa «dried fruit» — ma non e' un
+    prerequisito: senza, l'immagine si manda lo stesso.
+
+    Se il VLM non risponde, _descrivi_col_titolo alza Rimandato e il documento
+    viene riletto al giro dopo. Le figure con una descrizione gia' presente non
+    si ritocchiano: quelle sono buone e rifarle costerebbe una chiamata per
+    nulla.
+
+    `DESCRIVI_FIGURE=0` salta tutto il passaggio: le immagini restano quelle di
+    Docling e il documento entra lo stesso. Serve a misurare quanto valgono le
+    nostre descrizioni (una chiamata per figura: sono ~8 per pagina di
+    catalogo, e cio' che rende un catalogo da 107 pagine un'ora di lavoro)
+    senza aspettare un'ora per ogni prova.
+    """
+    if not DESCRIVI_FIGURE or not dentro or not immagini:
+        return immagini
+    nuovi = {percorso: (descr, verdetto)
+             for percorso, _p, descr, verdetto in
+             _descrivi_col_titolo([i for i in immagini if not i[2]], titoli, dentro, progresso)}
+    if not nuovi:
+        return immagini
+    out = []
+    for percorso, pagina, vecchia, vecchio_verdetto in immagini:
+        descr, verdetto = nuovi.get(percorso, (vecchia, vecchio_verdetto))
+        out.append((percorso, pagina, descr, verdetto))
+    return out
+
+
+def _titoli_da_markdown(markdown):
+    """{pagina: titolo} dal Markdown che Docling ha gia' prodotto in memoria."""
+    titoli = {}
+    for n, testo in (markdown or {}).items():
+        titolo = _titolo_da_markdown(testo)
+        if titolo:
+            titoli[n] = titolo
+    return titoli
 
 
 if __name__ == "__main__":

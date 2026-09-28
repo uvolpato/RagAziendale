@@ -24,6 +24,7 @@ Guardrail (VALUTAZIONE-ORCHESTRATORE-AGENTE.md §4), non negoziabili:
 import json
 import operator
 import os
+import time
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -57,9 +58,22 @@ ISTRUZIONI_SISTEMA = (
     "Sei un assistente che cerca in un archivio aziendale di cataloghi e documenti.\n"
     "Il tuo compito e' INDICARE dove stanno le cose, non estrarre codici o dati: "
     "dai i riferimenti (documento e pagina), poi e' la persona a guardare.\n"
-    "Per i PRODOTTI trovati, scrivi la risposta in modo articolato: per ognuno una "
-    "breve descrizione in parole tue (che cos'e', materiale, colori) e la pagina. "
-    "Riassumi il testo tecnico delle descrizioni, NON ricopiarlo tale e quale.\n"
+    "Comunichi SEMPRE in italiano, qualunque sia la lingua dei documenti: "
+    "traduci i nomi dei prodotti (es. «Strauß mit Amaryllis» → «bouquet con "
+    "amaryllis»), i codici articolo restano invariati.\n"
+    "Quando hai trovato PRODOTTI (figure di un catalogo), scegli tu come "
+    "organizzare la risposta — prosa, elenchi, raggruppamenti per catalogo o "
+    "per pagina: il modo piu' adatto a quello che presenti, senza schemi "
+    "fissi, perche' le pubblicazioni possono essere molto diverse. Chi legge "
+    "deve capire al volo cosa c'e' e dove guardare. Condizione che non salta "
+    "mai: ogni articolo che citi nomina la sua pagina (es. «a pagina 24 del "
+    "catalogo Gasper»), perche' il sistema trasforma «pagina N» nel "
+    "collegamento — nessun articolo senza pagina. Enumera TUTTI gli articoli "
+    "pertinenti che hai trovato, senza scorciarli.\n"
+    "Per i DOCUMENTI di testo (policy, manuali), scrivi la risposta in modo "
+    "articolato citando la pagina.\n"
+    "Quando la risposta elenca piu' voci (articoli, passi, pagine), "
+    "presentale come elenco, senza seppellirle nella prosa.\n"
     "\n"
     "Strategia, che decidi TU secondo il tipo di domanda:\n"
     "- PRODOTTO o oggetto (es. «nastri blu», «vasi»): cerca PRIMA le figure con "
@@ -127,9 +141,12 @@ STRUMENTI = [
         "parameters": {"type": "object",
                        "properties": {
                            "oggetto": {"type": "string"},
-                           "limite": {"type": "integer",
-                                      "description": "Quante figure restituire. Alza a 20 "
-                                                     "quando la persona chiede di elencarle tutte."}},
+"limite": {"type": "integer",
+                                       "description": "Quante figure restituire. "
+                                                      "Di norma ne ricevi gia' 40. "
+                                                      "Alza a 80 quando la persona "
+                                                      "vuole un elenco completo di "
+                                                      "un intero catalogo."}},
                        "required": ["oggetto"]}}},
 ]
 
@@ -206,9 +223,9 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None,
         if not oggetto:
             return [], "(oggetto vuoto)"
         try:
-            limite = int(argomenti.get("limite") or 12)
+            limite = int(argomenti.get("limite") or 40)
         except (TypeError, ValueError):
-            limite = 12
+            limite = 40
         # Pre-selezione sull'INTERA query (oggetto + termini + contesto), ma il
         # REGEX della figura resta sul solo oggetto: il contesto («christmas»)
         # serve a scegliere il catalogo, non a tirare su figure natalizie quando
@@ -250,6 +267,14 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None,
     return [], "(strumento sconosciuto)"
 
 
+def _nota(strumento, argomenti, righe, t0) -> dict:
+    """Una chiamata sulla traccia: che strumento, con quali argomenti, quante
+    righe tornate e quanto ci ha messo. Senza questo, «perche' ha risposto
+    cosi'?» si risponde ricostruendo a mano (migrazione 024)."""
+    return {"strumento": strumento, "argomenti": argomenti, "righe": len(righe),
+            "ms": int((time.monotonic() - t0) * 1000)}
+
+
 def _chiama(messaggi):
     """Una chiamata al modello, con gli strumenti. Torna il messaggio assistant."""
     m = modello.messaggio(messaggi, MAX_TOKEN, tools=STRUMENTI, ragiona=AGENTE_RAGIONA)
@@ -269,6 +294,7 @@ class Stato(TypedDict):
     intent_termini: list      # termini multilingue dell'oggetto, per il modello
     pezzi: dict               # chunk accumulati, per id
     passi: int
+    traccia: list             # chiamate agli strumenti, in ordine (migrazione 024)
 
 
 def _nodo_capisce(stato: Stato) -> dict:
@@ -279,13 +305,14 @@ def _nodo_capisce(stato: Stato) -> dict:
     # CORPUS («pietre» -> «rocks, dekosteine»), che il modello non sa.
     if not SENZA_GLOSSARIO:
         intent_termini = glossario.espandi(stato["conn"], intent_termini)
+        contesto = glossario.espandi(stato["conn"], contesto)
     # Il CONTESTO resta SEPARATO dall'oggetto: serve alla PRE-SELEZIONE del
     # catalogo, non al regex della figura. Se finisse nel regex («christmas»)
     # tirerebbe su le decorazioni natalizie invece dei diffusori (misurato
     # il 25/09/2026: «profumatore con essenze natalizie»).
     vincolo = v.regex(trovati)
     colore = v.termini_colore(trovati)
-    pezzi, messaggi = {}, []
+    pezzi, messaggi, traccia = {}, [], []
     # Guardrail FORTE: la prima ricerca la fa il sistema, con l'intent estratto,
     # e il risultato arriva al modello gia' pronto (non puo' ne' non cercare ne'
     # cercare con l'oggetto sbagliato).
@@ -299,9 +326,11 @@ def _nodo_capisce(stato: Stato) -> dict:
             oggetto = colore[0]
             intent_termini = intent_termini + [c for c in colore if c not in intent_termini]
         if oggetto:
+            t0 = time.monotonic()
             righe, testo = _esegui("cerca_figure", {"oggetto": oggetto},
                                    stato["conn"], stato["gruppi"], vincolo,
                                    intent_termini, contesto)
+            traccia.append(_nota("cerca_figure", {"oggetto": oggetto}, righe, t0))
             pezzi = {r["id"]: r for r in righe}
             messaggi = [
                 {"role": "assistant", "content": "", "tool_calls": [{
@@ -314,9 +343,11 @@ def _nodo_capisce(stato: Stato) -> dict:
             # non compare nelle descrizioni figura, ma il catalogo ne parla in
             # prosa). Si cerca anche nel testo e si passa il risultato.
             if not righe:
+                t0 = time.monotonic()
                 righe2, testo2 = _esegui("cerca", {"query": oggetto},
                                          stato["conn"], stato["gruppi"], vincolo,
                                          intent_termini, contesto)
+                traccia.append(_nota("cerca", {"query": oggetto}, righe2, t0))
                 pezzi = {r["id"]: r for r in righe2}
                 messaggi += [
                     {"role": "assistant", "content": "", "tool_calls": [{
@@ -327,7 +358,8 @@ def _nodo_capisce(stato: Stato) -> dict:
                 ]
     return {"vincolo": vincolo, "intent_termini": intent_termini,
             "intent": intent, "colore": colore, "contesto": contesto,
-            "pezzi": pezzi, "messaggi": messaggi}
+            "pezzi": pezzi, "messaggi": messaggi,
+            "traccia": (stato.get("traccia") or []) + traccia}
 
 
 def _nodo_agente(stato: Stato) -> dict:
@@ -356,6 +388,7 @@ def _nodo_agente(stato: Stato) -> dict:
 def _nodo_strumenti(stato: Stato) -> dict:
     ultimo = stato["messaggi"][-1]
     pezzi = dict(stato.get("pezzi") or {})
+    traccia = list(stato.get("traccia") or [])
     messaggi = []
     for tc in ultimo.get("tool_calls") or []:
         nome = tc.get("function", {}).get("name", "")
@@ -363,14 +396,16 @@ def _nodo_strumenti(stato: Stato) -> dict:
             argomenti = json.loads(tc.get("function", {}).get("arguments") or "{}")
         except (TypeError, ValueError):
             argomenti = {}
+        t0 = time.monotonic()
         righe, testo = _esegui(nome, argomenti, stato["conn"], stato["gruppi"],
                                stato.get("vincolo", ""), stato.get("intent_termini", []),
                                stato.get("contesto", []))
+        traccia.append(_nota(nome, argomenti, righe, t0))
         for r in righe:
             pezzi.setdefault(r["id"], r)
         messaggi.append({"role": "tool", "tool_call_id": tc.get("id", ""),
                          "content": testo})
-    return {"messaggi": messaggi, "pezzi": pezzi}
+    return {"messaggi": messaggi, "pezzi": pezzi, "traccia": traccia}
 
 
 def _prossimo(stato: Stato) -> str:
@@ -393,11 +428,15 @@ _compilato = _grafo.compile()
 
 
 def cerca(conn, domanda: str, gruppi: list, limite: int = 8, storia: list = None):
-    """L'agente: (righe, risposta).
+    """L'agente: (righe, risposta, traccia).
 
     `storia` e' la conversazione intera (milestone): se c'e', l'agente capisce
     da se' saluti, consensi e «mostrami il resto», invece di ricevere la sola
-    domanda del turno. `domanda` resta per l'estrazione di intent/vincoli."""
+    domanda del turno. `domanda` resta per l'estrazione di intent/vincoli.
+
+    `traccia` e' quello che il turno ha davvero fatto — le chiamate agli
+    strumenti e la riga «cosa stavamo cercando» — da salvare nelle tracce
+    (migrazione 024)."""
     messaggi = [{"role": "system", "content": ISTRUZIONI_SISTEMA}]
     if storia:
         messaggi += [m for m in storia if m.get("role") in ("user", "assistant")]
@@ -410,11 +449,18 @@ def cerca(conn, domanda: str, gruppi: list, limite: int = 8, storia: list = None
         "contesto": [],
         "messaggi": messaggi,
         "conn": conn, "gruppi": gruppi, "vincolo": "", "intent_termini": [],
-        "pezzi": {}, "passi": 0,
+        "pezzi": {}, "passi": 0, "traccia": [],
     })
     righe = list((stato.get("pezzi") or {}).values())[:limite]
     risposta = (stato["messaggi"][-1].get("content") or "").strip()
-    return righe, risposta
+    return righe, risposta, {
+        "strumenti": stato.get("traccia") or [],
+        "ricerca": "intent=%s | termini=%s | contesto=%s | vincolo=%s | pezzi=%d" % (
+            stato.get("intent") or "-",
+            ",".join(stato.get("intent_termini") or []) or "-",
+            ",".join(stato.get("contesto") or []) or "-",
+            (stato.get("vincolo") or "-")[:120], len(righe)),
+    }
 
 
 def _prova():

@@ -1,0 +1,23 @@
+-- Migrazione 026 — CHI HA SCRITTO QUESTO PEZZO.
+--
+-- Un pezzo di `chunks` non sa da dove viene. Sui cataloghi la stessa pagina viene
+-- letta due volte, dal VLM e da Docling, e i due risultati finiscono nella stessa
+-- tabella come righe identiche per schema: `source_id`, `documento`, `page`,
+-- `content`, `content_hash`. Non c'è modo di sapere quale dei due ha scritto
+-- riga 412. E senza questo non si può misurare nulla sulla domanda «il VLM
+-- pagina per pagina serve?»: togliere un lettore e guardare il punteggio è
+-- l'unico modo di saperlo, e oggi non si può.
+--
+-- Perché è una colonna e non un'altra tabella: i pezzi sono pezzi, qualunque sia
+-- la lettura che li ha prodotti, e cercarli non cambia. Quello che cambia è da dove
+-- vengono, quindi è un attributo della riga, accanto a `page`. Una tabella nuova
+-- significherebbe due query per ogni lettura, cioè peggio per il caso d'uso
+-- principale, che è leggerli tutti.
+--
+-- I valori sono i due lettori che esistono: `vlm` (la pagina guardata dal modello,
+-- una chiamata per pagina) e `docling` (la conversione a blocchi). `NULL` non è un
+-- terzo lettore: è un pezzo che non sappiamo da dove venga — i pezzi dei file di
+-- testo vanno letti con `read_text` e non passano da nessun lettore (riga 661 di
+-- `indicizza.py`). Finché è NULL non lo sappiamo, e la colonna serve anche a
+-- misurare quanto è.
+ALTER TABLE chunks ADD COLUMN lettore text;

@@ -1,0 +1,22 @@
+-- Migrazione 027 — il VERDETTO sulla figura: informazione o corredo?
+--
+-- Il sistema descrive ogni figura ma non sa se quella figura e' informazione
+-- (il contenuto che l'utente cerca) o corredo (un'illustrazione decorativa).
+-- Il caso che lo dimostra e' PROBLEMI-APERTI.md §10: su «informazioni di
+-- sicurezza sulle batterie» sei descrizioni dello stesso ritaglio (l'etichetta
+-- di trasporto) hanno battuto il paragrafo vero, che stava in un pezzo solo.
+--
+-- La correzione non e' un flag per fonte (viola AGENTS.md: come faresti tu,
+-- l'assistente, che lo capisci dal contesto e non da un elenco). E' un verdetto
+-- DEL MODELLO, per figura, con tre valori e una domanda sola:
+--
+--     questa figura aggiunge qualcosa che il testo di questa pagina non dice gia'?
+--
+--   tabella       il contenuto va trascritto come testo (testo reso come immagine)
+--   informazione  la descrizione diventa un pezzo a se' nell'indice
+--   corredo       la descrizione resta per scegliere/mostrare la figura, NON entra
+--                 nella ricerca
+--
+-- L'invariante (detta dall'utente e da tenere): il VLM vede OGNI figura, sempre.
+-- Il verdetto decide a che cosa serve la descrizione, mai se esiste.
+ALTER TABLE immagini ADD COLUMN verdetto text;

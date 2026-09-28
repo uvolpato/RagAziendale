@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import indicizza  # noqa: E402
 from indicizza import (MAX_PEZZO, PERCORSO_VALIDO, _gpu_piena, file_da_leggere,  # noqa: E402
-                       in_finestra, motivo_prezzi, rimanda, unisci)
+                       in_finestra, rimanda, unisci)
 
 
 def test_file_da_leggere_salta_bozze_archivio_fogli_e_temporanei(tmp_path):
@@ -18,8 +18,8 @@ def test_file_da_leggere_salta_bozze_archivio_fogli_e_temporanei(tmp_path):
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(b"x")
-    # I fogli di calcolo ci sono (decisione 72): i prezzi si controllano dopo;
-    # il .xls compare per essere segnato come non leggibile, non per sparire.
+    # I fogli di calcolo si leggono come gli altri; il .xls compare per essere
+    # segnato come non leggibile, non per sparire.
     assert [r for r, _ in file_da_leggere(tmp_path)] == ["note.txt", "registro.xlsx", "vecchio.xls",
                                                          "procedure/emergenza.pdf", "schede/SDS-acetone.pdf"]
 
@@ -95,40 +95,6 @@ def test_unisci_taglia_i_pezzi_troppo_lunghi():
     assert " ".join(t for t, _ in pezzi).split() == lungo.split()      # nessuna parola persa
 
 
-def _xlsx(percorso, righe, formato=None):
-    import openpyxl
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Dati"
-    for r in righe:
-        ws.append(r)
-    if formato:
-        ws["B2"].number_format = formato
-    wb.save(percorso)
-    return percorso
-
-
-def test_prezzi_riconosciuti_nei_fogli(tmp_path):
-    listino = _xlsx(tmp_path / "listino.xlsx", [["Codice", "Descrizione", "Prezzo netto"], ["ART-1", "Guanti", 12.5],
-                                                ["ART-2", "Occhiali", 8]])
-    assert "Prezzo netto" in motivo_prezzi(listino)
-    valuta = _xlsx(tmp_path / "offerta.xlsx", [["Voce", "Valore"], ["Corso antincendio", 450]], '#,##0.00 "€"')
-    assert "valuta" in motivo_prezzi(valuta)
-    csv = tmp_path / "dpi.csv"
-    csv.write_text("codice;descrizione;prezzo\nD1;casco;35,90\n", encoding="utf-8")
-    assert motivo_prezzi(csv)
-
-
-def test_registro_senza_prezzi_entra(tmp_path):
-    # "Costo stimato" c'e', ma senza numeri sotto: e' un registro, non un listino.
-    registro = _xlsx(tmp_path / "rischi.xlsx", [["Rischio", "Probabilita'", "Impatto", "Costo stimato"],
-                                                ["Phishing", 4, 3, "alto"], ["Furto portatile", 2, 4, "medio"]])
-    assert motivo_prezzi(registro) is None
-    csv = tmp_path / "trattamenti.csv"
-    csv.write_text("trattamento,finalita,base giuridica,conservazione anni\npaghe,stipendi,contratto,10\n", encoding="utf-8")
-    assert motivo_prezzi(csv) is None
-
-
 def _alle(ore, minuti=0):
     from datetime import datetime
     return datetime(2026, 9, 20, ore, minuti)
@@ -178,14 +144,17 @@ def test_il_lavorato_di_un_documento_sta_in_una_cartella_sola(tmp_path):
     base = tmp_path / a
     (base / "immagini").mkdir(parents=True)
     (base / f"markdown-{indicizza.IMPRONTA_PROMPT}").mkdir(parents=True)
+    (base / f"identita-{indicizza.IMPRONTA_INDAGINE}.json").write_text("{}", encoding="utf-8")
     (base / "immagini/9_99.png").write_bytes(b"residuo")
     (base / f"markdown-{indicizza.IMPRONTA_PROMPT}/0007.md").write_text("# DEKOSTEINE", encoding="utf-8")
 
-    # Rispezzare senza rileggere: le immagini si rifanno, il Markdown resta.
-    # Trenta minuti di VLM per catalogo contro pochi secondi.
-    _butta_sorgenti("decobrands/acquisti", "catalogo.pdf", tieni_markdown=True)
+    # Rispezzare senza rileggere: le immagini si rifanno, il Markdown e la carta
+    # d'identita' restano. Trenta minuti di VLM per catalogo contro pochi secondi,
+    # e senza la carta il riuso dell'indagine non avrebbe niente da riusare.
+    _butta_sorgenti("decobrands/acquisti", "catalogo.pdf", tieni_lavorato=True)
     assert not (base / "immagini").exists()
     assert (base / f"markdown-{indicizza.IMPRONTA_PROMPT}/0007.md").is_file()
+    assert (base / f"identita-{indicizza.IMPRONTA_INDAGINE}.json").is_file()
 
     # Il documento esce dall'indice: via tutto.
     _butta_sorgenti("decobrands/acquisti", "catalogo.pdf")
@@ -388,13 +357,19 @@ def test_il_titolo_di_pagina_arriva_a_chi_descrive_le_figure(tmp_path):
 
 
 def test_senza_vlm_le_figure_restano_come_sono():
-    """Se il VLM non e' configurato non si chiama nessuno e le descrizioni di
-    Docling restano quelle: il documento entra lo stesso."""
+    """Senza VLM non si chiama nessuno, ma il file non si dichiara letto: si
+    rimanda. Le figure senza descrizione sono pezzi che il retrieval non puo'
+    trovare, e perderle in silenzio e' peggio che aspettare."""
     vero = indicizza.VLM_MODELLO
     indicizza.VLM_MODELLO = ""
     try:
-        immagini = [("finta-immagine", 7, "descrizione di Docling")]
-        assert indicizza._descrivi_col_titolo(immagini, {7: "# DEKOSTEINE"}) == immagini
+        immagini = [("finta-immagine", 7, "descrizione di Docling", None)]
+        rimandato = False
+        try:
+            indicizza._descrivi_col_titolo(immagini, {7: "# DEKOSTEINE"})
+        except indicizza.Rimandato:
+            rimandato = True
+        assert rimandato, "senza VLM il file va rimandato, non dato per letto"
     finally:
         indicizza.VLM_MODELLO = vero
 
@@ -474,9 +449,10 @@ def test_le_descrizioni_delle_figure_entrano_nel_testo_col_prodotto():
 
     Con il titolo davanti: «Immagine: pietre rosse» da sola non dice di che
     prodotto si parla."""
-    immagini = [("f/7_67.png", 7, "red decorative stones, 9-13 mm"),
-                ("f/7_99.png", 7, ""),                     # senza descrizione: si salta
-                ("f/9_10.png", 9, "una scatola di cartone")]
+    immagini = [("f/7_67.png", 7, "red decorative stones, 9-13 mm", "informazione"),
+                ("f/7_99.png", 7, "", None),                     # senza descrizione: si salta
+                ("f/9_10.png", 9, "una scatola di cartone", None),
+                ("f/9_11.png", 9, "logo decorativo", "corredo")]  # corredo: non entra nella ricerca
     titoli = {7: "# DEKOSTEINE pietre decorative 9 - 13 mm"}
     pezzi = indicizza._pezzi_dalle_figure(immagini, titoli)
     assert len(pezzi) == 2, pezzi
@@ -517,6 +493,58 @@ def test_un_id_con_la_barra_si_scarica_lo_stesso():
     finally:
         urllib.request.urlopen = vera
         indicizza.MODELLI_HOST = vecchio
+
+
+def test_il_campione_dell_indagine_spreade_le_pagine():
+    """Pochi fogli: il documento intero. Molti: il 5%, senza esagerare, e a
+    partire dall'inizio (i cataloghi hanno tutte le pagine uguali)."""
+    from indicizza import _campione_pagine
+    assert _campione_pagine(0) == []
+    assert _campione_pagine(1) == [0]
+    assert _campione_pagine(3) == [0, 1, 2]
+    assert _campione_pagine(12) == [0, 2, 4, 7, 9]     # 5 pagine, equidistanti
+    grande = _campione_pagine(1000)
+    assert len(grande) == 12 and 0 in grande and max(grande) < 1000
+
+
+def test_il_tipo_si_legge_sulle_quattro_righe():
+    from indicizza import PRODUCE, TIPI, _valore
+    risposta = ("TIPO: tabella prezzi\nCOSA: listino distributori 2026\n"
+                "TESTO: leggibile\nPRODUCE: dati")
+    # «tabella prezzi» e' un valore solo: se si guardassero le parole una per una
+    # nessuna corrisponderebbe e il voto della pagina andrebbe perso.
+    assert _valore(risposta, "TIPO", TIPI) == "tabella prezzi"
+    assert _valore(risposta, "PRODUCE", PRODUCE) == "dati"
+    assert _valore(risposta, "COSA", ()) == "listino distributori 2026"
+    # Una parola che non abbiamo chiesto non viene forzata dentro l'elenco: si
+    # restituisce cosi' com'e' e chi chiama vede che il modello ha inventato.
+    assert _valore("TIPO: brochure", "TIPO", TIPI) == "brochure"
+    # «testo e immagini» non e' un valore: la parola che c'e' («testo») lo e', e
+    # resta un voto vero. La riga grezza resta nella carta, quindi la
+    # differenza si vede.
+    assert _valore("PRODUCE: testo e immagini", "PRODUCE", PRODUCE) == "testo"
+
+
+def test_l_indagine_si_riusa_sullo_stesso_file(tmp_path):
+    """La carta su disco e' la prova, la riga in banca dati e' la copia: se la
+    carta c'e' ed e' dello stesso file, il VLM non si richiama."""
+    import json
+    from indicizza import IMPRONTA_INDAGINE, indaga_documento
+    indicizza.RADICE = tmp_path                      # il resto dei test non tocca /cartelle
+    dentro = "fonte/_sorgenti/abcdef0123456789"
+    carta = tmp_path / dentro / f"identita-{IMPRONTA_INDAGINE}.json"
+    carta.parent.mkdir(parents=True)
+    noto = {"tipo": "catalogo", "impronta": "abc", "impronta_istruzioni": IMPRONTA_INDAGINE}
+    carta.write_text(json.dumps(noto), encoding="utf-8")
+    p = tmp_path / "prova.pdf"
+    p.write_bytes(b"%PDF-1.4")
+
+    prima = carta.stat().st_mtime_ns
+    assert indaga_documento(p, dentro, "abc", noto=noto) is noto
+    assert carta.stat().st_mtime_ns == prima, "il riuso non deve riscrivere la carta"
+
+    # Un file non-PDF non si indaga: e' un caso limite, non un tipo.
+    assert indaga_documento(tmp_path / "prova.docx", dentro, "abc", noto=None) is None
 
 
 if __name__ == "__main__":

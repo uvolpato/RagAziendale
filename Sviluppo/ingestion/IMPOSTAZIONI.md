@@ -6,7 +6,8 @@ capire perché un file è stato letto in un certo modo, e sapere cosa diventerà
 configurabile **per fonte** quando si farà D16 (`DECISIONI-APERTE.md`).
 
 I valori misurati vengono dalle prove del 20/09/2026 su cataloghi prodotto veri
-(RTX 5060 Ti 16 GB); i tempi sono in `PRESTAZIONI.md`.
+(RTX 5060 Ti 16 GB); i tempi sono in `PRESTAZIONI.md`, e **cosa esce da un giro
+di indicizzazione** — su disco e in banca dati — è in `COSA-PRODUCE.md`.
 
 ## Tre livelli, e non si scambiano
 
@@ -41,9 +42,11 @@ I valori misurati vengono dalle prove del 20/09/2026 su cataloghi prodotto veri
 | scala dell'immagine mandata al VLM | quanto grande la vede chi la descrive | 3.0 — **misurato: non costa tempo** (91 s contro 81) | **fonte** — oggi nel codice |
 | `picture_area_threshold` | sotto questa frazione della pagina, la figura non si descrive | 0,15 — a 0,05 si descrivevano 324 immagini su 41 pagine, quasi tutte loghi e cornici | **fonte** — oggi nel codice |
 
-Le immagini si scrivono **blocco per blocco** in `<cartella fonte>/_immagini/<hash del documento>/`.
+Le immagini si scrivono **blocco per blocco** in
+`<cartella fonte>/_sorgenti/<hash del documento>/immagini/`.
 Tenerle in memoria fino a fine file costava 3,3 GB dei 4 del container a metà
-di un catalogo da 107 pagine.
+di un catalogo da 107 pagine. Cosa produce un giro, su disco e in banca dati:
+`COSA-PRODUCE.md`.
 
 ## 3. Descrizione delle immagini
 

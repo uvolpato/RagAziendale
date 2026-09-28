@@ -294,6 +294,13 @@ MARCA_ALTRO = "Vuoi che te le elenchi tutte?"
 # _blocco_offerta) e RICONOSCERLA nella cronologia per toglierla
 # (_senza_aggiunte). Una sola costante, cosi' non possono divergere.
 MARCA_FONTI = "_Fonti: "
+# I numeri di fonte in piccolo (¹²³…) con cui si marca ogni affermazione; il
+# decimo in poi non ha un glifo Unicode e si scrive fra parentesi quadre.
+APICI = "¹²³⁴⁵⁶⁷⁸⁹"
+
+
+def _apice(n: int) -> str:
+    return APICI[n - 1] if 1 <= n <= len(APICI) else f"[{n}]"
 # Intestazione e riga di separazione della tabella delle figure: celle VUOTE,
 # solo barre, trattini e spazi. Tolta la riga con le immagini resterebbero
 # orfane, e il modello se le rivedrebbe in cronologia. Una tabella vera del
@@ -358,16 +365,19 @@ def _domanda_precedente(messages) -> str:
 # due voci e sembra che il resto non esista (visto il 20/09/2026).
 ELENCO = re.compile(r"\b(quali|quante|elenca|elencare|lista|tutt[ei]|che\s+\w+\s+ci\s+sono|"
                     r"che\s+\w+\s+(avete|ci sono|esistono)|assortimento|gamma|catalogo completo)\b", re.I)
-PEZZI_ELENCO = 20
+PEZZI_ELENCO = 120
 
 
 def pezzi_da_recuperare(domanda: str) -> int:
-    """Quanti pezzi mettere nel contesto: di piu' per le domande di elenco."""
-    return PEZZI_ELENCO if ELENCO.search(domanda or "") else 8
+    """Quanti pezzi mettere nel contesto: un pool AMPIO per i cataloghi, dove
+    una sola domanda copre tante pagine (»un sacco di risultati», 25/09/2026);
+    per l'elenco completo ancora di piu'. Lo strozzo a 8 aveva fatto sparire
+    interi gruppi di articoli dalla risposta."""
+    return PEZZI_ELENCO if ELENCO.search(domanda or "") else 60
 
 
-def _fonti_citate(righe, base: str = "", utente: str = "") -> str:
-    """Documento e pagina di ogni pezzo citato, in coda alla risposta.
+def _fonti_citate(risposta, righe, base: str = "", utente: str = "") -> str:
+    """Documento e pagina di ogni pezzo CITATO, in coda alla risposta.
 
     Il modello cita «[7]» e basta: chi legge non ha modo di sapere che [7] e'
     «CATALOGO IPURO 2025.pdf, pagina 8», quindi per verificare deve sfogliare a
@@ -377,17 +387,26 @@ def _fonti_citate(righe, base: str = "", utente: str = "") -> str:
     I numeri corrispondono all'ordine in cui i pezzi entrano nel CONTESTO
     (prompt.contesto), quindi [n] qui e [n] nella risposta sono lo stesso pezzo.
 
+    Nella coda vanno i pezzi che il corpo CITA, non tutti quelli recuperati: la
+    coda spiega i numeri che si leggono nella risposta, quindi una voce che
+    nel corpo non c'e' e' un numero che non porta a niente (26/09/2026: dodici
+    voci per una risposta che ne citava tre).
+
     Una pagina che compare in piu' pezzi si scrive UNA volta sola, con tutti i
     suoi numeri davanti. Su un catalogo e' la norma — un prodotto occupa testo,
     tabella e descrizione della figura — e l'elenco veniva fuori cosi':
     «[2] pagina 19 · [3] pagina 20 · [4] pagina 20 · [5] pagina 20». Otto voci
     per due pagine: chi legge non ha piu' voglia di verificare niente.
     """
-    if not righe:
+    if not risposta or not righe:
         return ""
     per_pagina = {}
     for i, r in enumerate(righe, 1):
+        if not re.search(rf"\[{i}\]", risposta):
+            continue
         per_pagina.setdefault((r["documento"], r.get("page"), r.get("source_id")), []).append(i)
+    if not per_pagina:
+        return ""
     voci = []
     for (documento, page, source_id), numeri in per_pagina.items():
         pagina = f", pagina {page}" if page is not None else ""
@@ -403,7 +422,10 @@ def _fonti_citate(righe, base: str = "", utente: str = "") -> str:
             url = documento_mod.firma_url(source_id, documento, page, base, utente)
             etichetta = f"[{etichetta}]({url})"
         voci.append("".join(f"[{n}]" for n in numeri) + f" {etichetta}")
-    return "\n\n---\n" + MARCA_FONTI + " · ".join(voci) + "_"
+    # Le fonti in riga di citazione: le stesse dei cataloghi (numeri in piccolo,
+    # fonti in coda), cosi' che la provenienza si legga uguale su un manuale e
+    # su un catalogo.
+    return "\n\n---\n> " + MARCA_FONTI + " · ".join(voci) + "_"
 
 
 def _figura_in_breve(descrizione) -> str:
@@ -416,19 +438,32 @@ def _figura_in_breve(descrizione) -> str:
     return " ".join(d.split())[:220]
 
 
+def _figura_distinta(descrizione) -> str:
+    """La chiave con cui riconoscere che due didascalie fotografano la STESSA
+    figura: l'inizio del breve, con nome e codice del prodotto. Molti crop
+    inquadrano la stessa poinsettia e condividono il prefisso; due prodotti
+    diversi dello stesso catalogo no (verificato il 26/09/2026: la stessa
+    «Poinsettie x5 im Topf» tornava quindici volte in un elenco)."""
+    return _figura_in_breve(descrizione)[:64]
+
+
 def _elenco_figure(righe, base, utente, tutte=False) -> str:
     """Le figure trovate, in un elenco strutturato: descrizione + link alla
-    pagina. E' la risposta per i PRODOTTI: non un «Fonti» in fondo, ma l'elenco
-    stesso — ogni voce dice cos'e' e porta alla pagina che lo mostra.
+    pagina. Lo si usa quando si chiedono TUTTE le voci o quando l'agente non ha
+    risposto: nella risposta normale i prodotti li narra l'agente in prosa e i
+    collegamenti li mette `_risposta_prodotti`.
 
     Non si elencano tutte (se `tutte` e' falso): se ne mostrano al massimo
-    LIMITE_ELENCO, e si offre il resto invece di annegare la risposta."""
+    LIMITE_ELENCO, e si offre il resto invece di annegare la risposta. Una
+    pagina di catalogo mostra piu' prodotti, ma molti crop inquadrano lo
+    stesso prodotto: si deduplicano le didascalie DISTINTE (vedi
+    `_figura_distinta`), per pagina resta la prima occorrenza di ognuna."""
     voci, viste = [], set()
     contate = 0
     for r in righe:
         if r.get("descrizione") is None:
             continue
-        chiave = (r.get("documento"), r.get("page"))
+        chiave = (r.get("documento"), r.get("page"), _figura_distinta(r["descrizione"]))
         if chiave in viste:
             continue
         viste.add(chiave)
@@ -445,6 +480,168 @@ def _elenco_figure(righe, base, utente, tutte=False) -> str:
     if resto > 0 and not tutte:
         testo += f"\n\n_Ci sono altre {resto} voci. Vuoi che te le elenchi tutte?_"
     return testo
+
+
+def _norma(testo: str) -> str:
+    """Il testo appiattito (senza spazi, punteggiatura, estensione): per
+    riconoscere «Catalogo Gasper Autunno Natale 2026.pdf» nella prosa
+    dell'agente anche quando lui scrive «pagina 20 del catalogo Gasper»."""
+    return re.sub(r"\W+", "", testo or "").lower()
+
+
+def _documento_vicino(prima: str, dopo: str, per_doc: dict) -> str | None:
+    """A quale documento recuperato appartiene una citazione «pagina N»:
+    all'ultimo documento nominato PRIMA della citazione (la sezione di catalogo
+    che la contiene, anche a molte righe di distanza), che e' come si legge il
+    testo. Finche' si guardava solo una finestra stretta attorno alla citazione,
+    le pagine in fondo a un lungo elenco restavano orfane, senza collegamento
+    (verificato il 26/09/2026 con elenchi su piu' cataloghi). Se nessun
+    documento precede la citazione, si prende il piu' vicino nel testo che la
+    segue («pagina 20 del catalogo Gasper»). Un documento recuperato ma mai
+    nominato non puo' possedere citazioni. Il documento si riconosce anche da
+    una sola parte del nome («Gasper»)."""
+    candidati = []
+    for nome_norm, (nome, _source_id) in per_doc.items():
+        varianti = {nome_norm}
+        if nome_norm.endswith("pdf"):
+            varianti.add(nome_norm[:-3])
+        candidati.append((nome, varianti))
+    app = _norma(prima)
+    ultimo, pos = None, -1
+    for nome, varianti in candidati:
+        for cand in varianti:
+            p = app.rfind(cand)
+            if p > pos:
+                ultimo, pos = nome, p
+    if ultimo:
+        return ultimo
+    app = _norma(dopo)
+    migliore, dist = None, 10 ** 9
+    for nome, varianti in candidati:
+        for cand in varianti:
+            p = app.find(cand)
+            if 0 <= p < dist:
+                migliore, dist = nome, p
+    return migliore
+
+
+def _collega_pagine(risposta, righe, conn, base, utente):
+    """I riferimenti «pagina N» nella prosa dell'agente diventano collegamenti
+    alla pagina del documento da cui arrivano. La pagina si risolve su TUTTE le
+    figure dei documenti coinvolti nel recupero (non solo quelle tornate in
+    `righe`): un articolo che l'agente cita a una pagina non richiamata nel
+    turno trova comunque il suo collegamento. Mai un collegamento a una pagina
+    che non esiste, o a un documento non recuperato. Torna
+    (testo, {chiavi (documento, pagina) collegate}, `ordine`): `ordine` assegna
+    a ogni documento il suo numero di fonte in piccolo (¹, ²…), nell'ordine in
+    cui e' citato per la prima volta, per marcare l'affermazione con la fonte
+    (26/09/2026)."""
+    if not risposta or not righe:
+        return risposta, set(), []
+    validi, per_doc = {}, {}
+    for r in righe:
+        if r.get("page") is None:
+            continue
+        validi.setdefault((r["documento"], r["page"]), r["source_id"])
+        per_doc.setdefault(_norma(r["documento"]), (r["documento"], r["source_id"]))
+    for nome, source_id in set(per_doc.values()):
+        for riga in conn.execute(
+            "SELECT page FROM immagini WHERE source_id=%s AND documento=%s AND page IS NOT NULL",
+            (source_id, nome)):
+            validi.setdefault((nome, riga["page"]), source_id)
+    if not validi:
+        return risposta, set(), []
+    da_sostituire, collegati = [], set()
+    ordine, numeri = [], {}
+    for m in re.finditer(r"(?i)\b(?:pagin[ae]|pagg?\.?|pp\.|p\.)\s*(\d+(?:\s*(?:,|;|e|–|-)\s*\d+)*)", risposta):
+        doc = _documento_vicino(risposta[:m.start()], risposta[m.end():m.end() + 80], per_doc)
+        if not doc and len(per_doc) == 1:
+            doc = next(iter(per_doc.values()))[0]
+        if not doc:
+            continue
+        pezzi, cursore, fatto = [], m.start(), False
+        for d in re.finditer(r"\d+", risposta[m.start():m.end()]):
+            num = int(d.group())
+            pre = risposta[cursore:m.start() + d.start()]
+            if (doc, num) in validi:
+                url = documento_mod.firma_url(validi[(doc, num)], doc, num, base, utente)
+                pezzi.append(pre + f"[{num}]({url})")
+                collegati.add((doc, num))
+                fatto = True
+            else:
+                pezzi.append(pre + d.group())
+            cursore = m.start() + d.end()
+        pezzi.append(risposta[cursore:m.end()])
+        if fatto:
+            if doc not in numeri:
+                apice = _apice(len(ordine) + 1)
+                numeri[doc] = apice
+                ordine.append((doc, apice))
+            # Il numero in piccolo dopo il collegamento marca l'affermazione.
+            da_sostituire.append((m.start(), m.end(), "".join(pezzi) + numeri[doc]))
+    for inizio, fine, testo in sorted(da_sostituire, reverse=True):
+        risposta = risposta[:inizio] + testo + risposta[fine:]
+    return risposta, collegati, ordine
+
+
+# La coda «Fonti:» in fondo alle risposte di catalogo e' ACCESA di default dal
+# 26/09/2026: le fonti si lasciano, solo in piccolo (riga in citazione) e
+# numerate — ogni affermazione porta il numero della fonte a pedice. La vecchia
+# coda «Altre pagine con i prodotti:» era spenta perche' re-iniettava come
+# prodotti le didascalie che l'agente aveva scartato («Apple», «nail polish
+# bottles»); qui invece si elencano solo documento e pagine. Si ricomincia la
+# procedura: CODA_ARTICOLI=0 la disattiva, e quando e' accesa le pagine si
+# deduplicano.
+AUTOCODA = os.environ.get("CODA_ARTICOLI", "1") != "0"
+
+
+def _risposta_prodotti(risposta, righe, conn, base, utente) -> str:
+    """La risposta di catalogo finita: la prosa dell'agente con i riferimenti
+    «pagina N» trasformati in collegamenti e ogni affermazione marcata dal
+    numero in piccolo della sua fonte. In coda, le Fonti (documento e pagine)
+    in piccolo, numerate: a ogni fonte il suo numero, nell'ordine in cui e'
+    citata nel corpo. La coda si disattiva con CODA_ARTICOLI=0.
+
+    Le pagini della coda sono quelle CITATE nel corpo, non tutte quelle
+    recuperate: e' la spiegazione dei numeri in piccolo, quindi elencare pagine
+    che il corpo non nomina mette in coda voci che non si possono seguire
+    (26/09/2026: «pagine 20, 24, 30, 40, 42, 60, 65, 85, 112, 116, 131, 132,
+    133, 134, 135» per una risposta che ne citava sei)."""
+    testo, collegati, ordine = _collega_pagine(risposta, righe, conn, base, utente)
+    if not AUTOCODA or not collegati:
+        return testo
+    # Per costruzione le pagine citate e i documenti numerati sono gli stessi:
+    # una pagina finisce in `collegati` solo mentre al suo documento si assegna
+    # il numero in piccolo. Quindi qui la coda non puo' divergere dal corpo.
+    citate = {}
+    for doc, pagina in collegati:
+        citate.setdefault(doc, set()).add(pagina)
+    voci = []
+    for doc, apice in ordine:
+        pagine = ", ".join(str(p) for p in sorted(citate.get(doc, ())))
+        voci.append(f"{apice} **{doc}** — pagine {pagine}")
+    testo += "\n\n---\n> " + MARCA_FONTI + " · ".join(voci) + "_"
+    return testo
+
+
+def _righe_sono_catalogo(conn, righe) -> bool:
+    """True se QUALCHE documento coinvolto nella risposta e' di tipo
+    'catalogo'. E' il campo `tipo`, deciso dall'ingestione a fine lettura
+    (migrazione 022): la proxy «il pezzo ha una figura» non basta, perche'
+    sullo stesso documento possono tornare o no figure nella singola risposta.
+    """
+    if not righe:
+        return False
+    gia_visti = set()
+    for r in righe:
+        chiave = (r.get("source_id"), r.get("documento"))
+        if not chiave[0] or not chiave[1] or chiave in gia_visti:
+            continue
+        gia_visti.add(chiave)
+        if conn.execute("SELECT 1 FROM documenti WHERE source_id = %s AND documento = %s"
+                        " AND tipo = 'catalogo'", chiave).fetchone():
+            return True
+    return False
 
 
 LIMITE_ELENCO = 5        # quante figure elencare prima di offrire il resto
@@ -708,14 +905,15 @@ def _stream_litellm(messages, rotta, uso):
 
 
 def _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
-                      token_in, token_out, latenza_ms, riscritta=False, cercata=None):
+                      token_in, token_out, latenza_ms, riscritta=False, cercata=None,
+                      traccia=None, risposta=None):
     # token_in/out arrivano dall'ultimo chunk di LiteLLM (stream_options
     # include_usage); se la rotta non li espone restano NULL (colonna ammessa).
     conn.execute(
         """INSERT INTO traces (conversation_id, utente, domanda, chunk_ids,
                                retrieval_vuoto, taint, modello, token_in, token_out, latenza_ms,
-                               riformulazione)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                               riformulazione, strumenti, ricerca, risposta)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (conversation_id, utente,
          # Nella traccia resta la domanda VERA; se e' stata riscritta per la
          # ricerca si annota anche quella, perche' una risposta strana si
@@ -725,7 +923,13 @@ def _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
          not righe,
          decisione.get("fonte_contaminante") if decisione.get("interno") else None,
          decisione.get("rotta"),
-         token_in, token_out, latenza_ms, riscritta))
+         token_in, token_out, latenza_ms, riscritta,
+         # Cosa ha chiamato e cosa ha cercato davvero, e la risposta come e'
+         # stata mandata: senza, ogni diagnosi su una risposta sbagliata e' una
+         # ricostruzione a posteriori (migrazione 024).
+         json.dumps(traccia.get("strumenti"), ensure_ascii=False) if traccia else None,
+         (traccia or {}).get("ricerca"),
+         risposta))
     conn.commit()
 
 
@@ -792,9 +996,9 @@ async def chat(request: Request):
     # il tetto dell'elenco breve.
     if vuole_il_resto(domanda, _ultima_risposta(storico_messaggi)):
         precedente = _domanda_precedente(storico_messaggi)
-        righe, _ = agente.cerca(conn, precedente, gruppi,
-                                limite=PEZZI_ELENCO,
-                                storia=memoria.comprimi(storico_messaggi))
+        righe, _, _ = agente.cerca(conn, precedente, gruppi,
+                                   limite=PEZZI_ELENCO,
+                                   storia=memoria.comprimi(storico_messaggi))
         elenco = _elenco_figure(righe, f"https://{APP_HOST}", utente, tutte=True)
         conn.close()
         if elenco:
@@ -805,20 +1009,21 @@ async def chat(request: Request):
     # prodotti, legge il testo per i documenti, risponde ai saluti senza
     # cercare. Sostituisce la catena fissa (riformula -> vincoli -> glossario ->
     # ricerca -> gate -> prompt).
-    righe, risposta = agente.cerca(conn, domanda, gruppi,
-                                   limite=pezzi_da_recuperare(domanda),
-                                   storia=memoria.comprimi(storico_messaggi))
+    righe, risposta, traccia = agente.cerca(conn, domanda, gruppi,
+                                            limite=pezzi_da_recuperare(domanda),
+                                            storia=memoria.comprimi(storico_messaggi))
 
     # La RISPOSTA del modello (articolata), con i link alle pagine come Fonti.
-    # Prima si rispondeva coi PRODOTTI sempre con l'elenco grezzo delle figure
-    # perche' il modello inventava la pagina; col guardrail + Qwen3-14B la
-    # risposta e' affidabile. L'elenco grezzo resta come ripiego.
+    # Per i CATALOGHI (tipo deciso dall'ingestione, migrazione 022) la risposta
+    # si chiude con l'elenco dei prodotti + link alla pagina: e' li' che gli
+    # elementi della risposta portano alla pagina. Per i documenti basta la
+    # citazione nelle fonti.
     if risposta:
-        # Per i CATALOGHI (figure) la risposta si chiude con l'elenco dei
-        # prodotti + link alla pagina; per i documenti basta la citazione
-        # nelle fonti.
-        elenco = _elenco_figure(righe, f"https://{APP_HOST}", utente)
-        coda = ("\n\n" + elenco) if elenco else _fonti_citate(righe, f"https://{APP_HOST}", utente)
+        if _righe_sono_catalogo(conn, righe):
+            risposta = _risposta_prodotti(risposta, righe, conn, f"https://{APP_HOST}", utente)
+            coda = ""
+        else:
+            coda = _fonti_citate(risposta, righe, f"https://{APP_HOST}", utente)
         def gen():
             try:
                 yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': risposta}, 'index': 0}], 'model': MODEL_NAME})}\n\n"
@@ -828,7 +1033,8 @@ async def chat(request: Request):
             finally:
                 _registra_traccia(conn, conversation_id, utente, domanda, righe,
                                   {"rotta": "agente"}, None, None,
-                                  int((time.monotonic() - inizio) * 1000))
+                                  int((time.monotonic() - inizio) * 1000),
+                                  traccia=traccia, risposta=risposta + coda)
                 conn.close()
         return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -842,7 +1048,8 @@ async def chat(request: Request):
             finally:
                 _registra_traccia(conn, conversation_id, utente, domanda, righe,
                                   {"rotta": "agente"}, None, None,
-                                  int((time.monotonic() - inizio) * 1000))
+                                  int((time.monotonic() - inizio) * 1000),
+                                  traccia=traccia, risposta=testo)
                 conn.close()
         return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -855,11 +1062,15 @@ async def chat(request: Request):
     messaggi += storico
 
     def gen():
-        uso = {}
+        uso, testo = {}, []
         try:
             for pezzo in _stream_litellm(messaggi, "ragionamento", uso):
+                testo.append(pezzo)
                 yield pezzo
-            finale = _fonti_citate(righe, f"https://{APP_HOST}", utente)
+            # La coda elenca i pezzi CITATI: serve il testo, che qui arriva a
+            # pezzi dallo stream. Si tiene unito e si cerca dentro: i numeri
+            # sono cifre tra parentesi quadre, che nello SSE viaggiano come sono.
+            finale = _fonti_citate("".join(testo), righe, f"https://{APP_HOST}", utente)
             if finale:
                 yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': finale}, 'index': 0}]})}\n\n"
             yield "data: [DONE]\n\n"
@@ -870,7 +1081,8 @@ async def chat(request: Request):
             _registra_traccia(conn, conversation_id, utente, domanda, righe,
                               {"rotta": "ragionamento"}, uso.get("token_in"),
                               uso.get("token_out"),
-                              int((time.monotonic() - inizio) * 1000))
+                              int((time.monotonic() - inizio) * 1000),
+                              traccia=traccia, risposta="".join(testo))
             conn.close()
 
     return StreamingResponse(gen(), media_type="text/event-stream")
@@ -942,3 +1154,43 @@ def servizio_immagine(request: Request, img_id: int, scade: str = "", firma: str
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+class _NessunaQuery:
+    """Per la prova: `_collega_pagine` interroga le immagini del documento, e
+    qui non serve sapere quali sono."""
+
+    def execute(self, *a, **k):
+        return []
+
+
+def _prova():
+    """La coda delle fonti elenca le citazioni del CORPO, non tutta la pool.
+
+    Il difetto era esattamente questo (26/09/2026: la coda elencava quindici
+    pagine per una risposta che ne citava sei, e sui documenti di testo faceva
+    comparire [n] che nella risposta non c'erano): chi legge la coda per
+    verificare un prodotto e' mandato a cercare una pagina che il corpo non ha
+    mai nominato.
+    """
+    righe = [{"id": 1, "documento": "cat.pdf", "page": 20, "source_id": "s1",
+              "descrizione": "Object: palla", "content": "palla"},
+             {"id": 2, "documento": "cat.pdf", "page": 40, "source_id": "s1",
+              "descrizione": "Object: cesto", "content": "cesto"}]
+    testo = _risposta_prodotti("Il set e' a pagina 20 del catalogo.", righe,
+                               _NessunaQuery(), "", "u")
+    # La coda finisce con «— pagine 20_»: due pagine darebbero «pagine 20, 40_».
+    assert testo.endswith("— pagine 20_"), testo[-140:]
+    # Il corpo senza citazioni non ha numeri da spiegare: nessuna coda.
+    assert _risposta_prodotti("Il set e' in catalogo.", righe,
+                              _NessunaQuery(), "", "u").find("Fonti:") == -1
+    # Documenti di testo: solo i numeri presenti nella risposta. `[2]` e' il
+    # pezzo numero 2 del contesto, cioe' la pagina 40: la 20 non deve comparire.
+    coda = _fonti_citate("Il manuale dice [2] che il limite e' 3 pezzi.", righe)
+    assert "pagina 40" in coda and "pagina 20" not in coda, coda
+    assert _fonti_citate("Il manuale non cita nessun pezzo.", righe) == ""
+    print("main: fonti allineate alle citazioni")
+
+
+if __name__ == "__main__":
+    _prova()

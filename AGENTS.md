@@ -7,6 +7,10 @@ riepiloghi estesi, niente spiegazioni che l'utente non ha chiesto: una risposta
 breve e precisa. Se serve dettaglio, l'utente lo chiede. Non anticipare
 approfondimenti non richiesti.
 
+Vale anche per le «una cosa che ho notato»: **un approfondimento non richiesto
+è già una violazione, anche se è corretto e anche se è importante.** La
+profondità è opt-in: la chiedi tu, e arriva quando la chiedi.
+
 ## Ogni problema si affronta strutturalmente — mai con soluzioni posticce
 
 Non esistono "soluzioni per il caso specifico": un sintomo va ricondotto alla

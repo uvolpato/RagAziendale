@@ -1,0 +1,24 @@
+-- Migrazione 025 — l'INDAGINE sul documento, che diventa parte dell'indicizzazione.
+--
+-- `documenti.tipo` finora lo decideva la migrazione 022 con una proxy: «ha
+-- immagini, quindi è un catalogo». Ma le immagini le estrae il reader, quindi la
+-- risposta era «è un catalogo? dipende da quale reader è passato». Il caso che lo
+-- dimostra è `Catalogo Gasper Autunno Natale 2026.pdf`: 761 pezzi, il secondo
+-- documento più grosso del database, etichettato `documento` e senza una figura,
+-- perché passò dal reader che non le estrae. Non è solo un'etichetta sbagliata:
+-- il documento è anche il peggiore dei due casi, perché l'etichetta nasconde il
+-- sotto-indicizzamento.
+--
+-- Da qui `tipo` prende il valore che esce dall'indagine sul campione di pagine
+-- (manuale, catalogo, tabella prezzi, ordine, fattura, scheda, altro). Il default
+-- `'documento'` resta il RIPIEGO per chi non è ancora stato valutato, non più la
+-- fonte: `orchestratore/main.py` chiede `tipo = 'catalogo'` per impaginare la
+-- risposta a schede prodotto, e quel valore resta uno dei nostri.
+--
+-- `indagine` tiene il resto, che è più grande di una colonna e sta male in una:
+-- la distribuzione dei voti pagina per pagina, le misure del layer testuale, il
+-- percorso della carta d'identità e l'impronta delle istruzioni con cui è stata
+-- prodotta. Le risposte grezze NON stanno qui: stanno nella carta, su disco, e
+-- questa colonna dice solo dove. Una riga grossa e non interrogabile dentro il DB
+-- è la copia peggiore.
+ALTER TABLE documenti ADD COLUMN indagine jsonb;

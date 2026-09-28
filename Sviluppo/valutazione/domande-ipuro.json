@@ -1,0 +1,149 @@
+{
+  "fonte": "acquisti-decobrands",
+  "documento": "CATALOGO IPURO 2025.pdf",
+  "gruppi": ["acquisti", "azienda-decobrands"],
+  "nota": "Domande costruite dal catalogo ipuro 2025 (Gries Deco Company). `riscontro` sono stringhe distintive estratte dal testo del catalogo, usate per dire automaticamente se il recupero ha trovato la pagina giusta. Il catalogo e' un listino B2B di profumazione d'ambiente: le risposte stanno tutte nel TESTO (note, formati, certificazioni, misure). Le figure non sono indicizzate (DESCRIVI_FIGURE=0), quindi le domande non toccano attributi solo visivi.",
+  "pagine_indice": [],
+  "domande": [
+    {
+      "id": 1,
+      "categoria": "Formati e packaging",
+      "domanda": "Per la linea ipuro EXCLUSIVE, in quali formati viene venduta ogni fragranza? Vorrei sapere tutte le confezioni disponibili.",
+      "riscontro": ["Sticks 240 ml", "Scented candle 270 g", "Refill 240 ml"],
+      "corta": "formati linea exclusive"
+    },
+    {
+      "id": 2,
+      "categoria": "Note aromatiche",
+      "domanda": "Avete una fragranza che abbia una nota di zafferano e di incenso, con accordi di legno di sandalo? Quale linea e quale nome?",
+      "riscontro": ["oud intense", "Saffron", "incense"],
+      "corta": "profumo con zafferano e incenso"
+    },
+    {
+      "id": 3,
+      "categoria": "Formati e packaging",
+      "domanda": "Quali fragranze della linea CLASSIC sono disponibili anche come sapone liquido, e in che formato?",
+      "riscontro": ["Soap 250 ml", "jardin", "orchidee"],
+      "corta": "sapone liquido classic"
+    },
+    {
+      "id": 4,
+      "categoria": "Certificazioni e composizione",
+      "domanda": "I saponi liquidi CLASSIC sono vegani? E da cosa sono esenti?",
+      "riscontro": ["VEGAN", "dermatologically tested", "Microplastics"],
+      "corta": "saponi classic vegani"
+    },
+    {
+      "id": 5,
+      "categoria": "Assortimenti",
+      "domanda": "Quante fragranze della serie CLASSIC sono disponibili come profumo per auto?",
+      "riscontro": ["CAR LINE", "car fragrance", "5 bestsellers"],
+      "corta": "profumo per auto classic"
+    },
+    {
+      "id": 6,
+      "categoria": "Espositori",
+      "domanda": "Quali sono le dimensioni esterne della testata di gondola CLASSIC nella larghezza da 1250 mm?",
+      "riscontro": ["HEAD GONDOLA", "1314"],
+      "corta": "dimensioni testata gondola"
+    },
+    {
+      "id": 7,
+      "categoria": "Edizioni limitate",
+      "domanda": "Nell'edizione estiva LIMITET EDITION, quali isole sono rappresentate dalle fragranze?",
+      "riscontro": ["Mykonos", "Mallorca", "Capri"],
+      "corta": "isole edizione estiva"
+    },
+    {
+      "id": 8,
+      "categoria": "Note aromatiche",
+      "domanda": "Cerco una fragranza invernale con note di mandorla, pesca e caramello. Qual e' e a quale collezione appartiene?",
+      "riscontro": ["WARM GLAMOUR", "Almond", "caramel"],
+      "corta": "profumo invernale mandorla caramello"
+    },
+    {
+      "id": 9,
+      "categoria": "Edizioni limitate",
+      "domanda": "Quale fragranza natalizia ha note di arancia, miele e anice?",
+      "riscontro": ["MAGICAL MARKET", "aniseed", "honey"],
+      "corta": "profumo di natale miele"
+    },
+    {
+      "id": 10,
+      "categoria": "Formati e packaging",
+      "domanda": "Nella linea ATELIER, quale e' il formato piu' grande di candela e quale il piu' grande di ricarica?",
+      "riscontro": ["2000 g", "1000 ml"],
+      "corta": "formati candele atelier"
+    },
+    {
+      "id": 11,
+      "categoria": "Formati e packaging",
+      "domanda": "Quali formati offre la linea ESSENTIALS per le fragranze? Elenca tutto.",
+      "riscontro": ["Room spray 120 ml", "Scent plug", "Refill 200 ml"],
+      "corta": "formati essentials"
+    },
+    {
+      "id": 12,
+      "categoria": "Certificazioni e composizione",
+      "domanda": "Le candele della linea ESSENTIALS sono prodotte con cera vegana? Da quando?",
+      "riscontro": ["VEGAN WAX", "2025"],
+      "corta": "candele essentials vegane"
+    },
+    {
+      "id": 13,
+      "categoria": "Collezioni",
+      "domanda": "Quali sono le quattro varianti della collezione Rose Revolution?",
+      "riscontro": ["ROSE REVOLUTION", "PURE ROSE", "DARK ROSE"],
+      "corta": "varianti rose revolution"
+    },
+    {
+      "id": 14,
+      "categoria": "Collezioni",
+      "domanda": "Quali citta' europee sono rappresentate nella Europe Collection?",
+      "riscontro": ["Sweet Paris", "Lisboa", "Stockholm"],
+      "corta": "citta collezione europea"
+    },
+    {
+      "id": 15,
+      "categoria": "Specifiche tecniche",
+      "domanda": "Per quanto tempo funziona a batteria il diffusore Air Sonic e quale superficie copre?",
+      "riscontro": ["7 hours", "Aroma Mood", "25"],
+      "corta": "batteria diffusore air sonic"
+    },
+    {
+      "id": 16,
+      "categoria": "Certificazioni e composizione",
+      "domanda": "Gli oli profumati Air Sonic sono biodegradabili e sostenibili? Cosa dichiara il catalogo?",
+      "riscontro": ["90% biodegradable", "recycled plastic"],
+      "corta": "air sonic biodegradabile"
+    },
+    {
+      "id": 17,
+      "categoria": "Fuori catalogo",
+      "senza_risposta": true,
+      "domanda": "Qual e' il prezzo di listino della candela ipuro EXCLUSIVE da 270 grammi?",
+      "corta": "prezzo candela exclusive"
+    },
+    {
+      "id": 18,
+      "categoria": "Fuori catalogo",
+      "senza_risposta": true,
+      "domanda": "Quanti diffusori da 240 ml entrano in un singolo bancale Europallet e quanto pesa il bancale pieno?",
+      "corta": "diffusori per bancale"
+    },
+    {
+      "id": 19,
+      "categoria": "Fuori catalogo",
+      "senza_risposta": true,
+      "domanda": "Avete la dichiarazione CLP con l'elenco degli allergeni per ogni fragranza?",
+      "corta": "dichiarazione clp allergeni"
+    },
+    {
+      "id": 20,
+      "categoria": "Fuori catalogo",
+      "senza_risposta": true,
+      "domanda": "I refill delle diverse linee (EXCLUSIVE, CLASSIC, ESSENTIALS) sono intercambiabili tra loro?",
+      "corta": "refill intercambiabili tra linee"
+    }
+  ]
+}

@@ -566,7 +566,10 @@ def grep(conn, termine: str, gruppi: list[str]):
 # (Susteren, il paese nell'indirizzo). Il VLM le descrive come ogni altra
 # figura, ma non sono cio' che si cerca in un catalogo: le si scarta dal
 # `cerca_figure` (24/09/2026, «nastri blu» tornava copertine e footer).
-SCARTA_FIGURE = r"logo|branding|customization|digital graphic|Susteren|##"
+# I codici QR (e barcode) sono la stessa classe: ogni pagina di catalogo ne
+# porta uno, il VLM lo descrive come «QR code», e finiva tra i prodotti con la
+# sola colpa di stare nella pagina giusta (26/09/2026).
+SCARTA_FIGURE = r"logo|branding|customization|digital graphic|Susteren|##|qr code|barcode"
 
 
 SQL_FIGURE = f"""
@@ -578,7 +581,7 @@ WHERE i.descrizione ~* %(oggetto)s
   AND i.descrizione !~* %(scarta)s
 %%DOC%%
 %%VINC%%
-ORDER BY i.page, i.id
+ORDER BY %%ORD%%
 LIMIT %(limite)s;
 """
 
@@ -590,15 +593,33 @@ def cerca_figure(conn, termini, vincolo="", gruppi=None, limite=12, documenti=No
 
     E' il modo in cui un catalogo va cercato: il prodotto sta nella FIGURA,
     non nel testo. Qui si trova la pagina da indicare alla persona — «i nastri
-    blu sono qui, qui e qui» — senza estrarre codici."""
+    blu sono qui, qui e qui» — senza estrarre codici.
+
+    Due regole tenute insieme (misurate il 26/09/2026 su «set per decorazioni
+    natalizie»):
+    - CONFINI di parola (\\m…\\M, come in vincoli.regex): senza, «set» matcha
+      ogni «Poinsettia» — la parola la CONTEINE — e la pool si riempie di fiori
+      finti che non c'entrano nulla con la richiesta.
+    - ORDINE per PESO: quante parole della domanda la didascalia dice davvero.
+      «kit» deve pesare: chi scrive «Set»/«Kit» esce prima di chi non ha nulla
+      di quel che s'e' chiesto, qualunque sia il numero di pagina."""
     par = _permessi(gruppi)
     if par is None or not termini:
         return []
-    puliti = [t for t in (t.strip() for t in termini) if t]
+    puliti = []
+    for t in (t.strip() for t in termini):
+        if not t:
+            continue
+        t = re.sub(r"[\W_]+$", "", t)   # «set di» resta, «set!» diventa «set»
+        if t:
+            puliti.append(t)
     if not puliti:
         return []
-    par |= {"oggetto": "|".join(re.escape(t) for t in puliti),
-            "scarta": SCARTA_FIGURE, "limite": limite}
+    confini = ["\\m" + re.escape(t) + "\\M" for t in puliti]
+    par |= {"oggetto": "|".join(confini), "scarta": SCARTA_FIGURE, "limite": limite}
+    par.update({f"peso{i}": c for i, c in enumerate(confini)})
+    order = " + ".join(f"(i.descrizione ~* %(peso{i})s)::int"
+                       for i in range(len(confini))) + " DESC, i.page, i.id"
     vinc = "AND i.descrizione ~* %(vincolo)s" if vincolo else ""
     if vincolo:
         par["vincolo"] = vincolo
@@ -606,7 +627,8 @@ def cerca_figure(conn, termini, vincolo="", gruppi=None, limite=12, documenti=No
     if documenti:
         par["documenti"] = documenti
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(SQL_FIGURE.replace("%%VINC%%", vinc).replace("%%DOC%%", doc), par)
+        cur.execute(SQL_FIGURE.replace("%%VINC%%", vinc).replace("%%DOC%%", doc)
+                    .replace("%%ORD%%", order), par)
         righe = cur.fetchall()
     # Vincolo morbido: la pool del must-match e' vuota -> si riprova senza.
     if vincolo and VINCOLO_MORBIDO and not righe:
