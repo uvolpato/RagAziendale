@@ -50,7 +50,8 @@ ISTRUZIONI = (
     "«pietre, ciottoli, pebbles, kiesel». Dai ALMENO 4-5 parole, includendo i "
     "sinonimi piu' comuni nei cataloghi (per «profumatore» anche «diffusore, "
     "duft, fragranze»). Solo parole che indicano lo STESSO oggetto, non "
-    "materiali o cose affini.\n"
+    "materiali o cose affini: «sassi» non e' sinonimo di «sabbia» (e' un "
+    "materiale diverso), mentre «pietre» lo e'.\n"
     "CONTESTO: le parole della richiesta che indicano il TEMA, l'OCCASIONE o "
     "l'USO — non l'oggetto e non gli attributi enumerabili. Esempi: «natalizie» "
     "in «profumatore con essenze natalizie», «per un matrimonio», «da esterno», "
@@ -76,14 +77,17 @@ ISTRUZIONI = (
     "termini «2 €», «2 euro», mai la sola cifra «2».\n"
     "Se non ci sono vincoli espliciti, VINCOLI e' vuoto. Non inventare "
     "vincoli.\n"
-    "Rispondi SOLO con JSON della forma {\"intent\": \"...\", "
-    "\"intent_termini\": [\"...\",\"...\"], \"contesto\": [\"...\",\"...\"], "
-    "\"vincoli\": [{\"attributo\": \"colore\", \"valore\": \"viola\", "
-    "\"termini\": [\"viola\",\"lila\",\"violet\"]}]} senza spiegazioni.\n"
+    "Rispondi SOLO con JSON della forma\n"
+    "{\"intent\": \"...\", \"intent_termini\": [\"...\",\"...\"], \"contesto\": "
+    "[\"...\",\"...\"], \"vincoli\": [{\"attributo\": \"colore\", \"valore\": "
+    "\"viola\", \"termini\": [\"viola\",\"lila\",\"violet\"]}]};\n"
+    "senza spiegazioni.\n"
     # Qwen3 ragiona se non gli si dice di no, e il ragionamento finisce in
     # reasoning_content: content torna VUOTO e l'estrazione fallisce in
-    # silenzio. Estrarre vincoli e' meccanico: non serve pensarci.
-    "/no_think"
+    # silenzio. Estrarre vincoli e' meccanico: non serve pensarci. Il token va
+    # MAIUSCOLO: «/NO_THINK» minuscolo non lo riconosce e il modello ragiona
+    # comunque (verificato il 28/09/2026 su «sassi rossi»).
+    "/NO_THINK"
 )
 
 
@@ -155,7 +159,11 @@ def estrae(domanda: str, catalogo=None):
     testo = testo.split("```")[-2] if "```" in testo else testo
     testo = testo.strip().strip("`")
     try:
-        dati = json.loads(testo)
+        # raw_decode: prende il PRIMO oggetto JSON valido e ignora il rumore in
+        # coda. Il modello a volte aggiunge una `}` in piu' (misurato il
+        # 28/09/2026 su «sassi rossi»: «...rot"]}]}}»), e json.loads rigido
+        # fallisce su quell'extra. Qui non ci si fida della forma perfetta.
+        dati, _ = json.JSONDecoder().raw_decode(testo)
     except Exception:
         return "", [], [], []
     vincoli = []

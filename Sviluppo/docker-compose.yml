@@ -219,6 +219,11 @@ services:
       # termini multilingue. si = attivo, altrimenti la sola ricerca diretta.
       # Si cambia qui e si riavvia, come SENZA_ESTRAZIONE.
       RICERCA_AGENTE: ${RICERCA_AGENTE-si}
+      # 1 = l'agente RAGIONA prima di chiamare gli strumenti (ragiona=True):
+      # si accorge da solo «ho gia' la risposta, mi fermo» o «non ho trovato
+      # niente, lo dico» invece di inventare. Costa piu' token (il budget sale
+      # con AGENTE_MAX_TOKEN). Reversibile: 0 spegne.
+      AGENTE_RAGIONA: ${AGENTE_RAGIONA-1}
       # Le immagini si offrono in fondo alla risposta e si mostrano a chi
       # scrive "mostra": quattro figure attaccate a ogni risposta sono rumore.
       # 0 = le attacca sempre, come prima.

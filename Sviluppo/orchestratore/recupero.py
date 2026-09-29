@@ -321,15 +321,28 @@ def contiene_interno(righe) -> str | None:
     return None
 
 
-def embedding(domanda: str):
-    """Embedding della domanda, chiesto DIRETTAMENTE a llama-swap (il modello
+# L'istruzione lato QUERY di bge-m3: dice al modello «questo testo e' una ricerca».
+# I chunk restano NUDI (asimmetrico), come bge-m3 e' stato addestrato. Vale per
+# ogni domanda e ogni lingua: nessun termine specifico. Va misurato, non dato per
+# buono (vedi valutazione/).
+ISTRUZIONE_QUERY = "Represent this sentence for searching relevant passages: "
+
+
+def embedding(domanda: str, query: bool = False):
+    """Embedding di un testo, chiesto DIRETTAMENTE a llama-swap (il modello
     bge-m3 locale). Senza litellm (tolto il 24/09/2026).
+
+    `query=True` prepone l'istruzione di ricerca: serve SOLO alle domande. I
+    chunk (documento) restano nudi, altrimenti l'asimmetria query/documento su
+    cui bge-m3 e' addestrato si rompe.
 
     Restituisce None se l'host di inferenza non risponde: il chiamante degrada
     su BM25 invece di propagare l'errore.
     """
     from . import egress
 
+    if query:
+        domanda = ISTRUZIONE_QUERY + domanda
     host = os.environ.get("MODELLI_HOST", "host.docker.internal:1235")
     modello = os.environ.get("EMBEDDING_MODELLO", "text-embedding-bge-m3-embeddings")
     try:

@@ -59,6 +59,9 @@ caso speciale aggiungo?» ma «come lo farei io?».
 
 ## Il modello è una variabile, non un muro
 
+> **Memo — LLM di riferimento: `qwen3-14b`.** È il modello su cui si lavora e si
+> misura di default. Gli altri (8b, 27b, 35b) servono solo per i confronti.
+
 Il modello non è un dato di fatto: è una scelta, e si cambia quando serve. C'è
 una GPU con 128 GB di RAM condivisa (costa 5K, non milioni): ci gira un 70B Q4,
 non un 36B Q2 come oggi. Se il limite è il modello, ci si collega a DeepSeek via

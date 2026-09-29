@@ -29,7 +29,7 @@ from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from orchestratore import egress, glossario, modello, recupero
+from orchestratore import egress, glossario, modello, recupero, vincoli as v
 
 ROTTA = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
 SECONDI = float(os.environ.get("AGENTE_TIMEOUT", "120"))
@@ -61,6 +61,14 @@ ISTRUZIONI_SISTEMA = (
     "Comunichi SEMPRE in italiano, qualunque sia la lingua dei documenti: "
     "traduci i nomi dei prodotti (es. «Strauß mit Amaryllis» → «bouquet con "
     "amaryllis»), i codici articolo restano invariati.\n"
+    "LINGUE: i cataloghi sono in LINGUE DIVERSE (italiano, tedesco, inglese, "
+    "francese) e lo stesso oggetto ha un nome diverso in ogni lingua. Cercare "
+    "solo la parola dell'utente in una lingua puo' NON trovare il prodotto che "
+    "invece c'e'. Cerca in PIU' lingue: «sassi» va cercato anche come «pietre», "
+    "«deco rocks», «Steine», «stones»; «lavanda» come «lavender», «lavendel». "
+    "Una ricerca in piu' lingue trova risultati che una monolingua non vede. "
+    "`cerca` fa il collegamento tra le lingue; `cerca_esatta` e' SOLO per i "
+    "codici articolo.\n"
     "Quando hai trovato PRODOTTI (figure di un catalogo), scegli tu come "
     "organizzare la risposta — prosa, elenchi, raggruppamenti per catalogo o "
     "per pagina: il modo piu' adatto a quello che presenti, senza schemi "
@@ -70,10 +78,18 @@ ISTRUZIONI_SISTEMA = (
     "catalogo Gasper»), perche' il sistema trasforma «pagina N» nel "
     "collegamento — nessun articolo senza pagina. Enumera TUTTI gli articoli "
     "pertinenti che hai trovato, senza scorciarli.\n"
-    "Per i DOCUMENTI di testo (policy, manuali), scrivi la risposta in modo "
-    "articolato citando la pagina.\n"
-    "Quando la risposta elenca piu' voci (articoli, passi, pagine), "
-    "presentale come elenco, senza seppellirle nella prosa.\n"
+    "Per i DOCUMENTI di testo (policy, manuali, guide), riassumi il contenuto in "
+    "prosa continua, con parole tue: NON elencare i passi uno per uno. Cita la "
+    "pagina di ogni cosa che dici. Le fonti e i collegamenti stanno in fondo alla "
+    "risposta, non nel corpo.\n"
+    "Quando la risposta elenca piu' ARTICOLI (prodotti di un catalogo), "
+    "presentali come elenco, senza seppellirli nella prosa.\n"
+    "\n"
+    "Rispondi solo su cio' che hai visto nei risultati degli strumenti: mai a "
+    "memoria, mai citare un documento o una pagina che non hai visto in un "
+    "risultato. Se non trovi niente, dillo: «non trovo documenti su questo».\n"
+    "NON generare tu una sezione «Fonti» o «Riferimenti» in fondo: la aggiunge "
+    "il sistema automaticamente. Tu cita solo le pagine nel corpo del testo.\n"
     "\n"
     "Strategia, che decidi TU secondo il tipo di domanda:\n"
     "- PRODOTTO o oggetto (es. «nastri blu», «vasi»): cerca PRIMA le figure con "
@@ -83,6 +99,11 @@ ISTRUZIONI_SISTEMA = (
     "indicando le pagine.\n"
     "- TESTO (come si fa una cosa, cosa dice una policy o un manuale): leggi i "
     "passi con `cerca` e `pagina`, e riassumi il contenuto citando la pagina.\n"
+    "- ATTRIBUTO VISIVO o TESTO. La forma, il materiale e le misure sono VISIVI e "
+    "stanno nelle figure: per quelli `cerca_figure`. Il COLORE puo' stare sia nel "
+    "TESTO (codici colore, es. «DST1001 rot red») sia nelle FIGURE (le foto del "
+    "prodotto): provalo in ENTRAMBI, `cerca` e `cerca_figure`. Il NOME del prodotto, "
+    "la FRAGRANZA, il codice e il prezzo sono TESTO: `cerca`.\n"
     "\n"
     "- Se la domanda e' un saluto o una chiacchiera, NON chiamare strumenti.\n"
     "- Quando hai gia' le pagine che rispondono, RISPONDI e fermati: non ripetere "
@@ -102,14 +123,19 @@ ISTRUZIONI_SISTEMA = (
 STRUMENTI = [
     {"type": "function", "function": {
         "name": "cerca",
-        "description": "Cerca nei cataloghi e restituisce i passi piu' pertinenti. "
-                       "I vincoli di colore/misura/prezzo sono gia' applicati dal sistema.",
+        "description": "Cerca nei cataloghi per SIGNIFICATO e restituisce i passi piu' "
+                       "pertinenti. Capisce le lingue: «lavanda» trova anche «lavender», "
+                       "«sassi» trova anche «pietre decorative». Usala per oggetti, "
+                       "fragranze e concetti. I vincoli di colore/misura/prezzo sono gia' "
+                       "applicati dal sistema.",
         "parameters": {"type": "object",
                        "properties": {"query": {"type": "string"}},
                        "required": ["query"]}}},
     {"type": "function", "function": {
         "name": "cerca_esatta",
-        "description": "Cerca una parola o un codice ESATTO (es. DST2040, un nome proprio).",
+        "description": "Cerca un CODICE articolo o un nome proprio ESATTO (es. DST2040), "
+                       "identico in tutte le lingue. NON usarla per parole da tradurre: "
+                       "«lavanda» non trova «lavender», per quelle usa `cerca`.",
         "parameters": {"type": "object",
                        "properties": {"termine": {"type": "string"}},
                        "required": ["termine"]}}},
@@ -136,8 +162,9 @@ STRUMENTI = [
     {"type": "function", "function": {
         "name": "cerca_figure",
         "description": "Cerca le FIGURE (immagini dei prodotti) che corrispondono "
-                       "all'oggetto. Per i cataloghi: trova dove sta il prodotto e la "
-                       "sua pagina. I vincoli di colore/misura sono gia' applicati.",
+                       "all'oggetto. Traduci l'oggetto nel termine del catalogo: «sassi» "
+                       "si cerca come «pietre» o «deco rocks». I vincoli di "
+                       "colore/misura sono gia' applicati.",
         "parameters": {"type": "object",
                        "properties": {
                            "oggetto": {"type": "string"},
@@ -209,11 +236,16 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None,
         q = str(argomenti.get("query", "")).strip()
         if not q:
             return [], "(query vuota)"
-        if termini:
-            q = q + " " + " ".join(termini)
+        # La query usa le TRADUZIONI dell'oggetto (intent_termini senza la parola
+        # grezza), non la parola dell'utente: «sassi» si cerca come «pietre,
+        # ciottoli, ...». E' la traduzione che estrae ha gia' fatto, applicata in
+        # modo DETERMINISTICO e generale (vale per ogni oggetto). Il colore non
+        # sta nella query: e' nel vincolo (must-match).
+        if termini and len(termini) > 1:
+            q = " ".join(termini[1:])
         if contesto:
             q = q + " " + " ".join(contesto)
-        qvec = recupero.embedding(q)
+        qvec = recupero.embedding(q, query=True)
         documenti = _pre_seleziona(conn, qvec, gruppi)
         righe, _ = recupero.cerca(conn, q, gruppi, qvec=qvec,
                                   limite=8, vincolo=vincolo, documenti=documenti)
@@ -231,7 +263,7 @@ def _esegui(nome, argomenti, conn, gruppi, vincolo="", intent_termini=None,
         # serve a scegliere il catalogo, non a tirare su figure natalizie quando
         # si cerca un diffusore (misurato il 25/09/2026).
         documenti = _pre_seleziona(
-            conn, recupero.embedding(" ".join([oggetto] + termini + contesto)), gruppi)
+            conn, recupero.embedding(" ".join([oggetto] + termini + contesto), query=True), gruppi)
         righe = recupero.cerca_figure(conn, [oggetto] + termini, vincolo, gruppi,
                                       limite=limite, documenti=documenti)
         return righe, _formatta_figure(righe)
@@ -298,68 +330,30 @@ class Stato(TypedDict):
 
 
 def _nodo_capisce(stato: Stato) -> dict:
-    """Il passo D19: intent + vincoli dalla domanda. Degrada in silenzio."""
-    from orchestratore import vincoli as v
+    """Passo D19: intent + vincoli dalla domanda. Degrada in silenzio.
+
+    NON cerca: la ricerca la fa l'AGENTE coi suoi strumenti. Qui si estraggono
+    solo il vincolo di colore/misura/prezzo (must-match, che resta) e i termini
+    multilingue (servono a `cerca_figure` per il confronto esatto). La query del
+    testo la decide il modello, con le sue parole: se dice «sassi» e il catalogo
+    risponde «sabbia», e' lui a giudicare e a riprovare con «pietre».
+    """
     intent, intent_termini, contesto, trovati = v.estrae(stato["domanda"])
-    # I termini del modello («sassi» -> «pietre») si espandono coi termini del
-    # CORPUS («pietre» -> «rocks, dekosteine»), che il modello non sa.
-    if not SENZA_GLOSSARIO:
-        intent_termini = glossario.espandi(stato["conn"], intent_termini)
-        contesto = glossario.espandi(stato["conn"], contesto)
-    # Il CONTESTO resta SEPARATO dall'oggetto: serve alla PRE-SELEZIONE del
-    # catalogo, non al regex della figura. Se finisse nel regex («christmas»)
-    # tirerebbe su le decorazioni natalizie invece dei diffusori (misurato
-    # il 25/09/2026: «profumatore con essenze natalizie»).
     vincolo = v.regex(trovati)
     colore = v.termini_colore(trovati)
-    pezzi, messaggi, traccia = {}, [], []
-    # Guardrail FORTE: la prima ricerca la fa il sistema, con l'intent estratto,
-    # e il risultato arriva al modello gia' pronto (non puo' ne' non cercare ne'
-    # cercare con l'oggetto sbagliato).
-    if GUARDIA_FORTE:
-        oggetto = intent
-        if not oggetto and GUARDIA_SENZA_OGGETTO and colore:
-            # Solo colore: l'oggetto e' il primo termine e il resto entra nei
-            # termini, cosi' la regex copre tutta la famiglia («crema, cream,
-            # beige, ivory»). Con la sola «crema» (italiano, assente) la ricerca
-            # troverebbe zero anche se «cream» ha 260 figure.
-            oggetto = colore[0]
-            intent_termini = intent_termini + [c for c in colore if c not in intent_termini]
-        if oggetto:
-            t0 = time.monotonic()
-            righe, testo = _esegui("cerca_figure", {"oggetto": oggetto},
-                                   stato["conn"], stato["gruppi"], vincolo,
-                                   intent_termini, contesto)
-            traccia.append(_nota("cerca_figure", {"oggetto": oggetto}, righe, t0))
-            pezzi = {r["id"]: r for r in righe}
-            messaggi = [
-                {"role": "assistant", "content": "", "tool_calls": [{
-                    "id": "forza_ricerca", "type": "function",
-                    "function": {"name": "cerca_figure",
-                                 "arguments": json.dumps({"oggetto": oggetto})}}]},
-                {"role": "tool", "tool_call_id": "forza_ricerca", "content": testo},
-            ]
-            # Fallback: la figura non c'e' (il prodotto sta nel TESTO: «profumatore»
-            # non compare nelle descrizioni figura, ma il catalogo ne parla in
-            # prosa). Si cerca anche nel testo e si passa il risultato.
-            if not righe:
-                t0 = time.monotonic()
-                righe2, testo2 = _esegui("cerca", {"query": oggetto},
-                                         stato["conn"], stato["gruppi"], vincolo,
-                                         intent_termini, contesto)
-                traccia.append(_nota("cerca", {"query": oggetto}, righe2, t0))
-                pezzi = {r["id"]: r for r in righe2}
-                messaggi += [
-                    {"role": "assistant", "content": "", "tool_calls": [{
-                        "id": "forza_ricerca_testo", "type": "function",
-                        "function": {"name": "cerca",
-                                     "arguments": json.dumps({"query": oggetto})}}]},
-                    {"role": "tool", "tool_call_id": "forza_ricerca_testo", "content": testo2},
-                ]
+    messaggi = []
+    if intent_termini and len(intent_termini) > 1:
+        # I termini multilingue dell'oggetto vanno DETTI al modello: li deve
+        # usare nella ricerca, non tradurre da solo (incoerente). Si esclude il
+        # primo (e' la parola dell'utente), si danno le TRADUZIONI nelle lingue
+        # del catalogo.
+        messaggi = [{"role": "system", "content":
+                     f"Per cercare l'oggetto usa questi termini (lingue del catalogo): "
+                     f"{', '.join(intent_termini[1:])}"}]
     return {"vincolo": vincolo, "intent_termini": intent_termini,
             "intent": intent, "colore": colore, "contesto": contesto,
-            "pezzi": pezzi, "messaggi": messaggi,
-            "traccia": (stato.get("traccia") or []) + traccia}
+            "pezzi": {}, "messaggi": messaggi,
+            "traccia": stato.get("traccia") or []}
 
 
 def _nodo_agente(stato: Stato) -> dict:

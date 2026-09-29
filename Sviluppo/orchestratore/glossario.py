@@ -45,7 +45,7 @@ ISTRUZIONI = (
     "«bisogno», «quanto», «costa», «ho», «di», o un COLORE come «rosso», "
     "«blu», «verde»), rispondi SOLO con VUOTO.\n"
     "Rispondi solo con parole separate da virgola.\n"
-    "/no_think"
+    "/NO_THINK"
 )
 
 # Cache in RAM: voce -> lista termini (anche vuota, per le voci gia' guardate).

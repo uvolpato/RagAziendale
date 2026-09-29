@@ -36,7 +36,7 @@ ISTRUZIONI = (
     "policy o una guida, di' l'argomento.\n"
     "Non inventare dettagli che le intestazioni non mostrano. Scrivi in "
     "italiano, solo la frase, niente introduzioni.\n"
-    "/no_think"
+    "/NO_THINK"
 )
 
 ISTRUZIONI_PAGINA = (
@@ -46,7 +46,7 @@ ISTRUZIONI_PAGINA = (
     "Se la pagina elenca solo prodotti simili, riassumili in una categoria. Se "
     "e' una tabella di formati o prezzi, dillo. Non inventare dettagli che il "
     "testo non mostra. Scrivi in italiano, solo la frase, niente introduzioni.\n"
-    "/no_think"
+    "/NO_THINK"
 )
 
 

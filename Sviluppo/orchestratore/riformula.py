@@ -77,7 +77,7 @@ ISTRUZIONI = (
     # fallita e si cerca la domanda originale. In silenzio — nessun errore,
     # solo un seguito di conversazione che non trova niente. Riscrivere una
     # domanda e' un lavoro corto e meccanico: non serve pensarci.
-    "/no_think"
+    "/NO_THINK"
 )
 
 
@@ -118,11 +118,11 @@ def per_la_ricerca(domanda: str, storico: list, suffisso: str = "") -> tuple[str
             if not isinstance(e, httpx.TimeoutException):
                 _rotte_rotte.add(rotta)
             continue
-        # Le scorie PRIMA di scegliere la riga: il modello ricopia «/no_think»
+        # Le scorie PRIMA di scegliere la riga: il modello ricopia «/NO_THINK»
         # in cima, e prendendo la prima riga non vuota si leggerebbe quella —
         # la riscrittura risulterebbe vuota e si cercherebbe la domanda
         # originale, in silenzio.
-        for scoria in ("/no_think", "/think", "Riscrittura:"):
+        for scoria in ("/NO_THINK", "/think", "Riscrittura:"):
             testo = testo.replace(scoria, "")
         # Una riga sola: se il modello si dilunga si tiene la prima frase utile.
         testo = next((r.strip() for r in testo.splitlines() if r.strip()), "")

@@ -559,7 +559,7 @@ def _collega_pagine(risposta, righe, conn, base, utente):
             doc = next(iter(per_doc.values()))[0]
         if not doc:
             continue
-        pezzi, cursore, fatto = [], m.start(), False
+        pezzi, cursore, fatto, source_id = [], m.start(), False, None
         for d in re.finditer(r"\d+", risposta[m.start():m.end()]):
             num = int(d.group())
             pre = risposta[cursore:m.start() + d.start()]
@@ -568,6 +568,7 @@ def _collega_pagine(risposta, righe, conn, base, utente):
                 pezzi.append(pre + f"[{num}]({url})")
                 collegati.add((doc, num))
                 fatto = True
+                source_id = validi[(doc, num)]
             else:
                 pezzi.append(pre + d.group())
             cursore = m.start() + d.end()
@@ -576,7 +577,7 @@ def _collega_pagine(risposta, righe, conn, base, utente):
             if doc not in numeri:
                 apice = _apice(len(ordine) + 1)
                 numeri[doc] = apice
-                ordine.append((doc, apice))
+                ordine.append((doc, source_id, apice))
             # Il numero in piccolo dopo il collegamento marca l'affermazione.
             da_sostituire.append((m.start(), m.end(), "".join(pezzi) + numeri[doc]))
     for inizio, fine, testo in sorted(da_sostituire, reverse=True):
@@ -617,31 +618,14 @@ def _risposta_prodotti(risposta, righe, conn, base, utente) -> str:
     for doc, pagina in collegati:
         citate.setdefault(doc, set()).add(pagina)
     voci = []
-    for doc, apice in ordine:
+    for doc, source_id, apice in ordine:
         pagine = ", ".join(str(p) for p in sorted(citate.get(doc, ())))
-        voci.append(f"{apice} **{doc}** — pagine {pagine}")
+        # Anche il NOME del documento e' un collegamento (alla prima pagina), come
+        # le pagine nel corpo: stessa firma, stesso meccanismo, nessun ramo nuovo.
+        url = documento_mod.firma_url(source_id, doc, None, base, utente)
+        voci.append(f"{apice} [{doc}]({url}) — pagine {pagine}")
     testo += "\n\n---\n> " + MARCA_FONTI + " · ".join(voci) + "_"
     return testo
-
-
-def _righe_sono_catalogo(conn, righe) -> bool:
-    """True se QUALCHE documento coinvolto nella risposta e' di tipo
-    'catalogo'. E' il campo `tipo`, deciso dall'ingestione a fine lettura
-    (migrazione 022): la proxy «il pezzo ha una figura» non basta, perche'
-    sullo stesso documento possono tornare o no figure nella singola risposta.
-    """
-    if not righe:
-        return False
-    gia_visti = set()
-    for r in righe:
-        chiave = (r.get("source_id"), r.get("documento"))
-        if not chiave[0] or not chiave[1] or chiave in gia_visti:
-            continue
-        gia_visti.add(chiave)
-        if conn.execute("SELECT 1 FROM documenti WHERE source_id = %s AND documento = %s"
-                        " AND tipo = 'catalogo'", chiave).fetchone():
-            return True
-    return False
 
 
 LIMITE_ELENCO = 5        # quante figure elencare prima di offrire il resto
@@ -980,7 +964,7 @@ async def chat(request: Request):
     storico_messaggi = corpo.get("messages", [])
     if SU_RICHIESTA and vuole_le_immagini(domanda, _ultima_risposta(storico_messaggi)):
         precedente = _domanda_precedente(storico_messaggi)
-        qvec_prec = recupero.embedding(precedente)
+        qvec_prec = recupero.embedding(precedente, query=True)
         righe, _ = recupero.cerca(conn, precedente, gruppi, qvec=qvec_prec)
         ids = _immagini_per_la_domanda(conn, qvec_prec, gruppi, righe, precedente)
         conn.close()
@@ -1013,17 +997,15 @@ async def chat(request: Request):
                                             limite=pezzi_da_recuperare(domanda),
                                             storia=memoria.comprimi(storico_messaggi))
 
-    # La RISPOSTA del modello (articolata), con i link alle pagine come Fonti.
-    # Per i CATALOGHI (tipo deciso dall'ingestione, migrazione 022) la risposta
-    # si chiude con l'elenco dei prodotti + link alla pagina: e' li' che gli
-    # elementi della risposta portano alla pagina. Per i documenti basta la
-    # citazione nelle fonti.
+    # La RISPOSTA del modello, con i riferimenti «pagina N» trasformati in
+    # collegamenti alla pagina e chiusa dalle Fonti numerate. Vale per i
+    # cataloghi E per i documenti: l'agente cita «pagina N» in prosa in entrambi
+    # i casi, quindi il collegamento e' lo stesso. Il vecchio ramo per i
+    # documenti (_fonti_citate) cercava «[n]» tra parentesi quadre, che l'agente
+    # non produce piu': non collegava nulla e il link alla fonte spariva.
     if risposta:
-        if _righe_sono_catalogo(conn, righe):
-            risposta = _risposta_prodotti(risposta, righe, conn, f"https://{APP_HOST}", utente)
-            coda = ""
-        else:
-            coda = _fonti_citate(risposta, righe, f"https://{APP_HOST}", utente)
+        risposta = _risposta_prodotti(risposta, righe, conn, f"https://{APP_HOST}", utente)
+        coda = ""
         def gen():
             try:
                 yield f"data: {json.dumps({'choices': [{'delta': {'role': 'assistant', 'content': risposta}, 'index': 0}], 'model': MODEL_NAME})}\n\n"

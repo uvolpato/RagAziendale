@@ -50,7 +50,7 @@ ISTRUZIONI = (
     "immagine corrisponde a un articolo, rispondi «N:-».\n"
     "Non inventare corrispondenze: se non sei sicuro, metti «-».\n"
     "Rispondi solo con le righe, niente spiegazioni.\n"
-    "/no_think"
+    "/NO_THINK"
 )
 
 

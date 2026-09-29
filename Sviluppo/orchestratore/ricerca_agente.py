@@ -87,10 +87,10 @@ ISTRUZIONI = (
     "Rispondi con UNA riga: «BASTA» oppure le parole da cercare. Niente spiegazioni.\n"
     # Qui il modello RAGIONA, ed e' l'unica cosa che lo rende utile.
     #
-    # Prima versione con «/no_think» e 60 token: il ragionamento di Qwen3
+    # Prima versione con «/NO_THINK» e 60 token: il ragionamento di Qwen3
     # finisce in `reasoning_content`, quindi `content` tornava VUOTO e l'agente
     # si fermava sempre al primo giro. Ha misurato se stesso per venti domande.
-    # Aggiunto «/no_think» come si deve, rispondeva — ma rispondeva BASTA
+    # Aggiunto «/NO_THINK» come si deve, rispondeva — ma rispondeva BASTA
     # anche davanti a risultati sbagliati: non si accorgeva di aver fallito.
     # Lasciandolo ragionare, sulle stesse quattro domande, propone «ciottoli
     # neri brillanti» dove aveva sbagliato e dice BASTA dove aveva trovato.
@@ -127,7 +127,7 @@ VIA_ISTRUZIONI = (
     "matrimonio», «qualcosa di elegante»)\n"
     "\n"
     "Niente spiegazioni, solo la parola.\n"
-    "/no_think"
+    "/NO_THINK"
 )
 
 
@@ -164,7 +164,7 @@ INTENTO_ISTRUZIONI = (
     "Massimo 6 categorie, separate da virgola. Se nessuna categoria dell'elenco "
     "risponde, rispondi con le categorie piu' vicine.\n"
     "Rispondi solo con l'elenco, niente spiegazioni.\n"
-    "/no_think"
+    "/NO_THINK"
 )
 
 
@@ -199,11 +199,11 @@ def _assaggio(righe):
 
 def _pulisci(testo, gia_cercate):
     """La riga del modello -> parole da cercare, oppure None per fermarsi."""
-    # Le scorie si tolgono PRIMA di scegliere la riga: «/no_think» e' la
+    # Le scorie si tolgono PRIMA di scegliere la riga: «/NO_THINK» e' la
     # direttiva che mandiamo NOI, e a volte il modello la ricopia in cima alla
     # risposta. Prendendo la prima riga non vuota si leggerebbe quella.
     pulito = testo or ""
-    for scoria in ("/no_think", "/think", "Ricerca:", "Cerca:"):
+    for scoria in ("/NO_THINK", "/think", "Ricerca:", "Cerca:"):
         pulito = pulito.replace(scoria, "")
     riga = next((r.strip() for r in pulito.splitlines() if r.strip()), "")
     riga = riga.strip('"').strip()
@@ -261,7 +261,7 @@ def _tool_astratta(conn, domanda, gruppi, limite, documenti=None):
     categorie = _intento(domanda, descrizioni)
     if not categorie:
         return None
-    qv = recupero.embedding(categorie)
+    qv = recupero.embedding(categorie, query=True)
     righe, _ = recupero.cerca(conn, categorie, gruppi, qv, limite)
     return righe or None
 
@@ -290,7 +290,7 @@ def _tool_concreta(conn, domanda, gruppi, qvec, limite, vincolo, documenti):
         if not nuova:
             break
         cercate.append(nuova)
-        righe, _ = recupero.cerca(conn, nuova, gruppi, recupero.embedding(nuova),
+        righe, _ = recupero.cerca(conn, nuova, gruppi, recupero.embedding(nuova, query=True),
                                   limite, vincolo=vincolo, documenti=documenti)
         for r in righe:
             viste.setdefault(r["id"], r)
@@ -318,7 +318,7 @@ def _comprensione(conn, domanda, gruppi, qvec, limite, documenti):
         return None
     regex = v.regex(trovati)
     query = v.query_di_ricerca(domanda, intent_termini, trovati)
-    qv = recupero.embedding(query) if qvec is None else qvec
+    qv = recupero.embedding(query, query=True) if qvec is None else qvec
     righe, _ = recupero.cerca(conn, query, gruppi, qv, limite,
                               vincolo=regex, documenti=documenti)
     return righe or None
@@ -369,7 +369,7 @@ def _prova():
     assert _pulisci("", ["x"]) is None
     assert _pulisci("pietre nere", ["pietre nere"]) is None, "ripete una ricerca gia' fatta"
     assert _pulisci('"sabbia a specchio"', []) == "sabbia a specchio"
-    assert _pulisci("/no_think\nsabbia specchio", []) == "sabbia specchio"
+    assert _pulisci("/NO_THINK\nsabbia specchio", []) == "sabbia specchio"
     assert _pulisci("x" * 300, []) is None, "riga assurda"
     assert _assaggio([]) == "(nessun risultato)"
     assert "p. 7" in _assaggio([{"documento": "c.pdf", "page": 7, "content": "a  b"}])

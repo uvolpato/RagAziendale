@@ -26,7 +26,7 @@ ISTRUZIONI_RIASSUNTO = (
     "Butta: saluti, chiacchiere, e il TESTO dei documenti citati (quei dati "
     "stanno nell'archivio e si ri-cercano).\n"
     "Poche righe, in italiano.\n"
-    "/no_think"
+    "/NO_THINK"
 )
 
 

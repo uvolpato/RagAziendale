@@ -718,8 +718,15 @@ class Lettore:
         # indice. Una chiamata al modello per figura, come prima: cambia il
         # prompt, non il conto.
         pezzi, immagini, markdown = self._con_docling(p, progresso, solo_gpu, dentro, descrivi=False)
-        return ([(t, p, "docling") for t, p in pezzi],
-                _descrivi_figure(immagini, _titoli_da_markdown(markdown), dentro, progresso_figure),
+        titoli = _titoli_da_markdown(markdown)
+        immagini = _descrivi_figure(immagini, titoli, dentro, progresso_figure)
+        # Le descrizioni delle figure entrano ANCHE nel testo: «sassi rossi» non
+        # combacia con nessun codice, ma la figura del prodotto ha il titolo
+        # della pagina («DEKOSTEINE pietre decorative») e il colore («red»).
+        # Senza questi pezzi il colore dei cataloghi sparisce dall'indice.
+        figure = _pezzi_dalle_figure(immagini, titoli)
+        return ([(t, p, "docling") for t, p in pezzi] + [(t, p, "docling") for t, p in figure],
+                immagini,
                 "docling")
 
     def _con_docling(self, p, progresso=None, solo_gpu=False, dentro=None, descrivi=True):
@@ -1189,7 +1196,11 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         # proprio quello, di solito su un file andato in errore o rimandato.
         # `riprova` e' l'eccezione: l'errore non era nel file, era FUORI (vedi
         # _ritentare), quindi il file identico non e' una scusa per non riprovare.
-        if not forza and vecchio and not riprova and vecchio[2] == st.st_size and vecchio[3] == quando:
+        # Un file in stato 'errore' non si salta MAI: se e' nuovo e si e'
+        # interrotto (dimensione e data identiche, ma zero pezzi) il salto
+        # lo lascerebbe fuori dall'indice per sempre.
+        if (not forza and vecchio and not riprova and vecchio[4] != "errore"
+                and vecchio[2] == st.st_size and vecchio[3] == quando):
             conteggi["uguali"] += 1
             continue
         impronta = impronta_file(p)
@@ -1218,7 +1229,8 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
             conteggi["rimandati"] = conteggi.get("rimandati", 0) + 1
             print(f"  rimandato: {fid}/{rel} ({st.st_size // (1024 * 1024)} MB, GPU occupata)")
             continue
-        if not forza and vecchio and not riprova and vecchio[1] == impronta:
+        if (not forza and vecchio and not riprova and vecchio[4] != "errore"
+                and vecchio[1] == impronta):
             conn.execute("UPDATE documenti SET modificato_il = %s WHERE source_id = %s AND documento = %s",
                          (quando, fid, rel))
             conteggi["uguali"] += 1
@@ -1475,7 +1487,7 @@ ISTRUZIONI_GLOSSARIO = (
     "Formato: oggetto: termine1, termine2, ...\n"
     "Esempio: rocks: pietre, pierres, dekosteine\n"
     "Niente numeri, niente nomi di prodotto completi, niente spiegazioni.\n"
-    "/no_think"
+    "/NO_THINK"
 )
 
 MAX_GLOSSARIO = int(os.environ.get("GLOSSARIO_MAX", "6"))
@@ -1677,13 +1689,13 @@ def main():
 # 9-13 mm», i formati «E5500 5,5 l € 13,80» e i colori «DST2001 rot» — le tre
 # cose che mancavano alle domande vere.
 
-# Come si spezzano i pezzi del percorso Docling. "chunker" = HierarchicalChunker
-# sul documento (prosa, com'e' sempre stato); "markdown" = _pezzi_da_markdown
-# pagina per pagina, quindi le tabelle di Docling diventano UNA RIGA per pezzo
-# con il titolo davanti, come fa il VLM. Serve a misurare se le tabelle di
-# Docling bastano al posto del VLM. Reversibile: si torna a "chunker" e si
-# reindicizza.
-CHUNK_DOCLING = os.environ.get("CHUNK_DOCLING", "chunker")
+# Come si spezzano i pezzi del percorso Docling. "markdown" = _pezzi_da_markdown
+# pagina per pagina: le tabelle diventano UNA RIGA per pezzo con il titolo
+# davanti, e le didascalie (i formati dei cataloghi) restano nel testo. E' il
+# comportamento misurato il 28/09/2026: 13/16 contro i 9/16 del vecchio
+# HierarchicalChunker, che perdeva le didascalie. Reversibile: "chunker" torna
+# al chunker di Docling.
+CHUNK_DOCLING = os.environ.get("CHUNK_DOCLING", "markdown")
 
 
 DPI_PAGINA = int(os.environ.get("DPI_PAGINA", "150"))
@@ -1719,6 +1731,12 @@ ISTRUZIONI_FIGURA = (
     "If you are not sure, choose «informazione»."
 )
 SECONDI_PER_FIGURA = int(os.environ.get("SECONDI_PER_FIGURA", "120"))
+# Quante descrizioni di figura si chiedono IN PARALLELO al VLM. Le figure sono
+# indipendenti tra loro: descriverle una alla volta era il costo dominante dei
+# cataloghi (2617 immagini su INGE = ~45 minuti in serie). llama-swap ha gli
+# slot paralleli, quindi si mandano a lotti. Reversibile: 1 = comportamento di
+# prima.
+PARALLELO_FIGURE = int(os.environ.get("PARALLELO_FIGURE", "6"))
 # 0 = le figure entrano nell'indice con la descrizione di Docling (o senza) e il
 # VLM non viene chiamato una volta per immagine. Serve per le prove: vedi
 # _descrivi_figure.
@@ -1916,6 +1934,24 @@ def _estrae_verdetto(descr):
     return "\n".join(pulite).strip(), verdetto
 
 
+def _descrivi_una(percorso, titolo, url, testa, logico):
+    """Una figura -> descrizione grezza dal VLM. Separata per il parallelo."""
+    import base64
+    import json
+    import urllib.request
+    b64 = base64.b64encode((RADICE / percorso).read_bytes()).decode()
+    corpo = json.dumps({
+        "model": logico, "max_tokens": 300, "temperature": 0,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": ISTRUZIONI_FIGURA.format(titolo=titolo)},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}}]}],
+    }).encode()
+    req = urllib.request.Request(f"{url}/v1/chat/completions",
+                                 data=corpo, headers=testa, method="POST")
+    with urllib.request.urlopen(req, timeout=SECONDI_PER_FIGURA) as r:
+        return json.load(r)["choices"][0]["message"]["content"].strip()
+
+
 def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
     """Le figure descritte da NOI, dicendo al modello da che pagina vengono.
 
@@ -1931,56 +1967,51 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
     non si vede: e' scritto nelle istruzioni. Se il modello non risponde, la
     figura resta senza descrizione e il documento entra lo stesso.
     """
-    import base64
-    import json
-    import urllib.request
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     if VLM_DESCRIZIONI != "api":
         return immagini
-    # La descrizione passa da LiteLLM (rotta `visione`), non da VLM_URL/llama-swap.
     url, testa, logico = _litellm_visione()
     salvate = _descrizioni_salvate(dentro)
-    fuori, falliti, riusate, fatte = [], 0, 0, 0
-    for percorso, pagina, vecchia, _vd in immagini:
-        fatte += 1
-        if progresso:
-            progresso(fatte, len(immagini))
+    fuori, falliti, riusate, fatte = [None] * len(immagini), 0, 0, 0
+
+    # Prima passata: le figure gia' in cache si riusano; le altre si raccolgono
+    # per descriverle in parallelo. Le figure sono indipendenti: descriverle
+    # una alla volta era il costo dominante dei cataloghi (2617 immagini su
+    # INGE = ~45 minuti in serie), qui vanno a lotti su llama-swap.
+    da_descrivere = []
+    for i, (percorso, pagina, vecchia, _vd) in enumerate(immagini):
         nome = pathlib.PurePath(percorso).name
         if nome in salvate:
             riusate += 1
+            fatte += 1
+            if progresso:
+                progresso(fatte, len(immagini))
             descr, verdetto = _estrae_verdetto(salvate[nome])
-            fuori.append((percorso, pagina, descr, verdetto))
-            continue
-        # ATTENZIONE: qui le figure sono gia' SU DISCO. _scrivi_immagini le ha
-        # salvate blocco per blocco e ha sostituito l'immagine con il suo
-        # percorso — tenerle in memoria fino a fine documento costava 3,3 GB su
-        # un catalogo da 107 pagine. Trattarle come immagini PIL fallirebbe
-        # dentro la `except` qui sotto, e sembrerebbe che non risponda il
-        # modello (quasi successo il 22/09/2026).
-        # Il titolo aiuta (sa COSA sta guardando: una figura di 221x149 px
-        # senza contesto diventa «dried fruit»), ma la sua assenza non e' un
-        # motivo per non descrivere: l'immagine la si manda lo stesso, e una
-        # descrizione mediocre serve piu' di nessuna descrizione.
-        titolo = titoli.get(pagina or 0) or ""
-        try:
-            b64 = base64.b64encode((RADICE / percorso).read_bytes()).decode()
-            corpo = json.dumps({
-                "model": logico, "max_tokens": 300, "temperature": 0,
-                "messages": [{"role": "user", "content": [
-                    {"type": "text", "text": ISTRUZIONI_FIGURA.format(titolo=titolo)},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b64}}]}],
-            }).encode()
-            req = urllib.request.Request(f"{url}/v1/chat/completions",
-                                         data=corpo, headers=testa, method="POST")
-            with urllib.request.urlopen(req, timeout=SECONDI_PER_FIGURA) as r:
-                descr = json.load(r)["choices"][0]["message"]["content"].strip()
-            salvate[nome] = descr or vecchia
-            pulita, verdetto = _estrae_verdetto(descr or vecchia)
-            fuori.append((percorso, pagina, pulita, verdetto))
-        except Exception as e:
-            falliti += 1
-            if falliti == 1:      # il primo con il motivo, gli altri solo contati
-                print(f"    figura non descritta ({type(e).__name__}: {e})", flush=True)
-            fuori.append((percorso, pagina, vecchia, None))
+            fuori[i] = (percorso, pagina, descr, verdetto)
+        else:
+            da_descrivere.append((i, percorso, pagina, titoli.get(pagina or 0) or "", vecchia))
+
+    # Seconda passata: il VLM in parallelo, a lotti di PARALLELO_FIGURE.
+    with ThreadPoolExecutor(max_workers=PARALLELO_FIGURE) as ex:
+        futuri = {ex.submit(_descrivi_una, percorso, titolo, url, testa, logico): (i, percorso, pagina, vecchia)
+                  for (i, percorso, pagina, titolo, vecchia) in da_descrivere}
+        for fut in as_completed(futuri):
+            i, percorso, pagina, vecchia = futuri[fut]
+            fatte += 1
+            if progresso:
+                progresso(fatte, len(immagini))
+            nome = pathlib.PurePath(percorso).name
+            try:
+                descr = fut.result()
+                salvate[nome] = descr or vecchia
+                pulita, verdetto = _estrae_verdetto(descr or vecchia)
+                fuori[i] = (percorso, pagina, pulita, verdetto)
+            except Exception as e:
+                falliti += 1
+                if falliti == 1:      # il primo con il motivo, gli altri solo contati
+                    print(f"    figura non descritta ({type(e).__name__}: {e})", flush=True)
+                fuori[i] = (percorso, pagina, vecchia, None)
+
     if riusate:
         print(f"    {riusate} descrizioni riprese da disco (niente VLM)", flush=True)
     if falliti:

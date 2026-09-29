@@ -944,3 +944,94 @@ disco (il loro `percorso` non cambia), cambia solo l'etichetta `documento`.
    impronta anche fra fonti e spostare `chunks`/`immagini` da una `source_id`
    all'altra, aggiornando anche le ACL.
 
+---
+
+## 13. Configurazione di indicizzazione: tarare il parallelismo sulla macchina
+
+Richiesta dell'utente il 28/09/2026. L'indicizzazione deve essere **più veloce**
+(soprattutto i cataloghi) e i parametri di parallelismo devono essere **tarabili**
+sulla macchina che ospita il servizio, non fissi nel codice.
+
+### Cosa è già stato fatto
+
+- Descrizioni delle figure **in parallelo** (`PARALLELO_FIGURE`, default 6):
+  erano il costo dominante dei cataloghi (2617 immagini su INGE = ~45 min in
+  serie), ora vanno a lotti verso llama-swap.
+
+### Cosa si vuole fare (da progettare, non ancora fatto)
+
+1. **Docling a blocchi di pagine in parallelo** (non due documenti, ma due
+   GRUPPI di pagine): il loop dei blocchi di 6 pagine diventa concorrente. Nota:
+   ogni blocco è un processo figlio che carica i suoi modelli (~3 GB), quindi
+   "2 blocchi" costa in VRAM come "2 documenti" (~6 GB). Il vantaggio del blocco
+   è che sta DENTRO il loop esistente, non richiede il pool per-file.
+2. **Aumentare `PARALLELO_FIGURE`** (tarabile): da decidere il numero giusto su
+   macchina, non a naso.
+3. **Embedding delle immagini in parallelo**: come le descrizioni, anche i
+   vettori delle descrizioni (`vettori()` in `_registra_immagini`) vanno a lotti,
+   non in serie.
+4. **Un unico blocco di configurazione** («configurazione indicizzazione»):
+   raccogliere `PARALLELO_FIGURE`, il parallelismo Docling, quello embedding e
+   l'OCR in variabili d'ambiente documentate, così la stessa immagine si tara
+   sulla macchina (CPU core, VRAM) senza toccare codice.
+
+### Fatto da misurare prima di decidere
+
+- **Dov'è il collo: OCR (CPU) o layout/tabelle (GPU)?** L'OCR è Tesseract su CPU
+  (`TesseractCliOcrOptions`, nessun campo device), layout/tabelle su GPU. Se il
+  collo è l'OCR, il parallelismo a blocchi aiuta molto (CPU a tanti core); se è
+  la GPU, si contendono e il guadagno è minore. Misura pulita: convertire la
+  stessa pagina con `do_ocr=True` e `do_ocr=False` e confrontare tempo + testo.
+- Se l'OCR è il collo, la leva è anche **cambiare motore** (EasyOCR con
+  `use_gpu`, o RapidOCR) o **spegnerlo** quando il livello di testo del PDF
+  basta.
+
+---
+
+## 14. I cataloghi perdono il CONTESTO del prodotto: "sassi rossi" non trova "DST2001 rot red"
+
+Trovato il 28/09/2026 su una domanda vera. Il sistema risponde "ho trovato
+oggetti rossi ma non sassi" quando EUROSAND ha i sassi rossi (`DST2001 rot red`).
+
+### L'evidenza
+
+- `DST2001 rot red` è dentro un **chunk da 732 caratteri con ~30 colori**
+  (`DST2040 weiß white … DST2012 hellgrau light grey … DST2001 rot red …`), e
+  **non c'è la parola "sassi/pietre/stone" da nessuna parte**.
+- Il titolo del prodotto sta in un **altro** chunk, sulla stessa pagina:
+  `DEKOSTEINE 9 - 13 mm  deco rocks | pierres décoratives | pietre decorative`.
+- Risultato: la domanda "sassi rossi" non può agganciare "DST2001 rot red",
+  perché il pezzo ha 30 colori ma zero contesto "sassi". Misurato: anche
+  aggiungendo al glossario "pietre ciottoli dekosteine", `DST2001` non esce.
+
+### La causa
+
+Il chunking del percorso Docling **appiattisce la tabella colori**: Docling non
+la riconosce come tabella (sono codici in riga), quindi `_markdown_per_pagina`
+li mette tutti in un unico pezzo, **senza** ripetere il titolo del prodotto
+davanti. Il vecchio `_righe_di_tabella` (percorso a pagina, poi rimosso) faceva
+esattamente il contrario: un colore per pezzo, col titolo davanti.
+
+### Cosa fare (senza rifare l'indicizzazione)
+
+Il difetto è nel testo già indicizzato. Non serve rifare Docling/VLM: serve un
+**ri-chunk del testo già estratto + ri-embedding**. Per ogni pagina di catalogo:
+
+1. trovare il titolo del prodotto (il chunk con "deco rocks / pietre
+   decorative", o simili);
+2. trovare i chunk con i codici variante (`DST2001 rot red` = codice + colore);
+3. spezzarli **un codice per pezzo**, col titolo davanti;
+4. ri-embedding dei nuovi pezzi.
+
+È una migrazione mirata (niente Docling, niente VLM: solo spezzamento + vettori).
+
+### Una seconda cosa trovata a fianco: il glossario è rumoroso
+
+`glossario` contiene voci tipo `pietre -> rocks, ghiaia, cailloux, produttore,
+steine, busta`: sinonimi multilingue (che `bge-m3` già fa) MESI a rumore da
+estrazione cattiva ("produttore", "busta"). Per questo era giusto non metterlo
+nella query del testo (diluisce), ma il rumore danneggia anche il regex delle
+figure. Da ripulire all'origine (`estrai_glossario`).
+
+
+
