@@ -404,7 +404,8 @@ def _fonti_citate(risposta, righe, base: str = "", utente: str = "") -> str:
     for i, r in enumerate(righe, 1):
         if not re.search(rf"\[{i}\]", risposta):
             continue
-        per_pagina.setdefault((r["documento"], r.get("page"), r.get("source_id")), []).append(i)
+        per_pagina.setdefault((r.get("documento"), r.get("page"),
+                               r.get("source_id")), []).append(i)
     if not per_pagina:
         return ""
     voci = []
@@ -474,7 +475,7 @@ def _elenco_figure(righe, base, utente, tutte=False) -> str:
         url = documento_mod.firma_url(r.get("source_id"), r.get("documento"),
                                       r.get("page"), base, utente)
         pag = f", pagina {r['page']}" if r.get("page") is not None else ""
-        voci.append(f"- **{descr}** — [{r['documento']}{pag}]({url})")
+        voci.append(f"- **{descr}** — [{r.get('documento')}{pag}]({url})")
     resto = contate - len(voci)
     testo = "\n".join(voci)
     if resto > 0 and not tutte:
@@ -489,6 +490,30 @@ def _norma(testo: str) -> str:
     return re.sub(r"\W+", "", testo or "").lower()
 
 
+# Parole che aprono il nome di un file e non lo identificano: un «catalogo»
+# non distingue un documento da un altro.
+_GENERICI = {"catalogo", "catalog", "guida", "manuale", "listino", "collana",
+             "brochure", "de", "di"}
+
+
+def _varianti(nome: str) -> set:
+    """Come il documento puo' essere scritto in prosa: per intero, senza
+    estensione, e con la sola parola che lo identifica («Gasper»,
+    «FLEURAMI»). Il docstring promises gia' la forma breve ma il codice non la
+    cercava: su «Nei due documenti FLEURAMI (pagine 27 e 29)» nessuna variante
+    del nome trovava la frase, e la citazione finiva abbinata a un altro
+    catalogo — un link a una pagina che non contiene quello che si sta
+    dicendo (misurato il 30/09/2026: FLEURAMI 27-29 linkato a Gasper)."""
+    fuori = {_norma(nome)}
+    if nome.lower().endswith(".pdf"):
+        fuori.add(_norma(nome[:-4]))
+    for parola in re.split(r"\W+", nome)[:3]:
+        if len(parola) > 3 and parola.lower() not in _GENERICI:
+            fuori.add(_norma(parola))
+            break
+    return {v for v in fuori if v}
+
+
 def _documento_vicino(prima: str, dopo: str, per_doc: dict) -> str | None:
     """A quale documento recuperato appartiene una citazione «pagina N»:
     all'ultimo documento nominato PRIMA della citazione (la sezione di catalogo
@@ -500,32 +525,32 @@ def _documento_vicino(prima: str, dopo: str, per_doc: dict) -> str | None:
     segue («pagina 20 del catalogo Gasper»). Un documento recuperato ma mai
     nominato non puo' possedere citazioni. Il documento si riconosce anche da
     una sola parte del nome («Gasper»)."""
-    candidati = []
-    for nome_norm, (nome, _source_id) in per_doc.items():
-        varianti = {nome_norm}
-        if nome_norm.endswith("pdf"):
-            varianti.add(nome_norm[:-3])
-        candidati.append((nome, varianti))
+    candidati = [(_nome[0], _varianti(_nome[0])) for _nome in per_doc.values()]
     app = _norma(prima)
-    ultimo, pos = None, -1
+    ultimo, pos, migliore = None, -1, ""
     for nome, varianti in candidati:
         for cand in varianti:
+            # A parita' di posizione vince la variante piu' lunga: il nome
+            # intero e' piu' sicuro della parola sola.
             p = app.rfind(cand)
-            if p > pos:
-                ultimo, pos = nome, p
+            if p > pos or (p == pos and p >= 0 and len(cand) > len(migliore)):
+                ultimo, pos, migliore = nome, p, cand
     if ultimo:
         return ultimo
     app = _norma(dopo)
-    migliore, dist = None, 10 ** 9
+    migliore, dist, corta = None, 10 ** 9, ""
     for nome, varianti in candidati:
         for cand in varianti:
             p = app.find(cand)
-            if 0 <= p < dist:
-                migliore, dist = nome, p
+            if p < 0:
+                continue
+            # Vince il nome che appare per primo; a parita' quello piu' lungo.
+            if p < dist or (p == dist and len(cand) > len(corta)):
+                migliore, dist, corta = nome, p, cand
     return migliore
 
 
-def _collega_pagine(risposta, righe, conn, base, utente):
+def _collega_pagine(risposta, righe, conn, base, utente, gruppi=()):
     """I riferimenti «pagina N» nella prosa dell'agente diventano collegamenti
     alla pagina del documento da cui arrivano. La pagina si risolve su TUTTE le
     figure dei documenti coinvolti nel recupero (non solo quelle tornate in
@@ -539,12 +564,38 @@ def _collega_pagine(risposta, righe, conn, base, utente):
     if not risposta or not righe:
         return risposta, set(), []
     validi, per_doc = {}, {}
+    mancanti = set()
     for r in righe:
-        if r.get("page") is None:
+        if r.get("page") is None or r.get("documento") is None:
             continue
-        validi.setdefault((r["documento"], r["page"]), r["source_id"])
-        per_doc.setdefault(_norma(r["documento"]), (r["documento"], r["source_id"]))
+        source_id = r.get("source_id")
+        if not source_id:
+            mancanti.add(r["documento"])
+            source_id = ""
+        validi.setdefault((r["documento"], r["page"]), source_id)
+        per_doc.setdefault(_norma(r["documento"]), (r["documento"], source_id))
+    # `source_id` serve per firmare il link e il modello non e' obbligato a
+    # chiederlo nella SELECT (col flag SQL_AGENTE sceglie le colonne e potrebbe
+    # non scriverlo: KeyError, chat in 500, il 30/09/2026). Non si obbliga il
+    # modello a ricordarsene e NON si legge `immagini` per il fatto: la lettura
+    # va protetta dagli stessi permessi del resto, quindi si risolve dalla
+    # tabella dei documenti e ogni candidato passa per `visibile`, che e' il
+    # controllo gia' usato per aprire una pagina. Un documento non visibile
+    # semplicemente resta senza firma.
+    if mancanti:
+        for riga in conn.execute("SELECT DISTINCT source_id, documento "
+                                 "FROM documenti WHERE documento = ANY(%s)",
+                                 (list(mancanti),)):
+            if not documento_mod.visibile(conn, riga["source_id"], gruppi):
+                continue
+            documento, source_id = riga["documento"], riga["source_id"]
+            per_doc[_norma(documento)] = (documento, source_id)
+            for chiave in list(validi):
+                if chiave[0] == documento:
+                    validi[chiave] = source_id
     for nome, source_id in set(per_doc.values()):
+        if not source_id:
+            continue
         for riga in conn.execute(
             "SELECT page FROM immagini WHERE source_id=%s AND documento=%s AND page IS NOT NULL",
             (source_id, nome)):
@@ -596,7 +647,7 @@ def _collega_pagine(risposta, righe, conn, base, utente):
 AUTOCODA = os.environ.get("CODA_ARTICOLI", "1") != "0"
 
 
-def _risposta_prodotti(risposta, righe, conn, base, utente) -> str:
+def _risposta_prodotti(risposta, righe, conn, base, utente, gruppi=()) -> str:
     """La risposta di catalogo finita: la prosa dell'agente con i riferimenti
     «pagina N» trasformati in collegamenti e ogni affermazione marcata dal
     numero in piccolo della sua fonte. In coda, le Fonti (documento e pagine)
@@ -608,7 +659,7 @@ def _risposta_prodotti(risposta, righe, conn, base, utente) -> str:
     che il corpo non nomina mette in coda voci che non si possono seguire
     (26/09/2026: «pagine 20, 24, 30, 40, 42, 60, 65, 85, 112, 116, 131, 132,
     133, 134, 135» per una risposta che ne citava sei)."""
-    testo, collegati, ordine = _collega_pagine(risposta, righe, conn, base, utente)
+    testo, collegati, ordine = _collega_pagine(risposta, righe, conn, base, utente, gruppi)
     if not AUTOCODA or not collegati:
         return testo
     # Per costruzione le pagine citate e i documenti numerati sono gli stessi:
@@ -903,7 +954,14 @@ def _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
          # ricerca si annota anche quella, perche' una risposta strana si
          # spiega guardando cosa e' stato cercato davvero.
          domanda if not riscritta else f"{domanda}\n[cercata: {cercata}]",
-         [r["id"] for r in righe] if righe else None,
+         # `id` c'e' solo se il modello lo ha chiesto nella SELECT: con
+         # SQL_AGENTE e' lui a scegliere le colonne e puo' scrivere
+         # «SELECT documento, page» (misurato il 30/09/2026: KeyError, la chat
+         # intera rispondeva 500). La colonna e' bigint[]: registra solo gli id
+         # interi davvero tornati, e NULL quando il modello non li ha chiesti
+         # (nessun chunk da segnare; la pagina resta in `risposta`).
+         [r["id"] for r in righe
+          if "id" in r and isinstance(r["id"], int)] or None,
          not righe,
          decisione.get("fonte_contaminante") if decisione.get("interno") else None,
          decisione.get("rotta"),
@@ -1004,7 +1062,8 @@ async def chat(request: Request):
     # documenti (_fonti_citate) cercava «[n]» tra parentesi quadre, che l'agente
     # non produce piu': non collegava nulla e il link alla fonte spariva.
     if risposta:
-        risposta = _risposta_prodotti(risposta, righe, conn, f"https://{APP_HOST}", utente)
+        risposta = _risposta_prodotti(risposta, righe, conn, f"https://{APP_HOST}",
+                                 utente, gruppi)
         coda = ""
         def gen():
             try:

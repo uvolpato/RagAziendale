@@ -224,6 +224,11 @@ services:
       # niente, lo dico» invece di inventare. Costa piu' token (il budget sale
       # con AGENTE_MAX_TOKEN). Reversibile: 0 spegne.
       AGENTE_RAGIONA: ${AGENTE_RAGIONA-1}
+      # 1 = il modello interroga il database scrivendo la SELECT
+      # (orchestratore/sql_agente.py). I permessi li mette il codice, non il
+      # prompt. Con 0 resta il sistema di strumenti di prima, che ognuno ha
+      # dentro le sue regole fisse.
+      SQL_AGENTE: ${SQL_AGENTE-0}
       # Le immagini si offrono in fondo alla risposta e si mostrano a chi
       # scrive "mostra": quattro figure attaccate a ogni risposta sono rumore.
       # 0 = le attacca sempre, come prima.
