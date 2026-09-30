@@ -160,6 +160,22 @@ def controlla(sql: str) -> list[str]:
         problemi.append("non filtrare per source_id: i documenti che quest'utente "
                         "puo' vedere sono gia' decisi dal sistema, tu scrivi "
                         "cosa cercare")
+    # Un filtro ~* con piu' parole e' una trappola: 'white ribbon' cerca QUELLA
+    # coppia lettera per lettera, e nelle didascalie «white» e «ribbon» non
+    # stanno vicine (misurato il 30/09/2026: 'white ribbon' -> 0 righe contro le
+    # 21 di 'white' AND 'ribbon'). Non e' un caso specifico: e' la classe di
+    # ogni frase scritta dove il dato ha parole separate. Si respinge e si dice
+    # di spezzare, come per la tabella sola.
+    for m in re.finditer(r"(?:~~\*|~\*|~~|ilike|like)\s*'([^']+)'", testo, re.I):
+        if re.search(r"\s", m.group(1)):
+            problemi.append(
+                "il filtro cerca una frase lettera per lettera, e le didascalie "
+                "non hanno le parole attaccate: "
+                f"'{m.group(1)}' non trova niente. Scrivi UNA parola per "
+                "condizione e uniscile con AND (es. descrizione ~* 'white' AND "
+                "descrizione ~* 'ribbon'); i sinonimi si uniscono con | dentro "
+                "lo stesso filtro (es. 'ribbon|tape').")
+            break
     return problemi
 
 
@@ -287,6 +303,11 @@ def _prova():
                   "SELECT d.documento, count(*) FROM immagini i "
                   "GROUP BY d.documento"):
         assert not controlla(buona), f"doveva passare: {buona} -> {controlla(buona)}"
+    # Una frase in un ~* non trova niente: va spezzata.
+    for frase in ("WHERE descrizione ~* 'white ribbon'",
+                  "WHERE descrizione ~* 'red hearts' AND descrizione ~* 'white'"):
+        assert "UNA parola per" in " ".join(controlla(frase)), \
+            f"la frase in ~* va respinta: {frase}"
     # I permessi non si tolgono, qualunque sia la query.
     for q in ("SELECT documento FROM immagini WHERE page = 3",
               "SELECT documento FROM immagini WHERE page = 3 ORDER BY page",

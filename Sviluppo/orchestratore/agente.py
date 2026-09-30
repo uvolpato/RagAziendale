@@ -24,6 +24,7 @@ Guardrail (VALUTAZIONE-ORCHESTRATORE-AGENTE.md §4), non negoziabili:
 import json
 import operator
 import os
+import re
 import time
 from typing import Annotated, Any, TypedDict
 
@@ -576,6 +577,26 @@ def _nodo_capisce(stato: Stato) -> dict:
             "traccia": stato.get("traccia") or []}
 
 
+# Il modello in SQL_AGENTE puo' rispondere «non ho trovato» senza aver MAI
+# chiamato `interroga`: e' il «liberta'» che la mappa non toglie, e un utente che
+# chiede un prodotto riceve un falso negativo su qualcosa che esiste (misurato il
+# 30/09/2026: «ho bisogno di nastri bianchi con cuori rossi» -> «non ho trovato»
+# con STRUMENTI vuoti). Il guardrail scarta la risposta prematura e lo rimanda a
+# cercare: non decide COSA cercare (quello resta suo), decide solo che PRIMA
+# deve cercare. Un saluto («ciao») non e' un «non ho trovato» e passa liscio.
+NUDGE_SQL = (
+    "Non hai ancora cercato nulla con `interroga` prima di rispondere: scrivi "
+    "la SELECT, eseguila e rispondi solo su cio' che vedi nei risultati."
+)
+_NON_TROVATO = re.compile(
+    r"non\s+(?:ho\s+)?trovato|non\s+trovo|nessun\s+risultato|nessuna\s+"
+    r"corrispondenza|non\s+esiste|non\s+ci\s+sono", re.I)
+
+
+def _pare_non_trovato(testo: str) -> bool:
+    return bool(_NON_TROVATO.search(testo or ""))
+
+
 def _nodo_agente(stato: Stato) -> dict:
     messaggio = _chiama(stato["messaggi"])
     # Guardrail REATTIVO: scatta solo se quello forte e' spento. Se il modello
@@ -596,6 +617,17 @@ def _nodo_agente(stato: Stato) -> dict:
                 "function": {"name": "cerca_figure",
                              "arguments": json.dumps({"oggetto": oggetto})},
             }]
+    # In SQL_AGENTE il guardrail reattivo di sopra non ha un intent (estrae e'
+    # spento) ne' uno strumento `cerca_figure`: il suo posto lo prende questo.
+    if (SQL_AGENTE and not messaggio.get("tool_calls")
+            and not (stato.get("traccia") or [])
+            and _pare_non_trovato(messaggio.get("content") or "")):
+        # Risposta prematura: la si scarta e si rimanda a interroga. Il
+        # `_prossimo` riporta ad `agente` finche' non ha cercato qualcosa.
+        messaggio["content"] = ""
+        return {"messaggi": [messaggio,
+                             {"role": "user", "content": NUDGE_SQL}],
+                "passi": stato.get("passi", 0) + 1}
     return {"messaggi": [messaggio], "passi": stato.get("passi", 0) + 1}
 
 
@@ -682,6 +714,14 @@ def _prossimo(stato: Stato) -> str:
     ultimo = stato["messaggi"][-1]
     if ultimo.get("tool_calls") and stato.get("passi", 0) < MAX_PASSI:
         return "strumenti"
+    # In SQL_AGENTE, se l'ultimo messaggio e' il nudge del guardrail (il modello
+    # aveva risposto «non ho trovato» senza cercare), si torna all'agente per
+    # lasciargli scrivere la SELECT. Un saluto non produce il nudge e finisce qui.
+    if (SQL_AGENTE and not ultimo.get("tool_calls")
+            and ultimo.get("role") == "user"
+            and ultimo.get("content") == NUDGE_SQL
+            and stato.get("passi", 0) < MAX_PASSI):
+        return "agente"
     return "fine"
 
 
@@ -692,7 +732,8 @@ _grafo.add_node("strumenti", _nodo_strumenti)
 _grafo.add_edge(START, "capisce")
 _grafo.add_edge("capisce", "agente")
 _grafo.add_conditional_edges("agente", _prossimo,
-                             {"strumenti": "strumenti", "fine": END})
+                             {"strumenti": "strumenti", "agente": "agente",
+                              "fine": END})
 _grafo.add_edge("strumenti", "agente")
 _compilato = _grafo.compile()
 
