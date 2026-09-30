@@ -206,7 +206,15 @@ def _senza_aggiunte(messaggio: dict) -> dict:
     # Il filetto restava orfano dell'elenco che introduceva.
     while righe and righe[-1].strip() in ("---", ""):
         righe.pop()
-    return {**messaggio, "content": "\n".join(righe).strip()}
+    testo = "\n".join(righe).strip()
+    # I collegamenti [n](url) e il numero di fonte in piccolo che il SISTEMA
+    # mette nel corpo: in cronologia il modello li ricopia parola per parola e
+    # produce link annidati («[Pagina [5](url)¹](url)») e URL per esteso
+    # (misurato il 30/09/2026 su un follow-up di «nastri bianchi con cuori
+    # rossi»). In cronologia serve solo la prosa del modello: «pagina 5» gia' c'e'.
+    testo = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", testo)
+    testo = re.sub(r"[¹²³⁴⁵⁶⁷⁸⁹]", "", testo)
+    return {**messaggio, "content": testo}
 
 
 def _domanda(messages) -> str:
@@ -215,6 +223,17 @@ def _domanda(messages) -> str:
         if m.get("role") == "user" and isinstance(m.get("content"), str):
             return m["content"].strip()
     return ""
+
+
+def _storia(messaggi) -> list:
+    """La cronologia da dare all'agente: i soli turni di utente e assistente,
+    privi delle decorazioni del sistema (link, fonti, offerte delle immagini).
+    Il modello che rivede i collegamenti del turno prima li ricopia e produce
+    link annidati e URL per esteso (misurato il 30/09/2026)."""
+    return memoria.comprimi([
+        _senza_aggiunte(m) for m in messaggi
+        if isinstance(m.get("content"), str) and m.get("role") in ("user", "assistant")
+    ])
 
 
 # Il prompt che LibreChat manda per chiedere il TITOLO automatico della
@@ -1040,7 +1059,7 @@ async def chat(request: Request):
         precedente = _domanda_precedente(storico_messaggi)
         righe, _, _ = agente.cerca(conn, precedente, gruppi,
                                    limite=PEZZI_ELENCO,
-                                   storia=memoria.comprimi(storico_messaggi))
+                                   storia=_storia(storico_messaggi))
         elenco = _elenco_figure(righe, f"https://{APP_HOST}", utente, tutte=True)
         conn.close()
         if elenco:
@@ -1053,7 +1072,7 @@ async def chat(request: Request):
     # ricerca -> gate -> prompt).
     righe, risposta, traccia = agente.cerca(conn, domanda, gruppi,
                                             limite=pezzi_da_recuperare(domanda),
-                                            storia=memoria.comprimi(storico_messaggi))
+                                            storia=_storia(storico_messaggi))
 
     # La RISPOSTA del modello, con i riferimenti «pagina N» trasformati in
     # collegamenti alla pagina e chiusa dalle Fonti numerate. Vale per i
