@@ -1712,15 +1712,18 @@ ISTRUZIONI_FIGURA = (
     "- material: what it is made of (only if visible or readable)\n"
     "- shape/size: width, height, shape, texture, edges, any visible detail\n"
     "\n"
-    "Then write «Colours: » followed by the DISTINCT colours visible, comma-separated. "
-    "Group similar shades under one name (for example 'light blue' and 'sky blue' are "
-    "both 'blue'). List each colour exactly once.\n"
+    "Then write «Colours: » describing the colour(s) OF the object(s), not a bare list. "
+    "If the object has a pattern or motif (hearts, stars, dots, stripes), write the base "
+    "colour and the motif colour together, e.g. 'white with red hearts'. If the image "
+    "shows MULTIPLE items, describe each item's colour on its own line, keeping each "
+    "colour attached to its object. Do NOT collapse into a single flat list. Group "
+    "similar shades under one name (e.g. 'light blue' and 'sky blue' are both 'blue').\n"
     "If the image shows a single item with no colour variation, write «Colours: n/a».\n"
     "\n"
     "Only if there is a short PRODUCT CODE or product name printed near the object, "
     "write it as «Code: ». Do NOT transcribe addresses, phone numbers, or long text.\n"
-    "Never invent anything that is not visible. Do not repeat. Be COMPLETE: list ALL "
-    "the distinct colours you see, do not abbreviate the list.\n"
+    "Never invent anything that is not visible. Do not repeat. Be COMPLETE: describe "
+    "ALL the objects you see, each with its own colour and motif.\n"
     "\n"
     "Finally, answer with ONE word — «informazione» or «corredo» — after the line "
     "«Verdetto: ».\n"
@@ -1736,7 +1739,7 @@ SECONDI_PER_FIGURA = int(os.environ.get("SECONDI_PER_FIGURA", "120"))
 # cataloghi (2617 immagini su INGE = ~45 minuti in serie). llama-swap ha gli
 # slot paralleli, quindi si mandano a lotti. Reversibile: 1 = comportamento di
 # prima.
-PARALLELO_FIGURE = int(os.environ.get("PARALLELO_FIGURE", "6"))
+PARALLELO_FIGURE = int(os.environ.get("PARALLELO_FIGURE", "10"))
 # 0 = le figure entrano nell'indice con la descrizione di Docling (o senza) e il
 # VLM non viene chiamato una volta per immagine. Serve per le prove: vedi
 # _descrivi_figure.
