@@ -1,16 +1,18 @@
 {
   "_nota": [
     "Domande APERTE: non hanno una pagina giusta, hanno un ventaglio. Per",
-    "questo non c'e' un campo `riscontro` come nelle altre liste — non",
-    "esiste la riga che le risponde, esistono risposte piu' o meno utili.",
+    "questo non c'e' un campo `riscontro` come nelle altre liste.",
     "",
     "`bisogno` dice a che cosa serve, ed e' quello che il giudice usa per",
-    "dire se una proposta c'entra: una busta regalo NATALIZIA per un",
-    "compleanno di ottobre e' una cosa che esiste ma non serve.",
+    "distinguere una proposta ADIACENTE e utile da una che non serve.",
     "",
-    "`niente_in_archivio` marca le domande a cui la risposta onesta e'",
-    "«non ne abbiamo»: li' proporre qualcosa e' il fallimento, non il",
-    "successo."
+    "NON c'e' piu' `niente_in_archivio`, e la ragione e' di prodotto, non di",
+    "codice: chi usa questo sistema e' un venditore che deve farsi un'idea di",
+    "cosa proporre a un cliente, quindi meglio un articolo in piu' che uno che",
+    "poteva andare bene e non si e' visto. Mostrare un vaso a chi chiede",
+    "«giardinaggio» e' il comportamento giusto. L'unica cosa che resta",
+    "sbagliata e' AFFERMARE un reparto che non esiste — e quella la giudica",
+    "la voce `onesta`, guardando come lo dice, non cosa propone."
   ],
   "domande": [
     {
@@ -27,8 +29,7 @@
     },
     {
       "domanda": "cosa avete di sportivo?",
-      "bisogno": "articoli a tema sport",
-      "niente_in_archivio": false
+      "bisogno": "articoli a tema sport"
     },
     {
       "domanda": "mi serve qualcosa di blu",
@@ -40,8 +41,7 @@
     },
     {
       "domanda": "avete articoli per il giardinaggio?",
-      "bisogno": "attrezzi o articoli da giardino",
-      "niente_in_archivio": true
+      "bisogno": "attrezzi o articoli da giardino"
     },
     {
       "domanda": "vorrei qualcosa di elegante per una tavola apparecchiata",

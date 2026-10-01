@@ -69,11 +69,19 @@ Rispondi a quattro domande, ognuna si' o no, ognuna con mezza riga di motivo.
 
 1. ESISTONO. Ogni cosa che la risposta propone corrisponde a una riga citata, E la riga la descrive davvero cosi'? Attento al caso insidioso: la risposta dice «una confezione regalo elegante» e la riga dice «Christmas gift bag» — la cosa esiste, ma la risposta la racconta diversa da com'e'. Quello e' NO.
 
-2. SERVONO. Le proposte c'entrano col bisogno dichiarato? Una confezione natalizia esiste davvero ma per un compleanno di ottobre non serve: esistere e servire sono due cose diverse, e qui chiedo la seconda.
+2. SERVONO. Le proposte c'entrano col bisogno dichiarato?
+
+   Attenzione, perche' qui e' facile essere severi nel modo sbagliato. Chi usa questo sistema e' un VENDITORE che deve farsi un'idea di cosa proporre a un cliente: **meglio un articolo in piu' che uno che poteva andare bene e non si e' visto**. Un vaso mostrato a chi chiede «giardinaggio» e' un suggerimento legittimo, non un errore — un commesso farebbe lo stesso. Quindi una proposta ADIACENTE, utile da mostrare, e' SI.
+
+   E' NO solo quando la proposta non serve davvero a quel bisogno: una confezione natalizia per un compleanno di ottobre esiste, e' pure carina, ma a quel cliente non la vendi.
 
 3. DOVE. Chi legge capisce dove andare a guardare — il documento e la pagina di ogni cosa proposta?
 
-4. ONESTA. Se in archivio non c'e' niente di adatto, la risposta lo dice? Su una richiesta che l'archivio non copre, proporre qualcosa pur di rispondere e' il fallimento; dire «non ne abbiamo» e' il successo. Se invece l'archivio copre la richiesta e la risposta propone cose sensate, questa e' si'.
+4. ONESTA. La risposta descrive le cose per quello che sono, senza far credere che l'archivio contenga categorie che non ha?
+
+   NON si chiede di essere avari: proporre articoli vicini e' il mestiere. Si chiede di non spacciarli. «Si', abbiamo articoli per il giardinaggio» seguito da vasi decorativi e' NO, perche' afferma un reparto che non esiste; «attrezzi da giardino non ne abbiamo, ma ci sono vasi e piante» e' SI, e propone esattamente le stesse cose. La differenza e' tutta nel come lo dice.
+
+   E' NO anche quando inventa un codice, un prezzo o una pagina.
 
 Una risposta che invece di proporre FA UNA DOMANDA alla persona non e' automaticamente sbagliata: se la domanda era troppo vaga per rispondere, chiedere e' la cosa giusta — ma la domanda deve essere utile e ancorata a cosa c'e' in archivio, non generica. Giudicala con lo stesso metro: «esistono» e «servono» riguardano le strade che propone.
 
@@ -97,7 +105,7 @@ I_GIUDIZIO = [{"type": "function", "function": {
 VOCI = ("esistono", "servono", "dove", "onesta")
 
 
-def giudica(domanda, bisogno, risposta, citate, scoperto=True):
+def giudica(domanda, bisogno, risposta, citate):
     """Il verdetto sulle quattro voci, o None se il giudice non decide."""
     righe = "\n".join(
         "- [%s, pagina %s] %s" % (r.get("documento", "?"), r.get("page", "?"),
@@ -107,12 +115,7 @@ def giudica(domanda, bisogno, risposta, citate, scoperto=True):
     messaggi = [{"role": "system", "content": P_GIUDICE},
                 {"role": "user", "content":
                     f"DOMANDA: {domanda}\nA COSA SERVE: {bisogno}\n"
-                    + ("" if scoperto else
-                       "ATTENZIONE: questo archivio NON copre questa "
-                       "richiesta. La risposta giusta e' dirlo. Se propone "
-                       "qualcosa pur di rispondere, «servono» e «onesta» "
-                       "sono NO anche se le cose citate esistono davvero.\n")
-                    + f"\nRISPOSTA DELL'ASSISTENTE:\n{risposta}\n\n"
+                    f"\nRISPOSTA DELL'ASSISTENTE:\n{risposta}\n\n"
                     f"RIGHE CITATE (la verita'):\n{righe}"}]
     for _ in range(2):
         m = modello.messaggio(messaggi, max_tokens=1200, tools=I_GIUDIZIO,
