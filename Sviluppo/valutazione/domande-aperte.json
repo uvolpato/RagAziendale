@@ -1,0 +1,51 @@
+{
+  "_nota": [
+    "Domande APERTE: non hanno una pagina giusta, hanno un ventaglio. Per",
+    "questo non c'e' un campo `riscontro` come nelle altre liste — non",
+    "esiste la riga che le risponde, esistono risposte piu' o meno utili.",
+    "",
+    "`bisogno` dice a che cosa serve, ed e' quello che il giudice usa per",
+    "dire se una proposta c'entra: una busta regalo NATALIZIA per un",
+    "compleanno di ottobre e' una cosa che esiste ma non serve.",
+    "",
+    "`niente_in_archivio` marca le domande a cui la risposta onesta e'",
+    "«non ne abbiamo»: li' proporre qualcosa e' il fallimento, non il",
+    "successo."
+  ],
+  "domande": [
+    {
+      "domanda": "mi proponi qualcosa per il compleanno di mia mamma?",
+      "bisogno": "un regalo adatto a una donna adulta, per un compleanno (non una ricorrenza natalizia)"
+    },
+    {
+      "domanda": "cerco un regalo per una ragazza di trent'anni",
+      "bisogno": "un regalo adatto a una donna giovane"
+    },
+    {
+      "domanda": "vorrei qualcosa per San Valentino",
+      "bisogno": "articoli a tema cuori, romantici, adatti a San Valentino"
+    },
+    {
+      "domanda": "cosa avete di sportivo?",
+      "bisogno": "articoli a tema sport",
+      "niente_in_archivio": false
+    },
+    {
+      "domanda": "mi serve qualcosa di blu",
+      "bisogno": "la domanda non dice l'oggetto: va chiesto, oppure vanno proposte famiglie di cose blu che esistono davvero"
+    },
+    {
+      "domanda": "cosa mi consigli per decorare una vetrina di Natale?",
+      "bisogno": "decorazioni natalizie adatte a una vetrina di negozio"
+    },
+    {
+      "domanda": "avete articoli per il giardinaggio?",
+      "bisogno": "attrezzi o articoli da giardino",
+      "niente_in_archivio": true
+    },
+    {
+      "domanda": "vorrei qualcosa di elegante per una tavola apparecchiata",
+      "bisogno": "articoli per la tavola: runner, candele, centrotavola, vasi"
+    }
+  ]
+}
