@@ -64,6 +64,23 @@ from psycopg.rows import dict_row
 from orchestratore import (documento as documento_mod, egress, identita,
                            immagini as immagini_mod, mappa, modello, operatori)
 
+# Quanto puo' essere lungo il RAGIONAMENTO di una decisione.
+#
+# Non e' un numero a piacere: deve stare dentro il timeout della chiamata,
+# altrimenti e' un fallimento garantito travestito da tetto. Il conto, con i
+# numeri veri dell'1/10/2026: il modello fa ~36 token al secondo e la
+# chiamata scade a 120 secondi (`VINCOLI_TIMEOUT`), quindi oltre ~4.300
+# token non si arriva. Avevo copiato 8192 da `agente.py` senza fare questo
+# conto: 8192 / 36 = 228 secondi, il doppio del tempo concesso. Su «mi
+# proponi qualcosa per il compleanno di mia mamma?» il modello ha divagato,
+# ha sforato, e l'utente ha letto «non sono riuscito a rispondere» dopo due
+# minuti e mezzo.
+#
+# 3.500 token sono ~97 secondi: il ragionamento tipico ne usa 560 (misurato),
+# quindi il caso normale non lo tocca e quello che divaga viene troncato
+# invece di far fallire il turno.
+PENSIERO_MAX = int(os.environ.get("GRAFO_PENSIERO_MAX", "3500"))
+GUIDA_CAMPIONE = int(os.environ.get("GRAFO_GUIDA_CAMPIONE", "25"))  # righe alla guida
 MAX_PASSI = int(os.environ.get("GRAFO_MAX_PASSI", "5"))      # giri del coordinatore
 MAX_RIGHE = int(os.environ.get("GRAFO_MAX_RIGHE", "60"))     # righe tenute in stato
 ASSAGGIO = int(os.environ.get("GRAFO_ASSAGGIO", "300"))      # caratteri per riga
@@ -84,7 +101,8 @@ def _prompt(nome: str, predefinito: str) -> str:
     return os.environ.get(f"GRAFO_PROMPT_{nome.upper()}") or predefinito
 
 
-def _decide(messaggi, strumenti, tentativi: int = 2, ragiona: bool = False):
+def _decide(messaggi, strumenti, tentativi: int = 2, ragiona: bool = False,
+            su_pensiero=None):
     """Fa DECIDERE al modello, facendogli chiamare uno strumento.
 
     Serve a togliere il ripiego dal codice. Leggere una decisione con una
@@ -95,14 +113,22 @@ def _decide(messaggi, strumenti, tentativi: int = 2, ragiona: bool = False):
 
     Torna la lista delle chiamate [(nome, argomenti)], vuota se dopo
     `tentativi` non ha deciso: quello e' un guasto, non una scelta.
+
+    Con `su_pensiero` il RAGIONAMENTO del modello esce man mano, invece di
+    essere buttato. LibreChat sa renderlo come blocco pieghevole sopra la
+    risposta: chi aspetta quaranta secondi vede cosa sta succedendo, invece
+    di una schermata ferma. E' il pensiero vero, non un riassunto scritto da
+    noi.
     """
     nomi = {s["function"]["name"] for s in strumenti}
     messaggi = list(messaggi)
     for _ in range(tentativi):
-        m = modello.messaggio(messaggi, max_tokens=8192 if ragiona else 2048,
+        m = modello.messaggio(messaggi, max_tokens=PENSIERO_MAX if ragiona else 2048,
                               tools=strumenti, tool_choice="required",
                               ragiona=ragiona)
-        m.pop("reasoning_content", None)
+        pensiero = m.pop("reasoning_content", None)
+        if pensiero and callable(su_pensiero):
+            su_pensiero(str(pensiero))
         scelte = []
         for tc in m.get("tool_calls") or []:
             nome = tc.get("function", {}).get("name", "")
@@ -165,14 +191,6 @@ Il criterio e' uno solo: se cercassi cosi' com'e', quello che torna sarebbe UTIL
 
 Non elencare piu' di due cose mancanti, e scrivile come le diresti a voce.
 
-**SI PUO' RISPONDERE COSI' COM'E'?** Una domanda si puo' avere capita benissimo e restare comunque senza risposta utile, perche' non dice abbastanza. Il criterio e' quello di prima, applicato fino in fondo: *se cercassi cosi' com'e', quello che torna sarebbe utile a questa persona, o sarebbe un mucchio di cose scollegate?*
-
-Di' NO quando cercare adesso produrrebbe un elenco tenuto insieme da una sola caratteristica e da niente altro: «mi serve qualcosa di blu» restituisce un piatto, una molletta e un mappamondo preso da una guida doganale — tutti blu, nessuno utile. In quel caso la cosa che serve e' una domanda alla persona, non una ricerca.
-
-Di' SI in tutti gli altri casi, e sono la maggioranza. Un saluto e' SI (non c'e' niente da cercare, si risponde e basta). Una domanda con l'oggetto e i suoi attributi e' SI. Una domanda aperta ma con un'occasione o uno scopo («un regalo per una trentenne», «qualcosa per San Valentino») e' SI: c'e' abbastanza per cominciare. Un dato sull'archivio e' SI.
-
-Non e' una scusa per farsi dire tutto prima di muoversi: nel dubbio, SI.
-
 **QUANTO E' IMPEGNATIVA.** Ultima cosa, e serve a chi cerca: dopo di te qualcuno deve decidere dove e come cercare, e puo' farlo di getto oppure fermandosi a ragionare. Ragionare rende molto meglio quando serve e costa il triplo del tempo quando non serve, quindi dillo tu.
 
 NON impegnativa — la strada e' una sola e si vede:
@@ -188,6 +206,14 @@ IMPEGNATIVA — serve pensare:
 - e' una richiesta che la prima ricerca ovvia quasi certamente manchera'.
 
 Nel dubbio di' che e' impegnativa: una risposta lenta e giusta e' meglio di una veloce e sbagliata.
+
+**SI PUO' RISPONDERE COSI' COM'E'?** Una domanda si puo' avere capita benissimo e restare comunque senza risposta utile, perche' non dice abbastanza. Il criterio e' quello di prima, applicato fino in fondo: *se cercassi cosi' com'e', quello che torna sarebbe utile a questa persona, o sarebbe un mucchio di cose scollegate?*
+
+Di' NO quando cercare adesso produrrebbe un elenco tenuto insieme da una sola caratteristica e da niente altro: «mi serve qualcosa di blu» restituisce un piatto, una molletta e un mappamondo preso da una guida doganale — tutti blu, nessuno utile. In quel caso la cosa che serve e' una domanda alla persona, non una ricerca.
+
+Di' SI in tutti gli altri casi, e sono la maggioranza. Un saluto e' SI (non c'e' niente da cercare, si risponde e basta). Una domanda con l'oggetto e i suoi attributi e' SI. Una domanda aperta ma con un'occasione o uno scopo («un regalo per una trentenne», «qualcosa per San Valentino») e' SI: c'e' abbastanza per cominciare. Un dato sull'archivio e' SI.
+
+Non e' una scusa per farsi dire tutto prima di muoversi: nel dubbio, SI.
 
 Consegna con lo strumento `analisi`."""
 
@@ -314,6 +340,7 @@ Quando ti fermi: appena hai righe confermate che rispondono, `rispondi`. Non ins
 
 def _strumenti_del_coordinatore(ultima: bool = False,
                                 mai_cercato: bool = False,
+                                mai_eseguito: bool = False,
                                 non_rispondibile: bool = False):
     """Le mosse disponibili ADESSO.
 
@@ -364,6 +391,30 @@ def _strumenti_del_coordinatore(ultima: bool = False,
     # disponibile, quindi non ci si blocca mai.
     if mai_cercato:
         chiusura = [s for s in chiusura if s["function"]["name"] != "rispondi"]
+    # E non si CHIEDE prima di aver guardato: «che tipo di regalo?» senza
+    # aver aperto un catalogo e' far fare il lavoro alla persona.
+    #
+    # Questo cancello l'avevamo tolto stamattina perche' la misura diceva che
+    # non serviva — e allora era vero, perche' il verdetto dell'analista
+    # sulla rispondibilita' non esisteva ancora. Con quello attivo cambia
+    # tutto: su «mi proponi qualcosa per il compleanno di mia mamma?»
+    # l'analista dice «non rispondibile», `rispondi` sparisce, resta solo
+    # `chiedi` — e il coordinatore chiede al primo giro senza aver eseguito
+    # una query (misurato l'1/10/2026: analista > coordinatore > redattore,
+    # 0ok/0ko). Due meccanismi giusti che insieme fanno una cosa sbagliata.
+    #
+    # MA non vale quando l'analista ha gia' detto che la domanda e' troppo
+    # aperta per essere cercata. Li' chiedere non e' pigrizia: e' la mossa
+    # che un agente ha gia' giudicato necessaria, e il suo verdetto batte la
+    # cautela generica di questa riga. Senza questa eccezione, su «mi proponi
+    # qualcosa per il compleanno di mia mamma?» il coordinatore era costretto
+    # a cercare comunque: 223 secondi per un elenco di oggetti natalizi con
+    # le etichette sbagliate, contro i 49 di una domanda onesta (1/10/2026).
+    #
+    # All'ultima mossa torna comunque, o un turno che non ha mai potuto
+    # cercare resterebbe appeso.
+    if mai_eseguito and not ultima and not non_rispondibile:
+        chiusura = [s for s in chiusura if s["function"]["name"] != "chiedi"]
     # L'analista ha detto che cosi' com'e' non si puo' rispondere: cercando
     # verrebbe fuori un mucchio di cose tenute insieme da una caratteristica
     # sola. Allora `rispondi` non si offre e resta `chiedi`, che e' la mossa
@@ -404,6 +455,17 @@ def _strumenti_del_coordinatore(ultima: bool = False,
                         "description": "Una SELECT su una sola tabella. Vedi la mappa dei dati."},
                 "motivo": {"type": "string", "description": "Cosa cerchi, in una riga."}},
                 "required": ["sql"]}}},
+        {"type": "function", "function": {
+            "name": "proponi",
+            "description": ("Quando la domanda si risponde con una SCELTA e non "
+                            "con un risultato («un regalo per mia mamma», «cosa "
+                            "avete di sportivo»): costruisce il ventaglio delle "
+                            "strade LEGGENDOLE nell'archivio, invece di "
+                            "inventarle. Poi chiudi con `chiedi`."),
+            "parameters": {"type": "object", "properties": {
+                "motivo": {"type": "string",
+                           "description": "Cosa c'e' da restringere."}},
+                "required": []}}},
         {"type": "function", "function": {
             "name": "verifica",
             "description": ("Fa leggere le righe trovate una per una e dice quali "
@@ -505,6 +567,23 @@ def _stato_a_parole(stato) -> str:
     return "\n".join(parti)
 
 
+def _pensiero_a_chi_guarda(stato):
+    """Il ragionamento del coordinatore verso chi sta aspettando, o None.
+
+    Il modello ragiona per decidere la mossa e quel testo lo buttavamo. Ma
+    e' esattamente la risposta alla domanda «cosa sta facendo da quaranta
+    secondi?», e LibreChat sa renderlo come blocco pieghevole: chi vuole
+    guarda, chi non vuole vede solo la risposta.
+
+    Non si inventa niente e non si riassume: esce il pensiero vero. Se la
+    chiamata non e' in streaming (prove, valutazioni) non esce niente.
+    """
+    su_pezzo = stato.get("su_pezzo")
+    if not callable(su_pezzo):
+        return None
+    return lambda testo: su_pezzo(("pensiero", testo))
+
+
 def _nodo_coordinatore(stato):
     t0 = time.monotonic()
     messaggi = [
@@ -528,14 +607,22 @@ def _nodo_coordinatore(stato):
                      _strumenti_del_coordinatore(
                          ultima,
                          stato.get("respinte", 0) > 0 and stato.get("eseguite", 0) == 0,
+                         stato.get("eseguite", 0) == 0,
                          not stato.get("rispondibile", True)),
-                     ragiona=bool(stato.get("impegnativa", True)))
+                     ragiona=bool(stato.get("impegnativa", True)),
+                     su_pensiero=_pensiero_a_chi_guarda(stato))
     # Nessuna decisione dopo due richieste: e' un guasto del modello, non una
     # strategia. Si va a scrivere con quello che c'e' — e resta nella traccia.
     if not scelte:
         scelte = [("rispondi", {"motivo": "il coordinatore non ha deciso"})]
-    chiarimento = next((str(a.get("domanda") or "").strip()
-                        for n, a in scelte if n == "chiedi"), "")
+    # La domanda da fare alla persona. Se la GUIDA ne ha gia' costruita una
+    # — col ventaglio letto nei dati — quella vince: il coordinatore la
+    # riscriverebbe con parole sue, e le parole sue sono proprio quelle
+    # inventate che la guida esiste per evitare. Vale anche quando lui non
+    # chiede niente: il ventaglio non si cancella.
+    chiarimento = (stato.get("chiarimento") or ""
+                   or next((str(a.get("domanda") or "").strip()
+                            for n, a in scelte if n == "chiedi"), ""))
     return {"mosse": scelte, "passi": stato.get("passi", 0) + 1,
             "chiarimento": chiarimento,
             "traccia": [_nota("coordinatore",
@@ -602,6 +689,7 @@ def _nodo_mosse(stato):
     righe = list(stato.get("righe") or [])
     verdetti = dict(stato.get("verdetti") or {})
     traccia, esiti = [], []
+    chiarimento = stato.get("chiarimento") or ""
     mosse = stato.get("mosse") or []
 
     eseguite, respinte = stato.get("eseguite", 0), stato.get("respinte", 0)
@@ -642,6 +730,28 @@ def _nodo_mosse(stato):
                 sum(1 for v in nuovi.values() if v == "no"),
                 sum(1 for v in nuovi.values() if v == "forse")))
             traccia.append(_nota("critico", {"verificate": len(nuovi)}, 0, t0))
+        elif nome == "proponi":
+            t0 = time.monotonic()
+            # Il ventaglio c'e' gia': rifarlo sullo stesso stato da' lo stesso
+            # risultato e costa un giro. E' lo stesso fatto che diciamo per
+            # una query ripetuta — il coordinatore non ha modo di accorgersene
+            # da solo (1/10/2026: su «cosa avete di sportivo» l'ha chiesto tre
+            # volte di fila, trenta secondi buttati e zero citazioni).
+            if chiarimento:
+                esiti.append(
+                    "proponi: il ventaglio l'hai gia' costruito e non e' "
+                    "cambiato niente da allora — eccolo:\n" + chiarimento
+                    + "\nAdesso o lo mostri alla persona con `chiedi`, o "
+                      "scegli tu una delle strade e la cerchi.")
+                traccia.append(_nota("guida", {"gia_fatto": True}, 0, t0))
+                continue
+            proposta = _guida(stato, str(arg.get("motivo") or ""))
+            if proposta:
+                chiarimento = proposta
+                esiti.append("proponi: ventaglio pronto, chiudi con `chiedi`")
+            else:
+                esiti.append("proponi: non sono riuscito a costruire le strade")
+            traccia.append(_nota("guida", {"fatto": bool(proposta)}, 0, t0))
         elif nome == "guarda":
             t0 = time.monotonic()
             numeri = [int(n) for n in (arg.get("righe") or [])
@@ -659,9 +769,77 @@ def _nodo_mosse(stato):
             traccia.append(_nota("osservatore", {"foto": len(guardate)}, 0, t0))
 
     return {"righe": righe, "verdetti": verdetti, "mosse": [],
+            "chiarimento": chiarimento,
             "esiti": esiti, "eseguite": eseguite, "respinte": respinte,
             "query_fatte": sorted(viste_sql),
             "traccia": traccia}
+
+
+# ==========================================================================
+# LA GUIDA — quando la risposta e' una SCELTA, non un risultato
+# ==========================================================================
+# «Mi proponi qualcosa per il compleanno di mia mamma?» non ha una pagina
+# giusta: ha un ventaglio. Finora finiva in uno dei due modi sbagliati —
+# un elenco lungo di oggetti presi alla lontana (223 secondi, un albero di
+# Natale offerto come regalo), oppure una domanda inventata di sana pianta
+# («vuoi decorazioni, abiti o accessori?») con parole che nei cataloghi non
+# esistono.
+#
+# Il vincolo che decide se funziona: le scelte si LEGGONO nei dati, non si
+# immaginano. C'era gia' un meccanismo pensato per questo
+# (`indice.descrizioni_visibili`, la cui docstring dice proprio «generare
+# categorie ANCORATE a cio' che il catalogo contiene davvero, invece di
+# inventare zaini e cappelli») ma la tabella `indice` e' vuota e non e' mai
+# stata generata. Qui si usa materiale che c'e': le descrizioni vere delle
+# foto piu' vicine, per significato, al bisogno espresso.
+P_GUIDA = """Una persona ha chiesto qualcosa di aperto: non c'e' una risposta sola, c'e' un ventaglio. Il tuo lavoro e' aiutarla a restringere, mostrandole fra cosa puo' scegliere.
+
+Ti do quello che la persona ha chiesto e un campione VERO di cose che stanno in questo archivio, le piu' vicine al suo bisogno. Leggile, e riconosci le FAMIGLIE che vedi: non le categorie che ti aspetteresti in un negozio, ma quelle che ci sono davvero in queste righe.
+
+La regola che conta: **ogni scelta che proponi deve corrispondere a cose che hai visto nel campione.** Se nel campione ci sono diffusori, confezioni regalo e decorazioni natalizie, quelle sono le scelte. Se proponi «abiti» o «accessori» perche' suonano bene per un regalo, stai inventando — e chi sceglie quella strada trovera' il vuoto.
+
+Se il campione non contiene niente di adatto a quello che chiede, dillo: e' un'informazione utile. «Nei cataloghi non vedo articoli sportivi» vale piu' di cinque scelte finte.
+
+Da tre a cinque scelte, brevi, con parole che una persona capisce — non le etichette inglesi del catalogo. Niente pagine e niente codici: qui non si risponde, si orienta.
+
+Consegna con lo strumento `percorso`."""
+
+I_PERCORSO = [{"type": "function", "function": {
+    "name": "percorso",
+    "description": "Le strade fra cui la persona puo' scegliere.",
+    "parameters": {"type": "object", "properties": {
+        "introduzione": {"type": "string",
+                         "description": "Una riga: cosa c'e' in archivio di "
+                                        "attinente, o che non c'e' niente."},
+        "scelte": {"type": "array", "items": {"type": "string"},
+                   "description": "Da tre a cinque strade, brevi, ognuna "
+                                  "corrispondente a cose viste nel campione."},
+        "domanda": {"type": "string",
+                    "description": "La domanda con cui chiudere, una riga."}},
+        "required": ["introduzione", "scelte", "domanda"]}}}]
+
+
+def _guida(stato, motivo: str) -> str:
+    """Il ventaglio di strade, costruito sulle righe vere. "" se non riesce."""
+    campione = operatori.vicinato(
+        stato["conn"], "immagini", stato.get("ambito") or stato["domanda"],
+        stato["gruppi"], stato["aziende"], quanti=GUIDA_CAMPIONE,
+        colonne="id, documento, page, descrizione")
+    if not campione:
+        return ""
+    messaggi = [{"role": "system", "content": _prompt("guida", P_GUIDA)}]
+    messaggi += stato.get("storia") or []
+    messaggi.append({"role": "user", "content":
+                     f"Cosa ha chiesto: {stato.get('ambito') or stato['domanda']}\n"
+                     + (f"Cosa serve restringere: {motivo}\n" if motivo else "")
+                     + "\nCampione vero dall'archivio:\n" + _scheda(campione)})
+    for nome, arg in _decide(messaggi, I_PERCORSO):
+        scelte = [str(s).strip() for s in (arg.get("scelte") or []) if str(s).strip()]
+        parti = [str(arg.get("introduzione") or "").strip()]
+        parti += [f"- {s}" for s in scelte[:5]]
+        parti.append(str(arg.get("domanda") or "").strip())
+        return "\n".join(p for p in parti if p)
+    return ""
 
 
 # ==========================================================================
@@ -837,7 +1015,11 @@ def _osservatore(conn, righe, numeri, domanda: str) -> list:
 # ==========================================================================
 P_REDATTORE = """Scrivi la risposta per la persona, in italiano.
 
-Usi SOLO le righe che ti do. Non aggiungere prodotti, pagine, codici o prezzi che non sono li' dentro: se non c'e', non esiste. Se non ti do nessuna riga, dillo in una frase e basta — non riempire il vuoto, e se era solo un saluto rispondi al saluto.
+Usi SOLO le righe che ti do. Non aggiungere prodotti, pagine, codici o prezzi che non sono li' dentro: se non c'e', non esiste.
+
+Parli a una persona, non a un collega che conosce il sistema: le «righe» sono una cosa nostra e lei non sa cosa siano. Non nominarle MAI. Niente «non ho ricevuto alcuna riga da elaborare», niente «nessuna riga disponibile»: sono frasi che hai scritto davvero, perfino sotto un «ciao», e chi legge non capisce di cosa parli.
+
+Quando non ti do niente, di' quello che e' successo nella sua lingua: «non trovo niente su questo nei cataloghi». Se era un saluto, rispondi al saluto e basta — niente scuse, niente spiegazioni, niente che faccia pensare a un guasto.
 
 Ogni riga porta scritto com'e' messa, e la differenza la devi passare a chi legge:
 - **SI** — qualcuno l'ha controllata e risponde davvero. Presentala e basta.
@@ -912,7 +1094,7 @@ def _nodo_redattore(stato):
         def _manda(testo):
             if testo:
                 resi.append(testo)
-                su_pezzo(testo)
+                su_pezzo(("testo", testo))
 
         for pezzo in _pezzi_del_modello(messaggi, 2500):
             _manda(passa(pezzo))
@@ -1298,6 +1480,16 @@ def _prova():
     # A dirgli che non ha ancora cercato ci pensa lo stato, a parole.
     libero = {s["function"]["name"] for s in _strumenti_del_coordinatore()}
     assert {"cerca", "verifica", "rispondi", "chiedi"} <= libero, libero
+    # Non si chiede prima di aver guardato: senza, un verdetto «non
+    # rispondibile» faceva chiedere al primo giro, con zero query.
+    acerbo = {s["function"]["name"] for s in _strumenti_del_coordinatore(mai_eseguito=True)}
+    assert "chiedi" not in acerbo and "cerca" in acerbo, acerbo
+    assert "rispondi" in acerbo, "un saluto si chiude subito"
+    # Ma se non puo' ne' rispondere ne' chiedere, all'ultima mossa deve
+    # poter chiudere: altrimenti il turno resta appeso.
+    stretta = {s["function"]["name"] for s in _strumenti_del_coordinatore(
+        ultima=True, mai_eseguito=True, non_rispondibile=True)}
+    assert stretta == {"chiedi"}, stretta
     # Ma chi ha PROVATO a cercare e non c'e' mai riuscito non puo' dire «non
     # ho trovato»: non ha guardato niente. Misurato togliendolo — senza, lo
     # diceva lo stesso. `chiedi` pero' resta, quindi non si blocca.

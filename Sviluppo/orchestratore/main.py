@@ -227,17 +227,24 @@ def _domanda(messages) -> str:
     return ""
 
 
-def _sse(testo: str, primo: bool = False) -> str:
-    """Un pezzo di risposta nel formato che LibreChat si aspetta."""
-    corpo = {"choices": [{"delta": {"role": "assistant", "content": testo},
-                          "index": 0}]}
+def _sse(testo: str, primo: bool = False, pensiero: bool = False) -> str:
+    """Un pezzo di risposta nel formato che LibreChat si aspetta.
+
+    Con `pensiero` il testo va in `reasoning_content` invece che in
+    `content`: LibreChat lo rende come blocco pieghevole SOPRA la risposta,
+    non dentro. E' il ragionamento del coordinatore, che prima buttavamo, ed
+    e' la risposta a «cosa sta facendo da quaranta secondi».
+    """
+    delta = ({"role": "assistant", "reasoning_content": testo} if pensiero
+             else {"role": "assistant", "content": testo})
+    corpo = {"choices": [{"delta": delta, "index": 0}]}
     if primo:
         corpo["model"] = MODEL_NAME
     return f"data: {json.dumps(corpo)}\n\n"
 
 
 def _grafo_in_streaming(conn, domanda, gruppi, storico, utente,
-                        conversation_id, inizio):
+                        conversation_id, inizio, messaggio_id=None):
     """La risposta del grafo mandata mentre nasce.
 
     Il grafo gira in un thread e il redattore spinge i suoi pezzi in una
@@ -268,11 +275,16 @@ def _grafo_in_streaming(conn, domanda, gruppi, storico, utente,
         mandato, primo = [], True
         try:
             while True:
-                pezzo = pezzi.get()
-                if pezzo is None:
+                voce = pezzi.get()
+                if voce is None:
                     break
-                mandato.append(pezzo)
-                yield _sse(pezzo, primo)
+                # Dal grafo arrivano coppie (tipo, testo): «pensiero» e' il
+                # ragionamento del coordinatore, «testo» la risposta vera.
+                # Solo la seconda finisce nella traccia e nella cronologia.
+                tipo, pezzo = voce if isinstance(voce, tuple) else ("testo", voce)
+                if tipo == "testo":
+                    mandato.append(pezzo)
+                yield _sse(pezzo, primo, pensiero=(tipo == "pensiero"))
                 primo = False
             righe, risposta, traccia = esito.get("out") or ([], "", {})
             if esito.get("errore"):
@@ -296,7 +308,8 @@ def _grafo_in_streaming(conn, domanda, gruppi, storico, utente,
             _registra_traccia(conn, conversation_id, utente, domanda, righe,
                               {"rotta": "grafo"}, None, None,
                               int((time.monotonic() - inizio) * 1000),
-                              traccia=traccia, risposta="".join(mandato))
+                              traccia=traccia, risposta="".join(mandato),
+                              messaggio_id=messaggio_id)
             conn.close()
 
     return StreamingResponse(gen(), media_type="text/event-stream")
@@ -1042,14 +1055,15 @@ def _stream_litellm(messages, rotta, uso):
 
 def _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
                       token_in, token_out, latenza_ms, riscritta=False, cercata=None,
-                      traccia=None, risposta=None):
+                      traccia=None, risposta=None, messaggio_id=None):
     # token_in/out arrivano dall'ultimo chunk di LiteLLM (stream_options
     # include_usage); se la rotta non li espone restano NULL (colonna ammessa).
     conn.execute(
         """INSERT INTO traces (conversation_id, utente, domanda, chunk_ids,
                                retrieval_vuoto, taint, modello, token_in, token_out, latenza_ms,
-                               riformulazione, strumenti, ricerca, risposta)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                               riformulazione, strumenti, ricerca, risposta,
+                               messaggio_id)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (conversation_id, utente,
          # Nella traccia resta la domanda VERA; se e' stata riscritta per la
          # ricerca si annota anche quella, perche' una risposta strana si
@@ -1072,7 +1086,12 @@ def _registra_traccia(conn, conversation_id, utente, domanda, righe, decisione,
          # ricostruzione a posteriori (migrazione 024).
          json.dumps(traccia.get("strumenti"), ensure_ascii=False) if traccia else None,
          (traccia or {}).get("ricerca"),
-         risposta))
+         risposta,
+         # L'id del messaggio dell'UTENTE che ha aperto il turno. In Mongo la
+         # risposta dell'assistente ce l'ha come `parentMessageId`, quindi il
+         # pollice su/giu' si lega a questa traccia in modo esatto, non per
+         # orario (migrazione 026).
+         messaggio_id))
     conn.commit()
 
 
@@ -1082,6 +1101,7 @@ async def chat(request: Request):
     corpo = await request.json()
     authorization = request.headers.get("authorization")
     conversation_id = request.headers.get("x-conversation-id") or None
+    messaggio_id = request.headers.get("x-message-id") or None
 
     # 1. Identita: nessun percorso alternativo senza token valido.
     try:
@@ -1160,7 +1180,8 @@ async def chat(request: Request):
         # il redattore e' il 20% del tempo di un turno, ed e' l'unico pezzo
         # che l'utente aspetta per intero).
         return _grafo_in_streaming(conn, domanda, gruppi, storico_messaggi,
-                                   utente, conversation_id, inizio)
+                                   utente, conversation_id, inizio,
+                                   messaggio_id)
     else:
         righe, risposta, traccia = agente.cerca(conn, domanda, gruppi,
                                                 limite=pezzi_da_recuperare(domanda),

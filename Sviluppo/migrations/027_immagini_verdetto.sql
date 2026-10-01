@@ -19,4 +19,8 @@
 --
 -- L'invariante (detta dall'utente e da tenere): il VLM vede OGNI figura, sempre.
 -- Il verdetto decide a che cosa serve la descrizione, mai se esiste.
-ALTER TABLE immagini ADD COLUMN verdetto text;
+ALTER TABLE immagini ADD COLUMN IF NOT EXISTS verdetto text;
+-- IF NOT EXISTS aggiunto l'1/10/2026: la colonna era gia' stata creata a mano
+-- e la migrazione non era mai stata registrata, quindi `migrate.py` la
+-- ritrovava pendente e falliva a ogni giro. Una migrazione descrive lo stato
+-- voluto: ripassarci non deve rompere niente.

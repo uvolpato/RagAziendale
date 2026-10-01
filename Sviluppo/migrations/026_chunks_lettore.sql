@@ -20,4 +20,8 @@
 -- testo vanno letti con `read_text` e non passano da nessun lettore (riga 661 di
 -- `indicizza.py`). Finché è NULL non lo sappiamo, e la colonna serve anche a
 -- misurare quanto è.
-ALTER TABLE chunks ADD COLUMN lettore text;
+ALTER TABLE chunks ADD COLUMN IF NOT EXISTS lettore text;
+-- IF NOT EXISTS aggiunto l'1/10/2026: la colonna era gia' stata creata a mano
+-- e la migrazione non era mai stata registrata, quindi `migrate.py` la
+-- ritrovava pendente e falliva a ogni giro. Una migrazione descrive lo stato
+-- voluto: ripassarci non deve rompere niente.
