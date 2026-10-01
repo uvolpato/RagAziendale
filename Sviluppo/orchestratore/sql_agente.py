@@ -186,20 +186,36 @@ def controlla(sql: str) -> list[str]:
     # e riscriveva la stessa cosa: misurato l'1/10/2026, quattro query di fila
     # respinte su «nastri con le stelle» e zero ricerche eseguite. Un errore
     # che non dice QUALE pezzo e' sbagliato non e' correggibile.
-    for m in re.finditer(r"(?:~~\*|~\*|~~|ilike|like)\s*'([^']+)'", testo, re.I):
-        frasi = [a for a in m.group(1).split("|") if re.search(r"\s", a.strip())]
+    #
+    # Il motivo va detto in un modo che sia VERO per la tabella che si sta
+    # interrogando. Diceva «le didascalie sono etichette e le parole non
+    # stanno attaccate»: in `immagini` e' vero, in `chunks` e' falso — li'
+    # c'e' prosa, e le parole stanno attaccate. Il modello la leggeva come
+    # una regola sulle foto, la riteneva inapplicabile al testo, e scriveva
+    # `content ~* 'red christmas balls'`: respinta, con addosso una
+    # spiegazione che parlava di didascalie che non c'entravano (2/10/2026,
+    # «quanto costano?»). Un messaggio falso sui dati che hai davanti non e'
+    # correggibile: si riscrive la stessa query. Il motivo vero vale per
+    # tutte e due — `~*` cerca la sequenza esatta, spazi compresi — e
+    # l'esempio usa la colonna che il modello ha scritto davvero.
+    for m in re.finditer(r"(?:\b([a-z_][a-z0-9_]*)\s*)?(?:~~\*|~\*|~~|ilike|like)"
+                         r"\s*'([^']+)'", testo, re.I):
+        frasi = [a for a in m.group(2).split("|") if re.search(r"\s", a.strip())]
         if not frasi:
             continue
-        buone = [a for a in m.group(1).split("|") if a.strip() and not re.search(r"\s", a.strip())]
+        colonna = m.group(1) or "descrizione"
+        buone = [a for a in m.group(2).split("|") if a.strip() and not re.search(r"\s", a.strip())]
         problemi.append(
             "dentro il filtro '%s' c'e' un'alternativa con uno spazio: %s. "
-            "Le didascalie sono etichette e le parole non stanno attaccate, "
-            "quindi quella coppia non la trova mai. %s"
-            % (m.group(1), ", ".join(f"'{f.strip()}'" for f in frasi),
+            "`~*` cerca la sequenza esatta di lettere, spazi compresi: quelle "
+            "parole devono stare in quell'ordine e senza niente in mezzo, e "
+            "quasi mai ci stanno. %s"
+            % (m.group(2), ", ".join(f"'{f.strip()}'" for f in frasi),
                ("Togli quella e tieni il resto: '%s'." % "|".join(buone))
                if buone else
                "Spezzala: una parola per condizione, unite con AND "
-               "(es. descrizione ~* 'white' AND descrizione ~* 'ribbon')."))
+               "(es. %s ~* '%s' AND %s ~* '%s')."
+               % (colonna, frasi[0].split()[0], colonna, frasi[0].split()[-1])))
         break
     return problemi
 

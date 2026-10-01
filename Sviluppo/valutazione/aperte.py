@@ -162,14 +162,8 @@ def main():
                 pass
             continue
         secondi = time.monotonic() - t0
-        # `niente_in_archivio` deve ARRIVARE al giudice: ce l'avevo nel
-        # file e non lo passavo, cosi' su «avete articoli per il
-        # giardinaggio?» ha dato 4/4 a una risposta che spacciava vasi
-        # decorativi per attrezzi da giardino. Un dato scritto e mai letto —
-        # lo stesso difetto trovato nel codice con `esiti`.
         g = giudica(d["domanda"], d.get("bisogno", ""), risposta,
-                    citate_davvero(risposta, righe),
-                    scoperto=not d.get("niente_in_archivio"))
+                    citate_davvero(risposta, righe))
         if g is None:
             print("%-44s  il giudice non ha deciso" % d["domanda"][:44])
             continue

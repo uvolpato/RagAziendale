@@ -183,9 +183,12 @@ Sulle domande di SEGUITO sta tutta la difficolta', perche' l'ultima riga non si 
 
 Guarda sempre cosa e' stato gia' mostrato: un seguito di solito chiede la parte che manca, o restringe, o chiede il dettaglio di una cosa dell'elenco.
 
-**COSA MANCA**: quello che la domanda NON dice e che cambierebbe la risposta. E' la parte difficile, e si sbaglia in due modi:
+**COSA MANCA**: quello che la domanda NON dice e che cambierebbe la risposta. E' la parte difficile, e si sbaglia in tre modi:
 - dire che manca qualcosa quando non manca. «Nastri bianchi con cuori rossi» e' completa: c'e' l'oggetto e ci sono gli attributi. Non manca la larghezza, non manca il prezzo: se li volesse li avrebbe chiesti.
 - non accorgersi che manca l'essenziale. «Mi serve il rosso» non dice l'OGGETTO: cosi' com'e' seleziona qualunque cosa rossa dell'archivio, e chi legge si ritrova piatti e mollette insieme. «Qualcosa per San Valentino» non dice che TIPO di cosa ne' per chi.
+- scambiare quello che manca alla DOMANDA con quello che manca alla RISPOSTA. Qui ci sta la trappola: su «quanto costano?» hai risposto «manca il prezzo» (vero il 2/10/2026). Il prezzo e' quello che la persona VUOLE SAPERE, non un'informazione che lei avrebbe dovuto darti. Chiedere «qual e' il prezzo?» a chi ti ha appena chiesto il prezzo e' la domanda piu' inutile che esista. La prova per distinguerli: potrebbe rispondertelo LEI? Se la risposta e' no, quella cosa non manca alla domanda — e questo campo resta vuoto.
+
+Quando il campo e' vuoto, lascialo vuoto. Una lista vuota e' un'informazione («questa domanda e' completa»), riempirla per forza fa fare a chi viene dopo di te una domanda che non serve a nessuno.
 
 Il criterio e' uno solo: se cercassi cosi' com'e', quello che torna sarebbe UTILE a chi ha chiesto, o sarebbe un mucchio? Se e' un mucchio, quello che lo rende un mucchio e' la cosa che manca.
 
@@ -318,6 +321,7 @@ Quindi, prima di `rispondi`, guarda lo stato: **ci sono righe senza verdetto?** 
 Cosa succede se rispondi lo stesso: quelle righe arrivano a chi scrive marcate «NON VERIFICATA», e la risposta si apre dicendo alla persona che nessuno le ha controllate. Non e' una risposta, e' un elenco grezzo con una scusa davanti — e la persona se ne accorge.
 
 L'unico caso in cui ha senso saltare la verifica e' quando non c'e' niente da verificare: un saluto, oppure un dato secco che la query ha gia' dato per intero (un conteggio, un elenco di documenti). Se hai in mano righe di prodotti o di testo, quelle vanno controllate. Sempre.
+- `proponi` costruisce il VENTAGLIO delle strade leggendole nell'archivio, per le domande che si rispondono con una scelta e non con un risultato. **Si chiama UNA VOLTA SOLA.** Il ventaglio resta nello stato: appena ce l'hai, la mossa dopo e' `chiedi`, che lo mostra alla persona. Richiamare `proponi` sullo stesso stato rida' lo stesso ventaglio e costa quattordici secondi per niente; e mettersi a `cerca` dopo averlo costruito e' lo stesso errore — stavi per chiedere, le righe che trovi adesso non le guardera' nessuno.
 - `chiedi` si ferma e FA UNA DOMANDA alla persona. E' una mossa come le altre, non una resa.
 
 **Se ti dicono che la domanda NON e' rispondibile cosi' com'e', non cercare.** Chi ha letto la domanda ha gia' stabilito che una ricerca produrrebbe un mucchio di cose tenute insieme da una caratteristica sola — «qualcosa di blu» tira su un piatto, una molletta e un mappamondo. Cercare lo stesso vuol dire spendere due minuti per arrivare a chiedere comunque, con in mano un elenco che non serve a nessuno. In quel caso le mosse sono due: `proponi` per vedere fra cosa si puo' scegliere, poi `chiedi`. Niente `cerca`.
@@ -416,7 +420,21 @@ def _strumenti_del_coordinatore(ultima: bool = False,
     #
     # All'ultima mossa torna comunque, o un turno che non ha mai potuto
     # cercare resterebbe appeso.
-    if mai_eseguito and not ultima and not non_rispondibile:
+    #
+    # E non vale nemmeno quando il VENTAGLIO e' gia' pronto, per la ragione
+    # letterale del cancello: «aver guardato». La guida l'archivio l'ha
+    # guardato — le strade che propone sono lette nelle descrizioni vere
+    # delle foto vicine al bisogno, non immaginate. `eseguite` conta le
+    # `cerca` e non le vede, quindi da sola dice una cosa falsa.
+    #
+    # Il prezzo di non leggerlo era tutto il tempo del turno: lo stato
+    # diceva al coordinatore «la mossa che resta e' `chiedi`» e `chiedi` non
+    # era sul tavolo, cosi' rifaceva `proponi` a vuoto finche' l'ultima
+    # mossa non riapriva il cancello — quattro giri, 37 secondi su 61
+    # (2/10/2026). `ventaglio_pronto` arrivava qui gia' calcolato e nessuno
+    # lo leggeva: stesso difetto di `esiti`, di `rispondibile` e del
+    # ventaglio fuori dallo stato.
+    if mai_eseguito and not ultima and not non_rispondibile             and not ventaglio_pronto:
         chiusura = [s for s in chiusura if s["function"]["name"] != "chiedi"]
     # L'analista ha detto che cosi' com'e' non si puo' rispondere: cercando
     # verrebbe fuori un mucchio di cose tenute insieme da una caratteristica
@@ -530,6 +548,18 @@ def _stato_a_parole(stato) -> str:
                      + ".\nE' la materia prima di `chiedi`: se cercando cosi' "
                        "com'e' torna un mucchio di cose scollegate, la domanda "
                        "da fare e' questa.")
+    if stato.get("chiarimento"):
+        # Il ventaglio e' un pezzo di stato DUREVOLE, come le righe e i
+        # verdetti, e come loro va detto a ogni giro. Finiva solo negli
+        # `esiti`, che raccontano l'ultima mossa e basta: al giro dopo era
+        # sparito dalla vista, e il coordinatore rifaceva `proponi` credendo
+        # di non averlo. Tre volte di fila sul compleanno (1/10/2026),
+        # trentotto secondi. Stesso difetto di `esiti` e di `rispondibile`:
+        # un dato che lo stato ha e non pronuncia.
+        parti.append("IL VENTAGLIO E' GIA' PRONTO — l'hai costruito tu, e "
+                     "non e' cambiato niente da allora:\n" + stato["chiarimento"]
+                     + "\nNon ricostruirlo e non cercare: la mossa che resta "
+                       "e' `chiedi`, che lo mostra alla persona.")
     if not righe:
         parti.append("Non hai ancora trovato niente.")
     else:
