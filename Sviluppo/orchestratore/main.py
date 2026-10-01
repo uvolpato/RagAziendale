@@ -18,7 +18,9 @@ LibreChat non fa scegliere nulla all'utente (librechat.yaml.tmpl).
 """
 import json
 import os
+import queue
 import re
+import threading
 import time
 
 import psycopg
@@ -27,7 +29,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from orchestratore import documento as documento_mod
-from orchestratore import agente, egress, gate, identita, immagini, immagini_articoli, indice, memoria, modello, prompt, recupero, ricerca_agente, riformula, vincoli
+from orchestratore import agente, egress, gate, grafo, identita, immagini, immagini_articoli, indice, memoria, modello, prompt, recupero, ricerca_agente, riformula, vincoli
 
 app = FastAPI()
 
@@ -225,6 +227,81 @@ def _domanda(messages) -> str:
     return ""
 
 
+def _sse(testo: str, primo: bool = False) -> str:
+    """Un pezzo di risposta nel formato che LibreChat si aspetta."""
+    corpo = {"choices": [{"delta": {"role": "assistant", "content": testo},
+                          "index": 0}]}
+    if primo:
+        corpo["model"] = MODEL_NAME
+    return f"data: {json.dumps(corpo)}\n\n"
+
+
+def _grafo_in_streaming(conn, domanda, gruppi, storico, utente,
+                        conversation_id, inizio):
+    """La risposta del grafo mandata mentre nasce.
+
+    Il grafo gira in un thread e il redattore spinge i suoi pezzi in una
+    coda; qui si svuota la coda verso il browser. L'ordine e' garantito e
+    `conn` non e' mai usata da due parti insieme: il thread finisce prima
+    che il generatore esca dal ciclo.
+
+    Le citazioni sono gia' collegate quando arrivano (`grafo` le risolve nel
+    flusso) e le fonti sono l'ultimo pezzo: qui non si trasforma niente.
+    """
+    pezzi = queue.Queue()
+    esito = {}
+
+    def lavora():
+        try:
+            esito["out"] = grafo.cerca(conn, domanda, gruppi,
+                                       storia=_storia(storico),
+                                       su_pezzo=pezzi.put,
+                                       base=f"https://{APP_HOST}", utente=utente)
+        except Exception as e:          # il thread non deve morire in silenzio
+            esito["errore"] = e
+        finally:
+            pezzi.put(None)
+
+    threading.Thread(target=lavora, daemon=True).start()
+
+    def gen():
+        mandato, primo = [], True
+        try:
+            while True:
+                pezzo = pezzi.get()
+                if pezzo is None:
+                    break
+                mandato.append(pezzo)
+                yield _sse(pezzo, primo)
+                primo = False
+            righe, risposta, traccia = esito.get("out") or ([], "", {})
+            if esito.get("errore"):
+                e = esito["errore"]
+                print(f"grafo: {type(e).__name__}: {e}", flush=True)
+                if not mandato:
+                    testo = "Non sono riuscito a rispondere a questa domanda."
+                    mandato.append(testo)
+                    yield _sse(testo, primo)
+            elif not mandato and risposta:
+                # Il redattore non ha streammato (puo' succedere se il turno
+                # finisce senza passare di li'): si manda il testo reso.
+                testo = (risposta if traccia.get("resa") else
+                         grafo.rendi(conn, risposta, righe, f"https://{APP_HOST}",
+                                     utente, gruppi, traccia.get("etichette")))
+                mandato.append(testo)
+                yield _sse(testo, primo)
+            yield "data: [DONE]\n\n"
+        finally:
+            righe, _, traccia = esito.get("out") or ([], "", {})
+            _registra_traccia(conn, conversation_id, utente, domanda, righe,
+                              {"rotta": "grafo"}, None, None,
+                              int((time.monotonic() - inizio) * 1000),
+                              traccia=traccia, risposta="".join(mandato))
+            conn.close()
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 def _storia(messaggi) -> list:
     """La cronologia da dare all'agente: i soli turni di utente e assistente,
     privi delle decorazioni del sistema (link, fonti, offerte delle immagini).
@@ -304,6 +381,11 @@ def _chiacchiera(domanda):
 # figure in fondo a ogni risposta sono rumore che nasconde il testo.
 # IMMAGINI_SU_RICHIESTA=0 torna al comportamento di prima.
 SU_RICHIESTA = os.environ.get("IMMAGINI_SU_RICHIESTA", "1") != "0"
+
+# 1 = ricerca multiagentica (grafo.py, D23): cinque agenti invece di uno, con
+# il critico che verifica riga per riga e le citazioni [[n]] al posto del
+# «pagina N» da reinterpretare. 0/assente = il flusso di oggi, identico.
+GRAFO = os.environ.get("GRAFO", "") == "1"
 # Frase dell'offerta. Contiene MARCA: al turno dopo si guarda se l'assistente
 # aveva davvero offerto qualcosa, prima di interpretare un "si" come consenso.
 MARCA_OFFERTA = "immagini collegate a questa risposta"
@@ -1070,9 +1152,19 @@ async def chat(request: Request):
     # prodotti, legge il testo per i documenti, risponde ai saluti senza
     # cercare. Sostituisce la catena fissa (riformula -> vincoli -> glossario ->
     # ricerca -> gate -> prompt).
-    righe, risposta, traccia = agente.cerca(conn, domanda, gruppi,
-                                            limite=pezzi_da_recuperare(domanda),
-                                            storia=_storia(storico_messaggi))
+    if GRAFO:
+        # D23: il grafo di agenti. La risposta esce MENTRE il redattore la
+        # scrive — il grafo gira in un thread e i pezzi passano da una coda.
+        # Non cambia una virgola di cosa dice: cambia che chi legge non
+        # aspetta diciassette secondi davanti al vuoto (misurato l'1/10/2026:
+        # il redattore e' il 20% del tempo di un turno, ed e' l'unico pezzo
+        # che l'utente aspetta per intero).
+        return _grafo_in_streaming(conn, domanda, gruppi, storico_messaggi,
+                                   utente, conversation_id, inizio)
+    else:
+        righe, risposta, traccia = agente.cerca(conn, domanda, gruppi,
+                                                limite=pezzi_da_recuperare(domanda),
+                                                storia=_storia(storico_messaggi))
 
     # La RISPOSTA del modello, con i riferimenti «pagina N» trasformati in
     # collegamenti alla pagina e chiusa dalle Fonti numerate. Vale per i
@@ -1081,8 +1173,14 @@ async def chat(request: Request):
     # documenti (_fonti_citate) cercava «[n]» tra parentesi quadre, che l'agente
     # non produce piu': non collegava nulla e il link alla fonte spariva.
     if risposta:
-        risposta = _risposta_prodotti(risposta, righe, conn, f"https://{APP_HOST}",
-                                 utente, gruppi)
+        # Col grafo le citazioni sono «[[3]]», cioe' la riga 3 del database:
+        # il collegamento si costruisce dalla riga, non si indovina rileggendo
+        # la prosa (che e' quello che sbagliava 4 citazioni su 5).
+        risposta = (grafo.rendi(conn, risposta, righe, f"https://{APP_HOST}",
+                                utente, gruppi, traccia.get("etichette"))
+                    if GRAFO else
+                    _risposta_prodotti(risposta, righe, conn, f"https://{APP_HOST}",
+                                 utente, gruppi))
         coda = ""
         def gen():
             try:
@@ -1092,7 +1190,7 @@ async def chat(request: Request):
                 yield "data: [DONE]\n\n"
             finally:
                 _registra_traccia(conn, conversation_id, utente, domanda, righe,
-                                  {"rotta": "agente"}, None, None,
+                                  {"rotta": "grafo" if GRAFO else "agente"}, None, None,
                                   int((time.monotonic() - inizio) * 1000),
                                   traccia=traccia, risposta=risposta + coda)
                 conn.close()
@@ -1107,7 +1205,7 @@ async def chat(request: Request):
                 yield "data: [DONE]\n\n"
             finally:
                 _registra_traccia(conn, conversation_id, utente, domanda, righe,
-                                  {"rotta": "agente"}, None, None,
+                                  {"rotta": "grafo" if GRAFO else "agente"}, None, None,
                                   int((time.monotonic() - inizio) * 1000),
                                   traccia=traccia, risposta=testo)
                 conn.close()

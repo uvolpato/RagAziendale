@@ -142,8 +142,19 @@ def controlla(sql: str) -> list[str]:
             + ", ".join(citate) + ": fai due chiamate, una per tabella")
     # Le colonne citate devono esistere: evita che il peso vada a spese del
     # permesso (una colonna inesistente fa fallire tutta la query).
-    for c in re.findall(r"\b([a-z_][a-z0-9_]*)\s*(?:~|~~\*?|=|>=|<=|>|<|ILIKE|"
-                         r"LIKE|IS|ANY)\s*", testo, re.I):
+    #
+    # Si guarda il testo SENZA le stringhe, e gli operatori-parola vogliono i
+    # confini. Prima si scandiva tutto, `IS` compreso e senza `\b`: dentro
+    # 'chr-is-tmas' la regex leggeva la colonna «chr» seguita da IS, e
+    # respingeva la query con «colonna non conosciuta: chr». Qualunque termine
+    # di ricerca che contenesse «is» era irricercabile — «christmas», «lista»,
+    # «misura», «artistico» — con un errore che parlava di una colonna che il
+    # modello non aveva scritto, quindi non correggibile: riscriveva, veniva
+    # respinto di nuovo, e finiva per dire «non ho trovato nulla» su roba che
+    # c'era (1/10/2026, «palline rosse o gialle»: 53 righe in archivio).
+    senza_stringhe = re.sub(r"'(?:[^']|'')*'", "''", testo)
+    for c in re.findall(r"\b([a-z_][a-z0-9_]*)\s*(?:~~\*?|~\*|~|=|>=|<=|>|<|"
+                        r"\bILIKE\b|\bLIKE\b|\bIS\b|\bANY\b)", senza_stringhe, re.I):
         if c.lower() in ("and", "or", "not", "where", "like", "ilike", "is",
                          "notnull", "null", "any", "all", "case", "when",
                          "then", "else", "end", "distinct", "as", "on", "in",
@@ -166,16 +177,30 @@ def controlla(sql: str) -> list[str]:
     # 21 di 'white' AND 'ribbon'). Non e' un caso specifico: e' la classe di
     # ogni frase scritta dove il dato ha parole separate. Si respinge e si dice
     # di spezzare, come per la tabella sola.
+    # Si guarda ogni ALTERNATIVA dentro i `|`, non il filtro intero.
+    #
+    # Prima bastava uno spazio in un punto qualsiasi per respingere tutta la
+    # condizione, e il messaggio diceva che «'star|star motif|stellar' non
+    # trova niente» — falso, `star` da sola trova quaranta righe. Il modello
+    # leggeva una critica all'intero filtro, non sapeva quale pezzo togliere,
+    # e riscriveva la stessa cosa: misurato l'1/10/2026, quattro query di fila
+    # respinte su «nastri con le stelle» e zero ricerche eseguite. Un errore
+    # che non dice QUALE pezzo e' sbagliato non e' correggibile.
     for m in re.finditer(r"(?:~~\*|~\*|~~|ilike|like)\s*'([^']+)'", testo, re.I):
-        if re.search(r"\s", m.group(1)):
-            problemi.append(
-                "il filtro cerca una frase lettera per lettera, e le didascalie "
-                "non hanno le parole attaccate: "
-                f"'{m.group(1)}' non trova niente. Scrivi UNA parola per "
-                "condizione e uniscile con AND (es. descrizione ~* 'white' AND "
-                "descrizione ~* 'ribbon'); i sinonimi si uniscono con | dentro "
-                "lo stesso filtro (es. 'ribbon|tape').")
-            break
+        frasi = [a for a in m.group(1).split("|") if re.search(r"\s", a.strip())]
+        if not frasi:
+            continue
+        buone = [a for a in m.group(1).split("|") if a.strip() and not re.search(r"\s", a.strip())]
+        problemi.append(
+            "dentro il filtro '%s' c'e' un'alternativa con uno spazio: %s. "
+            "Le didascalie sono etichette e le parole non stanno attaccate, "
+            "quindi quella coppia non la trova mai. %s"
+            % (m.group(1), ", ".join(f"'{f.strip()}'" for f in frasi),
+               ("Togli quella e tieni il resto: '%s'." % "|".join(buone))
+               if buone else
+               "Spezzala: una parola per condizione, unite con AND "
+               "(es. descrizione ~* 'white' AND descrizione ~* 'ribbon')."))
+        break
     return problemi
 
 
@@ -296,6 +321,15 @@ def _prova():
     assert "una tabella sola" in " ".join(controlla(
         "SELECT page FROM immagini UNION SELECT page FROM chunks")), \
         "la query su due tabelle deve dirlo perche'"
+    # Un termine di ricerca con «is» dentro non e' una colonna. Erano
+    # irricercabili «christmas», «lista», «misura», «artistico»: il controllo
+    # sulle colonne leggeva dentro le stringhe e IS senza confini di parola.
+    for parola in ("christmas", "lista", "misura", "artistico", "is"):
+        q = f"SELECT id FROM immagini WHERE descrizione ~* '{parola}'"
+        assert not controlla(q), f"'{parola}' deve essere cercabile: {controlla(q)}"
+    # Ma una colonna che non esiste DAVVERO va ancora respinta.
+    assert controlla("SELECT id FROM immagini WHERE colore = 'rosso'"), \
+        "una colonna inesistente fuori dalle stringhe va respinta"
     for buona in ("SELECT documento, page, descrizione FROM immagini "
                   "WHERE descrizione ~* 'soccer|football' LIMIT 20",
                   "SELECT documento, page FROM immagini "
@@ -303,11 +337,22 @@ def _prova():
                   "SELECT d.documento, count(*) FROM immagini i "
                   "GROUP BY d.documento"):
         assert not controlla(buona), f"doveva passare: {buona} -> {controlla(buona)}"
-    # Una frase in un ~* non trova niente: va spezzata.
+    # Una frase in un ~* non trova niente: va respinta, e l'errore deve dire
+    # QUALE pezzo e' sbagliato.
     for frase in ("WHERE descrizione ~* 'white ribbon'",
                   "WHERE descrizione ~* 'red hearts' AND descrizione ~* 'white'"):
-        assert "UNA parola per" in " ".join(controlla(frase)), \
+        assert "una parola per condizione" in " ".join(controlla(frase)).lower(), \
             f"la frase in ~* va respinta: {frase}"
+    # Con piu' alternative, si nomina SOLO quella con lo spazio e si suggerisce
+    # il filtro ripulito: prima si respingeva tutto dicendo che «star|star
+    # motif|stellar non trova niente», che e' falso e irreparabile.
+    detto = " ".join(controlla("SELECT id FROM immagini WHERE descrizione "
+                               "~* 'star|star motif|stellar'"))
+    assert "'star motif'" in detto, detto
+    assert "'star|stellar'" in detto, "deve suggerire il filtro senza la frase"
+    # Un filtro di sole parole singole non si tocca.
+    assert not controlla("SELECT id FROM immagini WHERE descrizione "
+                         "~* 'star|stellar|sterne'")
     # I permessi non si tolgono, qualunque sia la query.
     for q in ("SELECT documento FROM immagini WHERE page = 3",
               "SELECT documento FROM immagini WHERE page = 3 ORDER BY page",

@@ -229,6 +229,16 @@ services:
       # prompt. Con 0 resta il sistema di strumenti di prima, che ognuno ha
       # dentro le sue regole fisse.
       SQL_AGENTE: ${SQL_AGENTE-0}
+      # 1 = ricerca multiagentica (orchestratore/grafo.py, D23): istradatore,
+      # cercatore (con gli operatori SIMILE/TERMINI), critico, osservatore,
+      # redattore. Le citazioni sono [[n]] e il collegamento nasce dalla riga.
+      # 0/assente = il flusso di oggi, identico. Reversibile.
+      GRAFO: ${GRAFO-0}
+      # 1 = l'osservatore apre la foto e la manda al VLM sui casi dubbi.
+      # ATTENZIONE: in llama-swap il VLM e il 14b stanno in gruppi diversi,
+      # quindi caricarlo scarica la chat. Misurare la VRAM prima di accenderlo.
+      GRAFO_OSSERVATORE: ${GRAFO_OSSERVATORE-0}
+      MODELLO_VLM: ${MODELLO_VLM-qwen/qwen3-vl-4b}
       # Le immagini si offrono in fondo alla risposta e si mostrano a chi
       # scrive "mostra": quattro figure attaccate a ogni risposta sono rumore.
       # 0 = le attacca sempre, come prima.
