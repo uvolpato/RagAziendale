@@ -341,7 +341,8 @@ Quando ti fermi: appena hai righe confermate che rispondono, `rispondi`. Non ins
 def _strumenti_del_coordinatore(ultima: bool = False,
                                 mai_cercato: bool = False,
                                 mai_eseguito: bool = False,
-                                non_rispondibile: bool = False):
+                                non_rispondibile: bool = False,
+                                ventaglio_pronto: bool = False):
     """Le mosse disponibili ADESSO.
 
     `guarda` compare solo se l'osservatore e' acceso, e all'ultimo giro
@@ -442,6 +443,19 @@ def _strumenti_del_coordinatore(ultima: bool = False,
     # rigiudica quando i dati lo smentiscono (`_dopo_mosse`).
     if non_rispondibile:
         chiusura = [s for s in chiusura if s["function"]["name"] != "rispondi"]
+        # E non c'e' nemmeno niente da CERCARE. Toglierle solo `rispondi`
+        # non bastava: il coordinatore andava a cercare lo stesso, bruciava
+        # quattro mosse, arrivava all'ultima dove gli restava solo `chiedi`,
+        # e intanto il redattore si ritrovava in mano un mucchio di righe e
+        # scriveva l'elenco. Misurato tre volte su tre il 1/10/2026 con «mi
+        # serve qualcosa di blu»: verdetto giusto ogni volta, due minuti
+        # buttati ogni volta, e in fondo un elenco di mappamondi.
+        #
+        # Se la domanda e' troppo generica non c'e' niente da cercare: c'e'
+        # da chiedere. Le mosse restano due sole, e si scelgono in fondo
+        # (qui `mosse` non esiste ancora): `proponi`, che le scelte le LEGGE
+        # nei dati — cosi' la domanda esce ancorata e non generica — e
+        # `chiedi`.
     if ultima:
         return chiusura
     mosse = [
@@ -486,6 +500,17 @@ def _strumenti_del_coordinatore(ultima: bool = False,
                 "domanda": {"type": "string",
                             "description": "Cosa chiedere guardando la foto."}},
                 "required": ["righe", "domanda"]}}})
+    if non_rispondibile:
+        # Domanda troppo generica: niente ricerche, solo il ventaglio e la
+        # domanda. Vedi il perche' sopra, dove si toglie `rispondi`.
+        #
+        # E se il ventaglio e' GIA' costruito resta solo `chiedi`: altrimenti
+        # il coordinatore richiede `proponi` a ogni giro — il controllo non
+        # rifa' il lavoro, ma ogni tentativo costa comunque un suo giro
+        # (misurato: quattro `proponi` di fila su «compleanno di mia mamma»).
+        ammesse = ("chiedi",) if ventaglio_pronto else ("proponi", "chiedi")
+        return [s for s in mosse + chiusura
+                if s["function"]["name"] in ammesse]
     return mosse + chiusura
 
 
@@ -608,7 +633,8 @@ def _nodo_coordinatore(stato):
                          ultima,
                          stato.get("respinte", 0) > 0 and stato.get("eseguite", 0) == 0,
                          stato.get("eseguite", 0) == 0,
-                         not stato.get("rispondibile", True)),
+                         not stato.get("rispondibile", True),
+                         bool(stato.get("chiarimento"))),
                      ragiona=bool(stato.get("impegnativa", True)),
                      su_pensiero=_pensiero_a_chi_guarda(stato))
     # Nessuna decisione dopo due richieste: e' un guasto del modello, non una
@@ -1029,7 +1055,9 @@ Se sono tutte non verificate, dillo prima dell'elenco, non dopo. Una pagina che 
 
 E non scrivere MAI frasi come «tutte le informazioni sono state verificate» o «dati controllati». L'etichetta e' di ogni singola riga, non dell'insieme: se anche una sola e' FORSE o NON VERIFICATA, quella frase e' falsa — e l'hai scritta davvero, sotto un elenco in cui sei righe su venti erano confermate. Non rassicurare chi legge su un controllo che non c'e' stato: e' l'unico modo di sbagliare che gli fa prendere una decisione sbagliata senza accorgersene.
 
-Se ti do anche una DOMANDA DA FARE alla persona, chiudi con quella: prima mostri quello che hai trovato (se hai trovato qualcosa), poi la fai, in una riga, senza girarci intorno e senza scusarti. Una domanda alla fine di qualcosa di concreto e' utile; una domanda al posto di una risposta non lo e'.
+Se ti do anche una DOMANDA DA FARE alla persona, chiudi con quella: prima mostri quello che hai trovato (se hai trovato qualcosa), poi la fai, in una riga, senza girarci intorno e senza scusarti.
+
+E in quel caso **non dire che non hai trovato niente**: se c'e' una domanda da fare, vuol dire che la richiesta era troppo generica per cercare — non che l'archivio sia vuoto. «Non trovo niente su questo nei cataloghi» davanti a «mi serve qualcosa di blu» e' falso: di cose blu ce ne sono a decine, semplicemente non si e' guardato. Scrivere che non c'e' niente senza aver guardato e' il modo peggiore di sbagliare, perche' chi legge smette di cercare. Fai la domanda e basta.
 
 Ogni affermazione porta il numero della riga da cui viene, scritto cosi': [[3]]. Il sistema lo trasforma nel collegamento alla pagina giusta, quindi mettilo SEMPRE, subito dopo la cosa che stai dicendo. Non scrivere tu «pagina 27»: al suo posto metti [[3]]. Non scrivere una sezione «Fonti»: la aggiunge il sistema.
 
@@ -1499,13 +1527,16 @@ def _prova():
     # Domanda troppo vaga secondo l'analista: si puo' cercare e si puo'
     # chiedere, ma non si puo' chiudere con una risposta. All'ultima mossa
     # pero' il turno deve potersi chiudere lo stesso.
+    # Domanda troppo generica: niente ricerche, solo il ventaglio e la
+    # domanda. Lasciarle `cerca` significava bruciare quattro mosse e due
+    # minuti per poi chiedere lo stesso (misurato tre volte su tre).
     vago = {s["function"]["name"] for s in _strumenti_del_coordinatore(
         non_rispondibile=True)}
-    assert "rispondi" not in vago, vago
-    assert {"chiedi", "cerca", "verifica"} <= vago, vago
-    # Nemmeno all'ultima mossa: si chiude con `chiedi`, che e' la mossa
-    # giusta per una domanda troppo vaga. L'uscita «se no il turno non si
-    # chiude» rendeva il cancello un semplice ritardo.
+    assert vago == {"proponi", "chiedi"}, vago
+    # Ventaglio gia' pronto: resta solo da mostrarlo.
+    pronto = {s["function"]["name"] for s in _strumenti_del_coordinatore(
+        non_rispondibile=True, ventaglio_pronto=True)}
+    assert pronto == {"chiedi"}, pronto
     finale_vago = {s["function"]["name"] for s in _strumenti_del_coordinatore(
         ultima=True, non_rispondibile=True)}
     assert finale_vago == {"chiedi"}, finale_vago
