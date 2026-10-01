@@ -1004,7 +1004,44 @@ aiuta la prima volta, il ricordo evita di ripagare lo stesso prezzo.
 
 ---
 
-## 8. Una nota di configurazione, non di progetto
+## 8. Da fare: razionalizzare i container
+
+Sono cresciuti strada facendo e la cosa e' sfuggita di mano. I numeri, non
+le impressioni (1/10/2026):
+
+**16 servizi definiti**, 15 accesi. Solo `ingestion` e' spento, ed e' spento
+per sbaglio dal 29/09 (vedi sezione 6).
+
+**12 su 16 non compaiono in `ARCHITETTURA.md`**:
+
+| documentati | assenti dall'architettura |
+|---|---|
+| orchestratore, postgres, azioni, ingestion | amministrazione, caddy, connettori, dagster-daemon, dagster-webserver, keycloak, librechat, mongo, oauth2-proxy, oauth2-proxy-immagini, oauth2-proxy-uptime, uptime-kuma |
+
+**717 righe** fra `docker-compose.yml` (539) e l'override (178).
+
+Cose che saltano all'occhio e andranno guardate con calma:
+
+- **tre `oauth2-proxy`** (principale, immagini, uptime). Probabilmente giusto
+  — proteggono origini diverse — ma non e' scritto da nessuna parte perche'
+  ce ne vogliono tre invece di uno con piu' regole.
+- **due servizi Dagster** (daemon e webserver) che, verificato oggi, fanno
+  solo le importazioni ERP ogni 15 minuti: non toccano l'indicizzazione dei
+  documenti, che gira in `ingestion` ed e' tutt'altra cosa. Il daemon logga
+  «No heartbeat received, shutting down» in ciclo dal 18/09 — rumore noto,
+  ma nessuno ha controllato se sia innocuo davvero.
+- **`uptime-kuma` + un oauth2-proxy dedicato** per monitorare uno stack che
+  gira su una macchina sola.
+- due database (`postgres` e `mongo`), il secondo solo per LibreChat.
+
+Non e' una pulizia da fare di corsa: e' un inventario da scrivere (a che
+serve ognuno, chi lo chiama, cosa si rompe se lo spegni) e poi, con quello
+in mano, decidere cosa unire. Il primo passo e' la tabella, non il
+`docker compose rm`.
+
+---
+
+## 9. Una nota di configurazione, non di progetto
 
 Il container in esecuzione ha `SQL_AGENTE=1`. Su disco `.env` e
 `docker-compose.yml` dicono `0`. Quello che risponde in chat non e' quello che

@@ -312,8 +312,8 @@ Se la domanda non somiglia a nessuno di questi casi, trattala per quello che e'.
 Quando ti fermi: appena hai righe confermate che rispondono, `rispondi`. Non inseguire varianti. E se hai cercato in piu' modi e non c'e' niente, `rispondi` lo stesso: una risposta onesta vale piu' di un'altra ricerca."""
 
 
-def _strumenti_del_coordinatore(ultima: bool = False, mai_cercato: bool = False,
-                                mai_eseguito: bool = False,
+def _strumenti_del_coordinatore(ultima: bool = False,
+                                mai_cercato: bool = False,
                                 non_rispondibile: bool = False):
     """Le mosse disponibili ADESSO.
 
@@ -343,23 +343,27 @@ def _strumenti_del_coordinatore(ultima: bool = False, mai_cercato: bool = False,
                            "description": "Cosa cambia in base alla sua risposta."}},
                 "required": ["domanda"]}}},
     ]
-    # `rispondi` non si offre a chi ha PROVATO a cercare e non c'e' mai
-    # riuscito: tutte le query respinte, zero eseguite. Dire «non ho trovato»
-    # senza aver mai guardato non e' una risposta, e' un'invenzione (30/09/2026:
-    # tre rifiuti, zero ricerche, «non ho trovato nulla» su 53 righe che
-    # c'erano). Non e' un divieto di rispondere: `chiedi` resta sempre li',
-    # quindi non ci si blocca. E chi non ha proprio provato a cercare — un
-    # saluto — non e' toccato.
+    # Non si dice «non ho trovato» senza aver MAI interrogato l'archivio.
+    #
+    # Qui c'erano due cancelli scritti in codice, e li abbiamo tolti tutti e
+    # due per misurare se servissero davvero o fossero impalcatura messa
+    # quando il coordinatore era cieco (le spiegazioni dei rifiuti finivano
+    # in `esiti`, che nessuno leggeva). La misura dell'1/10/2026 ha dato due
+    # risposte diverse:
+    #
+    # - `chiedi` chiuso a chi non ha ancora cercato: NON serviva. Tolto.
+    # - questo: serve. Senza, su «palloni da calcio giganti gonfiabili» il
+    #   sistema ha risposto «non ho trovato informazioni su questo
+    #   argomento» con due query respinte e ZERO eseguite. La frase nello
+    #   stato («qualunque cosa tu dica sarebbe inventata») non e' bastata.
+    #
+    # E non e' un'eccezione al principio «decide un agente»: non sceglie
+    # cosa cercare ne' cosa rispondere. Vieta di AFFERMARE qualcosa senza
+    # averlo guardato, che e' la stessa famiglia dell'ACL — un confine di
+    # onesta', non una scorciatoia di strategia. `chiedi` resta sempre
+    # disponibile, quindi non ci si blocca mai.
     if mai_cercato:
         chiusura = [s for s in chiusura if s["function"]["name"] != "rispondi"]
-    # `chiedi` prima di aver guardato i dati nemmeno una volta e' la domanda
-    # che fa fare il lavoro alla persona: «che tipo di nastri?», «hai un
-    # termine specifico?». Il prompt lo dice gia' («cerca, poi chiedi») e non
-    # e' bastato: su «quanto costano?» ha chiesto con zero query eseguite.
-    # Non si offre una porta prima che abbia senso aprirla. All'ultimo giro
-    # torna, altrimenti il turno non si chiuderebbe mai.
-    if mai_eseguito and not ultima:
-        chiusura = [s for s in chiusura if s["function"]["name"] != "chiedi"]
     # L'analista ha detto che cosi' com'e' non si puo' rispondere: cercando
     # verrebbe fuori un mucchio di cose tenute insieme da una caratteristica
     # sola. Allora `rispondi` non si offre e resta `chiedi`, che e' la mossa
@@ -510,7 +514,6 @@ def _nodo_coordinatore(stato):
     messaggi += stato.get("storia") or [{"role": "user", "content": stato["domanda"]}]
     messaggi.append({"role": "user", "content": "Stato:\n" + _stato_a_parole(stato)})
     ultima = stato.get("passi", 0) >= MAX_PASSI - 1
-    mai_cercato = stato.get("respinte", 0) > 0 and stato.get("eseguite", 0) == 0
     # Il coordinatore ragiona se la domanda lo merita, e a dirlo e' l'ANALISTA.
     #
     # Ragionare e' quello che gli ha fatto smettere di arrendersi al primo
@@ -523,7 +526,8 @@ def _nodo_coordinatore(stato):
     # sbagliata.
     scelte = _decide(messaggi,
                      _strumenti_del_coordinatore(
-                         ultima, mai_cercato, stato.get("eseguite", 0) == 0,
+                         ultima,
+                         stato.get("respinte", 0) > 0 and stato.get("eseguite", 0) == 0,
                          not stato.get("rispondibile", True)),
                      ragiona=bool(stato.get("impegnativa", True)))
     # Nessuna decisione dopo due richieste: e' un guasto del modello, non una
@@ -1289,19 +1293,17 @@ def _prova():
     # mosse che chiudono, quindi `cerca` non e' nemmeno sul tavolo.
     ultime = {s["function"]["name"] for s in _strumenti_del_coordinatore(True)}
     assert ultime == {"rispondi", "chiedi"}, ultime
-    # Chi ha solo query respinte non puo' dire «non ho trovato»: non ha mai
-    # guardato. Ma `chiedi` resta, quindi non si blocca mai.
-    muto = {s["function"]["name"] for s in _strumenti_del_coordinatore(mai_cercato=True)}
-    assert "rispondi" not in muto and "chiedi" in muto and "cerca" in muto, muto
-    # Chi non ha ancora eseguito NIENTE non puo' nemmeno chiedere alla
-    # persona: prima guarda i dati. Ma un saluto deve poter essere chiuso, e
-    # all'ultimo giro si deve poter chiudere comunque.
-    acerbo = {s["function"]["name"] for s in _strumenti_del_coordinatore(mai_eseguito=True)}
-    assert "chiedi" not in acerbo and "cerca" in acerbo, acerbo
-    assert "rispondi" in acerbo, "un saluto deve poter essere chiuso subito"
-    fine = {s["function"]["name"] for s in _strumenti_del_coordinatore(
-        ultima=True, mai_eseguito=True)}
-    assert fine == {"rispondi", "chiedi"}, fine
+    # Senza l'analista di mezzo, al coordinatore sono offerte TUTTE le
+    # mosse: niente cancelli del codice, ne' su `rispondi` ne' su `chiedi`.
+    # A dirgli che non ha ancora cercato ci pensa lo stato, a parole.
+    libero = {s["function"]["name"] for s in _strumenti_del_coordinatore()}
+    assert {"cerca", "verifica", "rispondi", "chiedi"} <= libero, libero
+    # Ma chi ha PROVATO a cercare e non c'e' mai riuscito non puo' dire «non
+    # ho trovato»: non ha guardato niente. Misurato togliendolo — senza, lo
+    # diceva lo stesso. `chiedi` pero' resta, quindi non si blocca.
+    cieco = {s["function"]["name"] for s in _strumenti_del_coordinatore(mai_cercato=True)}
+    assert "rispondi" not in cieco, cieco
+    assert {"chiedi", "cerca"} <= cieco, cieco
     # Domanda troppo vaga secondo l'analista: si puo' cercare e si puo'
     # chiedere, ma non si puo' chiudere con una risposta. All'ultima mossa
     # pero' il turno deve potersi chiudere lo stesso.
