@@ -320,6 +320,8 @@ Cosa succede se rispondi lo stesso: quelle righe arrivano a chi scrive marcate �
 L'unico caso in cui ha senso saltare la verifica e' quando non c'e' niente da verificare: un saluto, oppure un dato secco che la query ha gia' dato per intero (un conteggio, un elenco di documenti). Se hai in mano righe di prodotti o di testo, quelle vanno controllate. Sempre.
 - `chiedi` si ferma e FA UNA DOMANDA alla persona. E' una mossa come le altre, non una resa.
 
+**Se ti dicono che la domanda NON e' rispondibile cosi' com'e', non cercare.** Chi ha letto la domanda ha gia' stabilito che una ricerca produrrebbe un mucchio di cose tenute insieme da una caratteristica sola — «qualcosa di blu» tira su un piatto, una molletta e un mappamondo. Cercare lo stesso vuol dire spendere due minuti per arrivare a chiedere comunque, con in mano un elenco che non serve a nessuno. In quel caso le mosse sono due: `proponi` per vedere fra cosa si puo' scegliere, poi `chiedi`. Niente `cerca`.
+
 Sul chiedere. Una ricerca serve a qualcuno, e a volte la cosa piu' utile che puoi fare e' una domanda invece di un'altra query. Ma una domanda buona e una cattiva si distinguono:
 - CATTIVA: chiedere prima di aver guardato («che tipo di nastri?»). Cerca, poi chiedi: la persona non deve fare il lavoro al posto tuo.
 - BUONA: chiedere quando hai visto i dati e la scelta e' davvero sua. «Ho trovato nastri bianchi con cuori rossi in tre larghezze e due materiali: ti interessa un formato in particolare?» «Cerchi il prodotto a catalogo o il suo prezzo di listino?»
@@ -443,19 +445,19 @@ def _strumenti_del_coordinatore(ultima: bool = False,
     # rigiudica quando i dati lo smentiscono (`_dopo_mosse`).
     if non_rispondibile:
         chiusura = [s for s in chiusura if s["function"]["name"] != "rispondi"]
-        # E non c'e' nemmeno niente da CERCARE. Toglierle solo `rispondi`
-        # non bastava: il coordinatore andava a cercare lo stesso, bruciava
-        # quattro mosse, arrivava all'ultima dove gli restava solo `chiedi`,
-        # e intanto il redattore si ritrovava in mano un mucchio di righe e
-        # scriveva l'elenco. Misurato tre volte su tre il 1/10/2026 con «mi
-        # serve qualcosa di blu»: verdetto giusto ogni volta, due minuti
-        # buttati ogni volta, e in fondo un elenco di mappamondi.
+        # Qui, il 1/10/2026, avevo tolto anche `cerca`: il coordinatore
+        # cercava lo stesso, bruciava quattro mosse e in fondo il redattore
+        # scriveva l'elenco. Toglierla funzionava — 124 secondi diventavano
+        # 18 — ma era il CODICE a decidere la strategia: l'analista ha
+        # giudicato la domanda, non ha detto «non cercare», quello
+        # l'avevo dedotto io.
         #
-        # Se la domanda e' troppo generica non c'e' niente da cercare: c'e'
-        # da chiedere. Le mosse restano due sole, e si scelgono in fondo
-        # (qui `mosse` non esiste ancora): `proponi`, che le scelte le LEGGE
-        # nei dati — cosi' la domanda esce ancorata e non generica — e
-        # `chiedi`.
+        # La causa vera era un'altra, ed e' la stessa di `esiti`: il
+        # verdetto non veniva MAI detto al coordinatore, che ne subiva gli
+        # effetti senza saperne il motivo. Adesso glielo dice lo stato, a
+        # parole, e la strategia la sceglie lui. Qui resta solo il confine
+        # di onesta': non si AFFERMA una risposta a una domanda che si e'
+        # giudicata non rispondibile.
     if ultima:
         return chiusura
     mosse = [
@@ -500,17 +502,6 @@ def _strumenti_del_coordinatore(ultima: bool = False,
                 "domanda": {"type": "string",
                             "description": "Cosa chiedere guardando la foto."}},
                 "required": ["righe", "domanda"]}}})
-    if non_rispondibile:
-        # Domanda troppo generica: niente ricerche, solo il ventaglio e la
-        # domanda. Vedi il perche' sopra, dove si toglie `rispondi`.
-        #
-        # E se il ventaglio e' GIA' costruito resta solo `chiedi`: altrimenti
-        # il coordinatore richiede `proponi` a ogni giro — il controllo non
-        # rifa' il lavoro, ma ogni tentativo costa comunque un suo giro
-        # (misurato: quattro `proponi` di fila su «compleanno di mia mamma»).
-        ammesse = ("chiedi",) if ventaglio_pronto else ("proponi", "chiedi")
-        return [s for s in mosse + chiusura
-                if s["function"]["name"] in ammesse]
     return mosse + chiusura
 
 
@@ -521,6 +512,18 @@ def _stato_a_parole(stato) -> str:
     parti = [f"Domanda: «{stato['domanda']}»"]
     if stato.get("ambito"):
         parti.append("Che domanda e': " + stato["ambito"])
+    if not stato.get("rispondibile", True):
+        # Il verdetto dell'analista, DETTO. Prima lo usavamo solo per
+        # togliere mosse dal tavolo: lui ne subiva gli effetti senza sapere
+        # perche', ed e' lo stesso difetto di `esiti` — un giudizio
+        # calcolato e mai pronunciato. Qui si dice e basta: cosa farne lo
+        # decide lui.
+        parti.append(
+            "ATTENZIONE, chi ha letto la domanda dice che COSI' COM'E' non "
+            "si puo' rispondere: cercando verrebbe fuori un mucchio di cose "
+            "tenute insieme da una caratteristica sola, non una risposta "
+            "utile. Non spendere una ricerca: `proponi` per vedere fra "
+            "cosa si puo' scegliere, poi `chiedi`.")
     if stato.get("manca"):
         parti.append("Chi ha letto la domanda dice che NON dice: "
                      + "; ".join(stato["manca"])
@@ -1045,7 +1048,11 @@ Usi SOLO le righe che ti do. Non aggiungere prodotti, pagine, codici o prezzi ch
 
 Parli a una persona, non a un collega che conosce il sistema: le «righe» sono una cosa nostra e lei non sa cosa siano. Non nominarle MAI. Niente «non ho ricevuto alcuna riga da elaborare», niente «nessuna riga disponibile»: sono frasi che hai scritto davvero, perfino sotto un «ciao», e chi legge non capisce di cosa parli.
 
-Quando non ti do niente, di' quello che e' successo nella sua lingua: «non trovo niente su questo nei cataloghi». Se era un saluto, rispondi al saluto e basta — niente scuse, niente spiegazioni, niente che faccia pensare a un guasto.
+Quando non ti do nessuna riga, guarda PRIMA se c'e' una domanda da fare alla persona.
+
+- C'e' una domanda: falla, e basta. Non dire che non hai trovato niente — nessuno ha cercato, quindi non lo sai, e dirlo manda via una persona che avrebbe avuto quello che cercava.
+- Non c'e' nessuna domanda ed era un saluto: rispondi al saluto, senza scuse e senza niente che faccia pensare a un guasto.
+- Non c'e' nessuna domanda e si e' cercato davvero: allora si', dillo in una frase.
 
 Ogni riga porta scritto com'e' messa, e la differenza la devi passare a chi legge:
 - **SI** — qualcuno l'ha controllata e risponde davvero. Presentala e basta.
@@ -1527,19 +1534,21 @@ def _prova():
     # Domanda troppo vaga secondo l'analista: si puo' cercare e si puo'
     # chiedere, ma non si puo' chiudere con una risposta. All'ultima mossa
     # pero' il turno deve potersi chiudere lo stesso.
-    # Domanda troppo generica: niente ricerche, solo il ventaglio e la
-    # domanda. Lasciarle `cerca` significava bruciare quattro mosse e due
-    # minuti per poi chiedere lo stesso (misurato tre volte su tre).
+    # Domanda troppo generica: si toglie solo `rispondi` — non si AFFERMA
+    # una risposta che l'analista ha giudicato impossibile. Cercare resta
+    # permesso: la strategia la sceglie il coordinatore, informato dallo
+    # stato, non il codice.
     vago = {s["function"]["name"] for s in _strumenti_del_coordinatore(
         non_rispondibile=True)}
-    assert vago == {"proponi", "chiedi"}, vago
-    # Ventaglio gia' pronto: resta solo da mostrarlo.
-    pronto = {s["function"]["name"] for s in _strumenti_del_coordinatore(
-        non_rispondibile=True, ventaglio_pronto=True)}
-    assert pronto == {"chiedi"}, pronto
-    finale_vago = {s["function"]["name"] for s in _strumenti_del_coordinatore(
-        ultima=True, non_rispondibile=True)}
-    assert finale_vago == {"chiedi"}, finale_vago
+    assert "rispondi" not in vago, vago
+    assert {"cerca", "proponi", "chiedi"} <= vago, vago
+    detto = _stato_a_parole({"domanda": "d", "righe": [], "verdetti": {},
+                             "passi": 0, "rispondibile": False})
+    assert "Non spendere una ricerca" in detto, detto
+    # E il verdetto deve ARRIVARGLI a parole, o non puo' tenerne conto.
+    detto = _stato_a_parole({"domanda": "d", "righe": [], "verdetti": {},
+                             "passi": 0, "rispondibile": False})
+    assert "non si puo' rispondere" in detto, detto
     # La nota di verifica la scrive il CODICE, perche' il redattore due volte
     # ha scritto «tutte verificate» sotto righe che non lo erano.
     assert _nota_verifica({1: "si", 2: "si"}, {1, 2}) == ""
