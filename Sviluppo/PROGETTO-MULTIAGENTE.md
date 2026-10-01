@@ -809,6 +809,46 @@ esplicitamente nel prompt, e nell'ultimo giro non compare piu'.
 
 ---
 
+## 5-septies-bis. Il ragionamento lo decide un agente (1/10/2026)
+
+Idea dell'utente, e ha reso piu' di tutto quello che avevo provato io.
+
+Avevo classificato «ragionamento solo quando serve» come `if` in codice,
+quindi da non fare — perche' pensavo a `ragiona = (c'e' stato un
+fallimento)`, che e' una regola del programma su COME deve pensare il
+modello. Ma se a deciderlo e' un AGENTE non e' determinismo: e' lo stesso
+schema del critico e dell'analista.
+
+Il posto giusto e' l'analista: giudica gia' la domanda, e' il suo mestiere, e
+gira comunque — quindi la decisione costa zero chiamate. Gli si chiede una
+terza cosa, «quanto e' impegnativa», con i casi scritti accanto (un saluto o
+un dato secco: no; un nome che il catalogo scrive in un altro modo, una
+risposta in due posti, una domanda aperta, un seguito: si). Nel dubbio,
+impegnativa.
+
+**Distingue 6 casi su 6**, inclusi quelli che conosciamo bene.
+
+| | prima | dopo |
+|---|---|---|
+| tre domande, totale | 299 s | **174 s** |
+| coordinatore, per chiamata | 17,4 s | **9,2 s** |
+| coordinatore, chiamate | 11 | **9** |
+| coordinatore, quota del tempo | 64% | 48% |
+| «nastri bianchi con cuori rossi» | 85 s | **42 s** |
+
+**Taglio del 42%.** E il collo di bottiglia si e' spostato: adesso il piu'
+caro per singola chiamata e' il CRITICO, 18,5 secondi, un terzo del totale.
+Quello si taglia con l'idraulica (righe indipendenti, chiamate parallele),
+senza toccare nessuna decisione.
+
+**Lezione:** la distinzione utile non e' «prompt contro codice», e' CHI
+decide. Una regola del programma su come pensa il modello e' determinismo;
+la stessa scelta presa da un agente il cui mestiere e' giudicare la domanda
+non lo e'. Le tre leve che avevo scartato come «`if` in codice» andavano
+riesaminate una per una con questo criterio, e non l'avevo fatto.
+
+---
+
 ## 5-octies. L'autorita' di fermare una risposta (proposta, NON implementata)
 
 Il caso aperto: «mi serve qualcosa di blu» risponde con sicurezza a una
@@ -836,6 +876,43 @@ Se non basta, la risposta piu' grossa e' un agente che legge la risposta GIA'
 SCRITTA e giudica se serve a chi ha chiesto: oggi il critico verifica la
 corrispondenza riga-domanda, nessuno verifica risposta-bisogno. Costa un'altra
 chiamata da ~15 secondi.
+
+---
+
+## 5-nonies. Parallelismo: legato al server, non scritto a mano
+
+Il critico spezzato in gruppi paralleli e' stato **provato, misurato e
+ritirato**: da 18,5 a 29,4 secondi. Il motivo non era nel codice ma nel
+server — in llama-swap il 14b girava con `--parallel 1`, quindi serve una
+richiesta alla volta: i tre thread si accodavano, e tre chiamate
+rispediscono tre volte prompt e conversazione.
+
+**Regola generale:** qualunque parallelismo che passi dal MODELLO vale solo
+se il server ha piu' slot. Quello sulle QUERY e' un'altra cosa e funziona
+sempre, perche' li' a servire e' Postgres.
+
+Quindi il numero non si scrive da nessuna parte: **lo si chiede al server**,
+con `modello.slot()`. Il giorno che in produzione si alza `--parallel`, il
+critico se ne accorge da solo e si spezza; oggi che ne vede 2, si spezza in
+2. Nessuna modifica al codice, mai.
+
+`_interroga_il_server()` e' **l'unica funzione che sa com'e' fatto il
+server**: prova gli indirizzi noti (llama-swap mette ogni modello dietro
+`/upstream/<nome>/`, llama.cpp espone `/props` sulla radice) e torna None se
+non lo sa. Tutto il resto chiama `slot()` e ignora prodotti ed endpoint: se
+un giorno si passa a vLLM o a un'API, **si riscrive solo quel corpo**.
+`MODELLO_SLOT` lo forza, per un server che non lo dichiara.
+
+Due dettagli che costano se li si sbaglia:
+
+- un valore non scoperto NON si memorizza. Il caso tipico e' il modello non
+  ancora caricato: ricordarsi quell'1 vorrebbe dire lavorare in fila per
+  cinque minuti su un server che ne regge due (visto dopo un riavvio);
+- `--ctx-size` in llama.cpp e' il contesto TOTALE diviso fra gli slot.
+  Misurato: il coordinatore usa ~8.000 token di stato piu' 8.192 di
+  ragionamento, quindi servono ~16.200 token PER SLOT. Oggi:
+  `--parallel 2 --ctx-size 65536` (32.768 a slot, VRAM 14,7 su 16,3).
+  `--parallel 4` vorrebbe 131.072 e la KV cache non entra.
 
 ---
 

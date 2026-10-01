@@ -51,6 +51,77 @@ def _risposta(messaggi, max_tokens, ragiona, tools=None, tool_choice=None,
         return r.json()["choices"][0]["message"]
 
 
+_CAPACITA = {"quanti": None, "quando": 0.0}
+CAPACITA_TTL = 300.0        # si richiede ogni tanto: la porta si puo' aprire
+
+
+def _interroga_il_server() -> int | None:
+    """QUESTA e' l'unica funzione che sa com'e' fatto il server dei modelli.
+
+    Torna quante richieste serve davvero insieme, o None se non si riesce a
+    saperlo. Tutto il resto del codice chiama `slot()` e non sa niente di
+    endpoint, prodotti o formati: **se un giorno il server cambia — vLLM,
+    TGI, Ollama, un'API — si riscrive solo questo corpo.**
+
+    Oggi si provano due indirizzi noti, nell'ordine: llama-swap mette ogni
+    modello dietro `/upstream/<nome>/`, llama.cpp da solo espone `/props`
+    sulla radice. Aggiungerne un terzo e' una riga nella lista.
+    """
+    radice = BASE.rsplit("/v1", 1)[0]
+    posti = ((f"{radice}/upstream/{MODELLO}/props", "total_slots"),
+             (f"{radice}/props", "total_slots"))
+    for indirizzo, campo in posti:
+        try:
+            with egress.client(timeout=5.0, verify=VERIFICA) as c:
+                r = c.get(indirizzo, headers=AUTH)
+                r.raise_for_status()
+                valore = r.json().get(campo)
+            if valore:
+                return max(1, int(valore))
+        except Exception:
+            continue    # server giu', endpoint assente, altro prodotto
+    return None
+
+
+def slot() -> int:
+    """Quante richieste il server del modello serve DAVVERO insieme.
+
+    Serve a non sprecare lavoro: con un solo slot, mandare tre chiamate
+    insieme non le fa andare in parallelo — si accodano nel server, e tre
+    chiamate costano piu' di una perche' ognuna rispedisce tutto il prompt
+    (misurato l'1/10/2026: il critico spezzato in tre e' passato da 18,5 a
+    29,4 secondi). Il parallelismo sulle QUERY e' un'altra cosa: li' a
+    servire e' Postgres, e funziona sempre.
+
+    Non e' scritto da nessuna parte: lo si chiede al server, cosi' il giorno
+    che in produzione si alza `--parallel` chi lo usa se ne accorge da solo.
+    `MODELLO_SLOT` ha la precedenza su tutto, per un server che non lo dice
+    (DeepSeek regge piu' richieste ma non ha l'endpoint).
+
+    In mancanza di tutto vale 1: l'ipotesi prudente, si fa una cosa per
+    volta e nessuno ci perde.
+    """
+    import time as _t
+    forzato = os.environ.get("MODELLO_SLOT")
+    if forzato:
+        try:
+            return max(1, int(forzato))
+        except ValueError:
+            pass
+    if _CAPACITA["quanti"] and _t.monotonic() - _CAPACITA["quando"] < CAPACITA_TTL:
+        return _CAPACITA["quanti"]
+    quanti = _interroga_il_server()
+    if quanti is None:
+        # Non lo si e' saputo: si usa 1 ma NON lo si ricorda. Il caso tipico
+        # e' il modello non ancora caricato — llama-swap lo tira su alla
+        # prima richiesta vera — e ricordarsi un 1 preso in quel momento
+        # vorrebbe dire lavorare in fila per i cinque minuti successivi su un
+        # server che ne regge due (visto l'1/10/2026, dopo un riavvio).
+        return 1
+    _CAPACITA.update(quanti=quanti, quando=_t.monotonic())
+    return quanti
+
+
 def chiedi(messaggi, max_tokens=4000):
     """Il SOLO testo, senza ragionamento (passi meccanici)."""
     return (_risposta(messaggi, max_tokens, ragiona=False).get("content") or "").strip()

@@ -165,6 +165,30 @@ Il criterio e' uno solo: se cercassi cosi' com'e', quello che torna sarebbe UTIL
 
 Non elencare piu' di due cose mancanti, e scrivile come le diresti a voce.
 
+**SI PUO' RISPONDERE COSI' COM'E'?** Una domanda si puo' avere capita benissimo e restare comunque senza risposta utile, perche' non dice abbastanza. Il criterio e' quello di prima, applicato fino in fondo: *se cercassi cosi' com'e', quello che torna sarebbe utile a questa persona, o sarebbe un mucchio di cose scollegate?*
+
+Di' NO quando cercare adesso produrrebbe un elenco tenuto insieme da una sola caratteristica e da niente altro: «mi serve qualcosa di blu» restituisce un piatto, una molletta e un mappamondo preso da una guida doganale — tutti blu, nessuno utile. In quel caso la cosa che serve e' una domanda alla persona, non una ricerca.
+
+Di' SI in tutti gli altri casi, e sono la maggioranza. Un saluto e' SI (non c'e' niente da cercare, si risponde e basta). Una domanda con l'oggetto e i suoi attributi e' SI. Una domanda aperta ma con un'occasione o uno scopo («un regalo per una trentenne», «qualcosa per San Valentino») e' SI: c'e' abbastanza per cominciare. Un dato sull'archivio e' SI.
+
+Non e' una scusa per farsi dire tutto prima di muoversi: nel dubbio, SI.
+
+**QUANTO E' IMPEGNATIVA.** Ultima cosa, e serve a chi cerca: dopo di te qualcuno deve decidere dove e come cercare, e puo' farlo di getto oppure fermandosi a ragionare. Ragionare rende molto meglio quando serve e costa il triplo del tempo quando non serve, quindi dillo tu.
+
+NON impegnativa — la strada e' una sola e si vede:
+- un saluto, un ringraziamento, una chiacchiera;
+- un dato secco sull'archivio: quanti documenti, quante pagine, che cosa c'e';
+- un oggetto con i suoi attributi, detto in modo chiaro: «nastri bianchi con cuori rossi», «vasi di ceramica». Si sa cosa cercare e dove.
+
+IMPEGNATIVA — serve pensare:
+- la cosa chiesta ha un nome che il catalogo quasi certamente scrive in un altro modo, e va indovinato per tentativi («kit per l'albero di Natale», «sfere che trattengono l'acqua»);
+- la risposta sta in due posti e va messa insieme (il prodotto nelle foto, il prezzo nel testo);
+- la domanda e' aperta e bisogna arrivarci per gradi («un regalo per una trentenne», «cosa avete di sportivo»);
+- e' un seguito che si capisce solo dal discorso di prima;
+- e' una richiesta che la prima ricerca ovvia quasi certamente manchera'.
+
+Nel dubbio di' che e' impegnativa: una risposta lenta e giusta e' meglio di una veloce e sbagliata.
+
 Consegna con lo strumento `analisi`."""
 
 I_ANALISI = [{"type": "function", "function": {
@@ -176,22 +200,64 @@ I_ANALISI = [{"type": "function", "function": {
                                   "dove sta la risposta. Non una categoria: la "
                                   "richiesta, scritta come la spiegheresti a "
                                   "un collega che non ha letto la chat."},
+        "rispondibile": {"type": "boolean",
+                         "description": "false solo se cercare cosi' com'e' "
+                                        "darebbe un mucchio di cose scollegate "
+                                        "e serve prima una domanda alla persona."},
+        "impegnativa": {"type": "boolean",
+                        "description": "true se chi cerca deve fermarsi a "
+                                       "ragionare, false se la strada e' una "
+                                       "sola e si vede."},
         "manca": {"type": "array", "items": {"type": "string"},
                   "description": "Cosa la domanda non dice e cambierebbe la "
                                  "risposta. Vuoto se la domanda e' completa."}},
-        "required": ["ambito", "manca"]}}}]
+        "required": ["ambito", "manca", "impegnativa", "rispondibile"]}}}]
 
 
 def _nodo_analista(stato):
     t0 = time.monotonic()
     messaggi = [{"role": "system", "content": _prompt("analista", P_ANALISTA)}]
-    messaggi += stato.get("storia") or [{"role": "user", "content": stato["domanda"]}]
-    ambito, manca = "", []
+    storia = stato.get("storia") or [{"role": "user", "content": stato["domanda"]}]
+    messaggi += storia
+    # Se questa e' una battuta in mezzo a una conversazione, glielo si DICE.
+    # Non e' un giudizio: e' un fatto che il codice conosce con certezza e
+    # che altrimenti lui deve dedurre — e lo deduce male. Su «quanto
+    # costano?» e «per un matrimonio» leggeva l'ultima riga come se stesse in
+    # piedi da sola: cosi' sembrava semplice, e sia l'ambito sia la
+    # difficolta' venivano sbagliati (1/10/2026, due volte su due).
+    # Richiamato dopo che i dati hanno smentito la previsione: adesso ha una
+    # prova che prima non aveva, ed e' il motivo per cui lo si ridisturba.
+    if stato.get("riviste"):
+        messaggi.append({"role": "user", "content":
+                         "Avevi gia' giudicato questa domanda, e chi cerca ci "
+                         "ha provato: " + "; ".join(stato.get("esiti") or ["niente"])
+                         + ".\nQuello che e' tornato smentisce la previsione di "
+                           "prima. Rigiudica con questa prova davanti: forse la "
+                           "domanda e' piu' impegnativa di quanto sembrava, o "
+                           "forse quello che chiede non si trova cosi'."})
+    turni = sum(1 for m in storia if m.get("role") == "user")
+    if turni > 1:
+        messaggi.append({"role": "user", "content":
+                         "Nota: «%s» e' la %da cosa che ti scrive in questa "
+                         "conversazione, non una domanda isolata. Da sola non "
+                         "si capisce: quello che vuole sta nel discorso di "
+                         "prima e in quello che le e' gia' stato mostrato."
+                         % (stato["domanda"], turni)})
+    # Nel dubbio si ragiona: una risposta lenta e giusta vale piu' di una
+    # veloce e sbagliata, e questo e' il valore che vale anche quando
+    # l'analista non decide affatto.
+    ambito, manca, impegnativa, rispondibile = "", [], True, True
     for nome, arg in _decide(messaggi, I_ANALISI):
         ambito = str(arg.get("ambito") or "").strip()
         manca = [str(m).strip() for m in (arg.get("manca") or []) if str(m).strip()][:2]
-    return {"ambito": ambito, "manca": manca,
-            "traccia": [_nota("analista", {"manca": manca}, 0, t0)]}
+        impegnativa = bool(arg.get("impegnativa", True))
+        rispondibile = bool(arg.get("rispondibile", True))
+    return {"ambito": ambito, "manca": manca, "impegnativa": impegnativa,
+            "rispondibile": rispondibile,
+            "riviste": stato.get("riviste", 0) + 1,
+            "traccia": [_nota("analista", {"manca": manca,
+                                           "impegnativa": impegnativa,
+                                           "rispondibile": rispondibile}, 0, t0)]}
 
 
 # ==========================================================================
@@ -247,7 +313,8 @@ Quando ti fermi: appena hai righe confermate che rispondono, `rispondi`. Non ins
 
 
 def _strumenti_del_coordinatore(ultima: bool = False, mai_cercato: bool = False,
-                                mai_eseguito: bool = False):
+                                mai_eseguito: bool = False,
+                                non_rispondibile: bool = False):
     """Le mosse disponibili ADESSO.
 
     `guarda` compare solo se l'osservatore e' acceso, e all'ultimo giro
@@ -293,6 +360,33 @@ def _strumenti_del_coordinatore(ultima: bool = False, mai_cercato: bool = False,
     # torna, altrimenti il turno non si chiuderebbe mai.
     if mai_eseguito and not ultima:
         chiusura = [s for s in chiusura if s["function"]["name"] != "chiedi"]
+    # L'analista ha detto che cosi' com'e' non si puo' rispondere: cercando
+    # verrebbe fuori un mucchio di cose tenute insieme da una caratteristica
+    # sola. Allora `rispondi` non si offre e resta `chiedi`, che e' la mossa
+    # utile. A chiudere la porta NON e' il codice: e' un altro agente, e il
+    # programma si limita a trasportarne il verdetto.
+    #
+    # Il verdetto NON decade perche' il critico ha confermato delle righe.
+    # Ci avevo provato, col ragionamento che «l'evidenza batte la
+    # previsione», ed e' sbagliato: su «mi serve qualcosa di blu» il critico
+    # ne ha confermate 24 su 40 — correttamente, perche' sono blu davvero —
+    # e il cancello si apriva, lasciando passare diciotto citazioni fra cui
+    # un mappamondo di una guida doganale (misurato l'1/10/2026). Confermare
+    # righe dice che corrispondono alle parole, non che la domanda fosse
+    # abbastanza precisa da meritare una risposta: sono due proprieta'
+    # diverse, e la seconda la rivede solo chi l'ha giudicata.
+    #
+    # E NON si riapre nemmeno all'ultima mossa. Ci avevo messo quell'uscita
+    # «se no il turno non si chiude», ma il turno si chiude benissimo con
+    # `chiedi` — che e' proprio la mossa giusta quando la domanda e' troppo
+    # vaga. Con l'uscita, il cancello ritardava e basta: su «mi serve
+    # qualcosa di blu» il coordinatore cercava fino a esaurire le mosse e poi
+    # rispondeva lo stesso, 19 citazioni (misurato l'1/10/2026).
+    #
+    # A riaprirlo resta una strada sola, ed e' giusta: l'analista che
+    # rigiudica quando i dati lo smentiscono (`_dopo_mosse`).
+    if non_rispondibile:
+        chiusura = [s for s in chiusura if s["function"]["name"] != "rispondi"]
     if ultima:
         return chiusura
     mosse = [
@@ -417,18 +511,21 @@ def _nodo_coordinatore(stato):
     messaggi.append({"role": "user", "content": "Stato:\n" + _stato_a_parole(stato)})
     ultima = stato.get("passi", 0) >= MAX_PASSI - 1
     mai_cercato = stato.get("respinte", 0) > 0 and stato.get("eseguite", 0) == 0
-    # Il coordinatore RAGIONA prima di scegliere. Gli altri no: analista e
-    # critico fanno un lavoro circoscritto su un testo che hanno davanti, e
-    # per quelli il ragionamento costa e non rende. Qui invece la scelta e'
-    # «cosa faccio adesso, viste quaranta righe e un giudizio», ed e' il punto
-    # piu' difficile del grafo. Ci decideva col ragionamento SPENTO, perche'
-    # avevo copiato il default dei passi meccanici: quattro tentativi di
-    # aggiungere informazione allo stato non hanno spostato niente, e questa e'
-    # l'unica ipotesi che non sia «scrivi il prompt piu' forte».
+    # Il coordinatore ragiona se la domanda lo merita, e a dirlo e' l'ANALISTA.
+    #
+    # Ragionare e' quello che gli ha fatto smettere di arrendersi al primo
+    # buco, ed e' anche il 60-70% del tempo di un turno: 14-20 secondi per
+    # chiamata contro 2-12, quasi quattro volte a turno. Spegnerlo in base a
+    # una regola del codice («se e' andata male, pensa») sarebbe il programma
+    # che decide come deve pensare il modello. Lo decide invece l'agente il
+    # cui mestiere e' giudicare la domanda — gratis, perche' gira comunque.
+    # Nel dubbio ragiona: una risposta lenta e giusta batte una veloce e
+    # sbagliata.
     scelte = _decide(messaggi,
-                     _strumenti_del_coordinatore(ultima, mai_cercato,
-                                                 stato.get("eseguite", 0) == 0),
-                     ragiona=True)
+                     _strumenti_del_coordinatore(
+                         ultima, mai_cercato, stato.get("eseguite", 0) == 0,
+                         not stato.get("rispondibile", True)),
+                     ragiona=bool(stato.get("impegnativa", True)))
     # Nessuna decisione dopo due richieste: e' un guasto del modello, non una
     # strategia. Si va a scrivere con quello che c'e' — e resta nella traccia.
     if not scelte:
@@ -598,11 +695,43 @@ I_VERDETTI = [{"type": "function", "function": {
 
 
 def _critico(stato, righe, motivo: str) -> dict:
-    """{numero riga: si|no|forse} per le righe non ancora verificate."""
+    """{numero riga: si|no|forse} per le righe non ancora verificate.
+
+    A GRUPPI, giudicati in parallelo. Una chiamata sola su quaranta righe
+    costava 18,5 secondi — un terzo del tempo di un turno, e il pezzo piu'
+    caro rimasto dopo che il ragionamento del coordinatore e' diventato
+    adattivo. Le righe sono indipendenti e il prompt gli dice gia' di non
+    confrontarle fra loro («due articoli con codice diverso sono due
+    articoli»), quindi spezzarle non gli toglie niente.
+    """
     gia = stato.get("verdetti") or {}
     da_fare = [(i + 1, r) for i, r in enumerate(righe) if (i + 1) not in gia]
     if not da_fare:
         return {}
+    # Si spezza in gruppi SOLO se il server del modello serve davvero piu'
+    # richieste insieme, e in tanti gruppi quanti sono i suoi slot.
+    #
+    # Con un solo slot spezzare fa danno: i thread si accodano dentro il
+    # server e ogni chiamata rispedisce tutto il prompt da capo. Misurato
+    # l'1/10/2026 con `--parallel 1`: il critico diviso in tre e' passato da
+    # 18,5 a 29,4 secondi. Il numero non e' scritto qui ne' in una variabile
+    # d'ambiente: lo chiede al server (`modello.slot()`), cosi' il giorno che
+    # in produzione si alza `--parallel` il critico se ne accorge da solo.
+    slot = min(modello.slot(), max(1, PARALLELE))
+    if slot > 1 and len(da_fare) > slot:
+        quanti = -(-len(da_fare) // slot)        # righe per gruppo, arrotondate su
+        gruppi = [da_fare[i:i + quanti] for i in range(0, len(da_fare), quanti)]
+        fuori = {}
+        with futures.ThreadPoolExecutor(max_workers=slot) as pool:
+            for parte in pool.map(lambda g: _giudica(stato, righe, motivo, g),
+                                  gruppi):
+                fuori.update(parte)
+        return fuori
+    return _giudica(stato, righe, motivo, da_fare)
+
+
+def _giudica(stato, righe, motivo: str, da_fare) -> dict:
+    """Un gruppo di righe, una chiamata al critico."""
     numeri = [n for n, _ in da_fare]
     # Il critico riceve la CONVERSAZIONE, non la sola ultima riga.
     #
@@ -1027,6 +1156,9 @@ class Stato(TypedDict):
     query_fatte: list         # le SELECT gia' eseguite in questo turno
     eseguite: int             # query andate davvero al database
     respinte: int             # query bocciate prima di partire (NON sono ricerche)
+    riviste: int              # quante volte l'analista ha rigiudicato in questo turno
+    impegnativa: bool         # l'analista dice se il coordinatore deve ragionare
+    rispondibile: bool        # l'analista dice se si puo' rispondere cosi' com'e'
     ambito: str               # che domanda e', secondo l'analista
     manca: list               # cosa la domanda non dice (materia prima di `chiedi`)
     mosse: list               # le chiamate scelte dal coordinatore in questo giro
@@ -1043,6 +1175,26 @@ class Stato(TypedDict):
     risposta: str
     passi: int
     traccia: Annotated[list, operator.add]
+
+
+def _dopo_mosse(stato) -> str:
+    """Dopo le mosse si torna a decidere, ma se i dati hanno SMENTITO la
+    previsione dell'analista si ripassa da lui.
+
+    Difficolta' e rispondibilita' le aveva giudicate prima di vedere un solo
+    dato. Se la ricerca torna vuota, o il critico non conferma niente, quel
+    giudizio poggia su informazioni che non valgono piu'. Il codice non
+    rigiudica: si accorge che e' comparsa una prova nuova e rimanda al
+    giudice — come gia' succede a una riga appena guardata col VLM, che torna
+    da verificare. Una volta sola per turno.
+    """
+    if stato.get("riviste", 0):
+        return "coordinatore"
+    vuoto = stato.get("eseguite", 0) > 0 and not (stato.get("righe") or [])
+    bocciate = bool(stato.get("verdetti")) and not any(
+        v == "si" for v in (stato.get("verdetti") or {}).values())
+    muto = stato.get("respinte", 0) > 0 and stato.get("eseguite", 0) == 0
+    return "analista" if (vuoto or bocciate or muto) else "coordinatore"
 
 
 def _prossimo(stato) -> str:
@@ -1070,7 +1222,9 @@ _grafo.add_edge(START, "analista")
 _grafo.add_edge("analista", "coordinatore")
 _grafo.add_conditional_edges("coordinatore", _prossimo,
                              {"mosse": "mosse", "redattore": "redattore"})
-_grafo.add_edge("mosse", "coordinatore")
+_grafo.add_conditional_edges("mosse", _dopo_mosse,
+                             {"analista": "analista",
+                              "coordinatore": "coordinatore"})
 _grafo.add_edge("redattore", END)
 _compilato = _grafo.compile()
 
@@ -1103,6 +1257,7 @@ def cerca(conn, domanda: str, gruppi: list, storia: list = None,
         "conn": conn, "dsn": os.environ["DATABASE_URL"],
         "gruppi": gruppi, "aziende": identita.aziende(gruppi),
         "query_fatte": [], "eseguite": 0, "respinte": 0,
+        "riviste": 0, "impegnativa": True, "rispondibile": True,
         "ambito": "", "manca": [],
         "mosse": [], "esiti": [], "chiarimento": "",
         "su_pezzo": su_pezzo, "base": base, "utente": utente, "resa": False,
@@ -1147,6 +1302,19 @@ def _prova():
     fine = {s["function"]["name"] for s in _strumenti_del_coordinatore(
         ultima=True, mai_eseguito=True)}
     assert fine == {"rispondi", "chiedi"}, fine
+    # Domanda troppo vaga secondo l'analista: si puo' cercare e si puo'
+    # chiedere, ma non si puo' chiudere con una risposta. All'ultima mossa
+    # pero' il turno deve potersi chiudere lo stesso.
+    vago = {s["function"]["name"] for s in _strumenti_del_coordinatore(
+        non_rispondibile=True)}
+    assert "rispondi" not in vago, vago
+    assert {"chiedi", "cerca", "verifica"} <= vago, vago
+    # Nemmeno all'ultima mossa: si chiude con `chiedi`, che e' la mossa
+    # giusta per una domanda troppo vaga. L'uscita «se no il turno non si
+    # chiude» rendeva il cancello un semplice ritardo.
+    finale_vago = {s["function"]["name"] for s in _strumenti_del_coordinatore(
+        ultima=True, non_rispondibile=True)}
+    assert finale_vago == {"chiedi"}, finale_vago
     # La nota di verifica la scrive il CODICE, perche' il redattore due volte
     # ha scritto «tutte verificate» sotto righe che non lo erano.
     assert _nota_verifica({1: "si", 2: "si"}, {1, 2}) == ""
@@ -1205,6 +1373,34 @@ def _prova():
     assert len(_coda(gia, "adesso")) == 3, "non deve duplicarla se c'e' gia'"
     assert _coda([], "sola")[-1]["content"] == "sola"
 
+    # Il critico si spezza in gruppi solo se il SERVER del modello serve piu'
+    # richieste insieme, e in tanti gruppi quanti sono i suoi slot. Con uno
+    # solo fa una chiamata sola: spezzare, li', costa di piu'.
+    visti = []
+    def _finto(stato, righe, motivo, gruppo):
+        visti.append([n for n, _ in gruppo])
+        return {n: "si" for n, _ in gruppo}
+    vero_giudica, vero_slot = globals()["_giudica"], modello.slot
+    globals()["_giudica"] = _finto
+    try:
+        tante = [{"descrizione": str(i)} for i in range(30)]
+        modello.slot = lambda: 1
+        _critico({"verdetti": {}}, tante, "")
+        assert len(visti) == 1, "un solo slot: una chiamata sola"
+        visti.clear()
+        modello.slot = lambda: 3
+        esiti = _critico({"verdetti": {}}, tante, "")
+        assert len(visti) == 3, visti
+        assert sorted(n for g in visti for n in g) == list(range(1, 31))
+        assert len(esiti) == 30
+        visti.clear()
+        # Le righe gia' giudicate non si rigiudicano, qualunque sia lo slot.
+        _critico({"verdetti": {1: "no", 2: "si"}},
+                 [{"descrizione": str(i)} for i in range(5)], "")
+        assert visti == [[3, 4, 5]], visti
+    finally:
+        globals()["_giudica"], modello.slot = vero_giudica, vero_slot
+
     quattro = [{"descrizione": c} for c in "abcd"]
     tenute, etich = _da_consegnare(quattro, {1: "si", 2: "no", 3: "forse"})
     assert [r["descrizione"] for r in tenute] == ["a", "c", "d"], tenute
@@ -1220,6 +1416,17 @@ def _prova():
     # Il dubbio chiude il giro come una risposta: la domanda alla persona e'
     # una mossa, non una resa.
     assert _prossimo({"mosse": [("chiedi", {})], "passi": 1}) == "redattore"
+    # La valvola: quando i dati smentiscono la previsione dell'analista, si
+    # ripassa da lui — una volta sola, e solo se c'e' davvero una smentita.
+    assert _dopo_mosse({"eseguite": 1, "righe": [{"a": 1}],
+                        "verdetti": {1: "si"}}) == "coordinatore"
+    assert _dopo_mosse({"eseguite": 1, "righe": []}) == "analista"
+    assert _dopo_mosse({"eseguite": 1, "righe": [{"a": 1}],
+                        "verdetti": {1: "no"}}) == "analista"
+    assert _dopo_mosse({"respinte": 3, "eseguite": 0}) == "analista"
+    assert _dopo_mosse({"eseguite": 1, "righe": [], "riviste": 1}) == "coordinatore"
+    # Niente verdetti ancora: non e' una smentita, e' solo presto.
+    assert _dopo_mosse({"eseguite": 1, "righe": [{"a": 1}]}) == "coordinatore"
     # `guarda` si offre solo se l'osservatore c'e': non si offre uno strumento
     # che non esiste.
     nomi = {s["function"]["name"] for s in _strumenti_del_coordinatore()}

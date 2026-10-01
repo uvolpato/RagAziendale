@@ -229,10 +229,18 @@ models:
       ${llama}
       --model ${modelli}/lmstudio-community/Qwen3-14B-GGUF/Qwen3-14B-Q4_K_M.gguf
       --port ${PORT}
-      --ctx-size 32768
+      # ctx-size e' il TOTALE diviso fra gli slot: con --parallel 2 ognuno
+      # ne ha 32768, che e' quello che serve davvero (misurato l'1/10/2026:
+      # il coordinatore usa ~8.000 token di contesto piu' 8.192 di
+      # ragionamento, quindi ~16.200 per slot; con 40 righe nello stato).
+      # Con --parallel 4 servirebbe 131072 e la KV cache non entra in 16 GB:
+      # in produzione, con piu' VRAM, si alza qui e basta — l'orchestratore
+      # chiede al server quanti slot ci sono (modello.slot) e si adegua da
+      # solo, senza modifiche al codice.
+      --ctx-size 65536
       --cache-type-k q8_0
       --cache-type-v q8_0
-      --parallel 1
+      --parallel 2
       --repeat-penalty 1.1
       ${gpu}
     ttl: 0
