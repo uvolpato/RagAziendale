@@ -56,14 +56,31 @@ PROVE = [
 # a una domanda vaga il sistema mostra fra cosa scegliere, e li' non cita
 # niente per costruzione — zero righe citate non e' una prova di colpa.
 BUONE = [
- ("archivio", "quanti cataloghi ci sono?", [], "i cataloghi sono 13 [[1]]."),
+ ("archivio", "quanti cataloghi ci sono?", [], "i cataloghi sono 13 [[1]].",
+  [{"documento": "(conteggio)", "page": "-", "descrizione": "totale 13"}]),
  ("prodotto", "ho bisogno di nastri bianchi con cuori rossi", [],
   "Ho trovato diversi nastri bianchi con cuori rossi: - Nastro bianco con "
-  "cuori rossi [[1]] - Nastro con motivi a cuore su fondo bianco [[2]]."),
+  "cuori rossi [[1]] - Nastro con motivi a cuore su fondo bianco [[2]].",
+  [{"documento": "Packara - CELEBRATION COLLECTION.pdf", "page": 39,
+    "descrizione": "object: ribbon with red heart motifs on white fabric"},
+   {"documento": "Packara - CELEBRATION COLLECTION.pdf", "page": 5,
+    "descrizione": "object: three ribbons with heart motifs, white base"}]),
  ("ventaglio", "mi proponi qualcosa per il compleanno di mia mamma?", [],
   "Ci sono confezioni regalo, diffusori per ambienti e decorazioni natalizie. "
   "- Confezioni regalo eleganti - Diffusori per ambienti profumati - "
-  "Decorazioni natalizie. Vuoi esplorare una di queste opzioni?"),
+  "Decorazioni natalizie. Vuoi esplorare una di queste opzioni?", []),
+ # Il caso che mi e' costato tre bocciature su tre: un articolo citato
+ # come si deve, e in coda una domanda. Il giudice diceva «non si puo'
+ # verificare» con il [[1]] sotto gli occhi. Un riferimento presente E' la
+ # prova del contrario, e andava detto.
+ ("citato+domanda", "e di blu invece?",
+  [("user", "hai palline di Natale rosse?"),
+   ("assistant", "Si', ne ho trovate nel catalogo Packara.")],
+  "Ho trovato palline di Natale blu: - Palline di Natale blu con sfumature "
+  "d'argento [[1]]. Vuoi che cerchi anche altre tonalita'?",
+  [{"documento": "INGE - Catalogo Holly&Jolly_2026.pdf", "page": 307,
+    "descrizione": "object: glass Christmas ball ornament. Colours: blue "
+                   "with silver shading"}]),
 ]
 
 for attesa, domanda, storia, risposta in PROVE:
@@ -80,13 +97,13 @@ for attesa, domanda, storia, risposta in PROVE:
              str(v.get(attesa + "_dove") or "")[:80]))
 
 print()
-for nome, domanda, storia, risposta in BUONE:
+for nome, domanda, storia, risposta, citate in BUONE:
     caso = {"attesa": next((c["attesa"] for c in banco.BATTERIA
                             if c["domanda"] == domanda), "")}
     conv = [{"role": r, "content": c} for r, c in storia]
     conv.append({"role": "user", "content": domanda})
     campione = operatori.vicinato(conn, "immagini", domanda, G, A, quanti=10)
-    v = banco.giudica(caso, conv, risposta, [], campione) or {}
+    v = banco.giudica(caso, conv, risposta, citate, campione) or {}
     trovate = [c for c, _ in banco.COLPE if v.get(c)]
     print("%-18s buona=%-18s trovate=%s  %s"
           % ("OK " if not trovate else "FALSO ALLARME", nome,

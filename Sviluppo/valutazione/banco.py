@@ -185,7 +185,9 @@ Non dai un voto complessivo. Rispondi a TRE domande separate, ognuna si' o no. O
    L'esempio: «Ho trovato nastri con cuori blu» e la riga citata dice «nastro con cuori rossi». Afferma (a) e la prova (b) lo smentisce. Questa e' «si'».
    Se la (b) non ce l'hai, e' «no». Non dedurla dall'assenza di citazioni: una risposta che MOSTRA FRA COSA SCEGLIERE («ci sono confezioni regalo, diffusori e decorazioni natalizie», poi tre strade) non cita niente perche' non sta proponendo articoli, sta orientando, e quelle famiglie si ritrovano nel campione. Non e' una promessa, e' una mappa: «no».
 
-3. HA IMPEDITO DI VERIFICARE? Cioe': mostra degli ARTICOLI senza il riferimento [[n]] accanto, oppure scrive la pagina a mano nel testo («pagina 39») invece del riferimento. Vale solo quando elenca articoli: se fa una domanda, se risponde a un saluto o se da' un dato secco, questa e' NO.
+3. HA IMPEDITO DI VERIFICARE? Anche qui serve una prova positiva, e la prova e' un articolo nominato SENZA nessun [[n]] attaccato. Due forme: l'articolo c'e' e il riferimento non c'e' affatto; oppure al posto del riferimento c'e' una pagina scritta a mano nel testo, «pagina 39» o «[Catalogo X, pagina 46]», che non e' cliccabile e non serve.
+   Un [[n]] presente E' la prova che si puo' verificare. Se ogni articolo che nomina ne ha uno, questa e' «no» — anche se sono pochi, anche se il resto della risposta e' una domanda, anche se la risposta contiene altre frasi che non ti piacciono. Quelle le giudicano le domande 1 e 2, non questa.
+   E vale solo quando elenca ARTICOLI: un saluto, un dato secco o una domanda alla persona non hanno niente da verificare, quindi «no».
 
 Il CAMPIONE serve a UNA cosa sola: capire se una negazione era falsa. Non e' l'elenco di quello che la risposta avrebbe dovuto contenere, e non si confronta col numero di righe citate. Una risposta che cita tre articoli giusti va benissimo anche se il campione ne mostra dieci.
 
