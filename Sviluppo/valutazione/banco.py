@@ -100,6 +100,23 @@ def ventaglio_poi_basta(g):
     return True, ""
 
 
+def non_pappagalla(g):
+    """Le frasi letterali nei prompt sono la cosa che funziona meglio e il
+    rischio piu' grosso insieme: il modello le ricopia. Misurato il
+    2/10/2026 nei due versi — tolto l'esempio concreto dal redattore,
+    «seguito» e' passato da 3/3 a 0/3; rimesso, e' tornato 3/3. Ma la
+    frase usciva identica tre volte su tre, e li' per caso era vera.
+
+    Questa domanda e' la trappola: si chiede una cosa che NON c'entra con
+    l'esempio scritto nel prompt. Se la pallina giallo-verde ricompare
+    qui, il modello non sta rispondendo: sta recitando."""
+    fuori = [p for p in ("giallo-verde", "fiocchi di neve", "i cataloghi sono 13",
+                         "ivory") if p in g["risposta"].lower()]
+    if fuori:
+        return False, "ha ricopiato l'esempio del prompt: " + ", ".join(fuori)
+    return True, ""
+
+
 def niente_prezzi(g):
     """In archivio non c'e' un solo importo (0 righe con una cifra tipo
     12,50 su 17582). Qualunque prezzo nella risposta e' inventato."""
@@ -125,6 +142,11 @@ BATTERIA = [
                 ("assistant", "Si', ne ho trovate: palline di Natale rosse "
                               "lucide nel catalogo Packara.")],
      "attesa": trova_e_cita},
+    {"nome": "pappagallo", "domanda": "e di blu invece?",
+     "storia": [("user", "hai palline di Natale rosse?"),
+                ("assistant", "Si', ne ho trovate: palline di Natale rosse "
+                              "lucide nel catalogo Packara.")],
+     "attesa": non_pappagalla},
     {"nome": "senza-dato", "domanda": "quanto costano?",
      "storia": [("user", "hai palline di Natale rosse?"),
                 ("assistant", "Si', ne ho trovate: palline di Natale rosse "
