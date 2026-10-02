@@ -174,7 +174,7 @@ Ti do cinque cose:
 - le RIGHE CHE HA CITATO: sono quello che aveva davvero in mano;
 - un CAMPIONE dell'archivio su quel tema, preso per significato. Non e' quello che il sistema ha trovato: e' quello che in archivio C'E'. Serve per l'unico giudizio che dalla sola risposta non si puo' dare — ha detto che non c'era niente mentre c'era?
 
-Non dai un voto complessivo. Rispondi a TRE domande separate, ognuna si' o no. Ognuna cerca una colpa precisa, e la risposta onesta e' «no» quasi sempre: di' «si'» solo se puoi CITARE LE PAROLE ESATTE della risposta che lo dimostrano. Se per giustificare un «si'» devi spiegare o dedurre, allora e' «no».
+Non dai un voto complessivo. Rispondi a DUE domande separate, ognuna si' o no. Ognuna cerca una colpa precisa, e la risposta onesta e' «no» quasi sempre: di' «si'» solo se puoi CITARE LE PAROLE ESATTE della risposta che lo dimostrano. Se per giustificare un «si'» devi spiegare o dedurre, allora e' «no».
 
 1. HA NEGATO QUELLO CHE AVEVA? Cioe': ha scritto da qualche parte che non ha trovato niente, che non c'e', che non vede, che non sa — mentre aveva delle righe in mano o mentre il campione mostra che la cosa c'e'? Conta anche se poi sotto elenca qualcosa: chi legge si ferma alla prima frase.
    ATTENZIONE, e' qui che si sbaglia: una risposta AFFERMATIVA non e' una negazione. «I cataloghi sono 13» non nega niente, afferma. «Ho trovato nastri bianchi con cuori rossi» non nega niente. Se nella risposta non c'e' una frase che dice che qualcosa manca, questa e' NO.
@@ -185,9 +185,9 @@ Non dai un voto complessivo. Rispondi a TRE domande separate, ognuna si' o no. O
    L'esempio: «Ho trovato nastri con cuori blu» e la riga citata dice «nastro con cuori rossi». Afferma (a) e la prova (b) lo smentisce. Questa e' «si'».
    Se la (b) non ce l'hai, e' «no». Non dedurla dall'assenza di citazioni: una risposta che MOSTRA FRA COSA SCEGLIERE («ci sono confezioni regalo, diffusori e decorazioni natalizie», poi tre strade) non cita niente perche' non sta proponendo articoli, sta orientando, e quelle famiglie si ritrovano nel campione. Non e' una promessa, e' una mappa: «no».
 
-3. HA IMPEDITO DI VERIFICARE? Anche qui serve una prova positiva, e la prova e' un articolo nominato SENZA nessun [[n]] attaccato. Due forme: l'articolo c'e' e il riferimento non c'e' affatto; oppure al posto del riferimento c'e' una pagina scritta a mano nel testo, «pagina 39» o «[Catalogo X, pagina 46]», che non e' cliccabile e non serve.
-   Un [[n]] presente E' la prova che si puo' verificare. Se ogni articolo che nomina ne ha uno, questa e' «no» — anche se sono pochi, anche se il resto della risposta e' una domanda, anche se la risposta contiene altre frasi che non ti piacciono. Quelle le giudicano le domande 1 e 2, non questa.
-   E vale solo quando elenca ARTICOLI: un saluto, un dato secco o una domanda alla persona non hanno niente da verificare, quindi «no».
+PER OGNI «SI'» DEVI ESIBIRE LA PROVA, non descriverla: nel campo `_prova` ci copi la riga — citata o del campione — che smentisce quello che la risposta dice. Se quella riga non riesci a copiarla perche' non c'e', allora la colpa non c'e': metti «no» e vai avanti. Accusare e' facile, e un metro che accusa tutti non misura niente: sono passato da un giudice che bocciava ogni risposta con «ha negato avendo» a uno che boccia i ventagli con «ha promesso», e tutte e due le volte la colpa era inventata per riempire una casella.
+
+La citazione [[n]] NON la giudichi tu. Da quando il sistema ha un revisore che rilegge la risposta prima di consegnarla, quel controllo sta li', dentro il flusso, dove puo' anche correggerla. Qui si guarda se quello che dice e' vero, non come e' impaginato: una risposta giusta senza riferimenti e una risposta giusta con i riferimenti ricevono lo stesso verdetto, e quanti ne porta si legge nella colonna dei numeri.
 
 Il CAMPIONE serve a UNA cosa sola: capire se una negazione era falsa. Non e' l'elenco di quello che la risposta avrebbe dovuto contenere, e non si confronta col numero di righe citate. Una risposta che cita tre articoli giusti va benissimo anche se il campione ne mostra dieci.
 
@@ -206,22 +206,31 @@ I_VERDETTO = [{"type": "function", "function": {
         "nega_dove": {"type": "string",
                       "description": "Le parole esatte della risposta che lo "
                                      "dimostrano, o «» se nega e' false."},
+        "nega_prova": {"type": "string",
+                       "description": "La riga — citata o del campione — che "
+                                      "contiene la cosa che la risposta dice "
+                                      "di non avere, copiata. «» se false."},
         "promette": {"type": "boolean",
                      "description": "true SOLO se l'apertura afferma di aver "
                                     "trovato una cosa che le righe citate "
                                     "smentiscono."},
         "promette_dove": {"type": "string",
                           "description": "Le parole esatte, o «»."},
-        "non_verificabile": {"type": "boolean",
-                             "description": "true SOLO se elenca articoli "
-                                            "senza [[n]] accanto."},
-        "non_verificabile_dove": {"type": "string",
-                                  "description": "Le parole esatte, o «»."}},
-        "required": ["nega", "nega_dove", "promette", "promette_dove",
-                     "non_verificabile", "non_verificabile_dove"]}}}]
+        "promette_prova": {"type": "string",
+                           "description": "La riga che descrive una cosa "
+                                          "DIVERSA da quella promessa, "
+                                          "copiata. «» se false."}},
+        "required": ["nega", "nega_dove", "nega_prova",
+                     "promette", "promette_dove", "promette_prova"]}}}]
 
-COLPE = (("nega", "nega avendo"), ("promette", "promette senza avere"),
-         ("non_verificabile", "non si puo' verificare"))
+# Le colpe sono due, e sono tutte e due SEMANTICHE: «quello che dice e'
+# vero?». La terza — «c'e' il [[n]]?» — era meccanica, ed era l'unica che
+# il modello sbagliava, in modo instabile: passava la taratura e poi
+# bocciava «Palline di Natale blu con sfumature d'argento [[1]]» con la
+# citazione dentro la frase che riportava come prova (2/10/2026, su quasi
+# tutta la batteria). Adesso quel controllo sta dentro il flusso, nel
+# revisore, che oltre a vederlo lo puo' far correggere.
+COLPE = (("nega", "nega avendo"), ("promette", "promette senza avere"))
 
 
 def _righe_a_testo(righe, quante=10):

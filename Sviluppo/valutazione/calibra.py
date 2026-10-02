@@ -45,10 +45,6 @@ PROVE = [
   "nell'archivio. Tuttavia, ci sono alcune opzioni che potrebbero interessarti: "
   "- Figurine di un gatto cartoon in posa atletica con manubri - Figurine di "
   "Babbo Natale sul tapis roulant - Confezioni regalo con bottiglie e scatole"),
- ("non_verificabile", "ho bisogno di nastri bianchi con cuori rossi", [],
-  "Ho trovato diversi nastri bianchi con cuori rossi nei cataloghi Packara: "
-  "- Pagina 39: nastro bianco con cuori rossi, codice 01. - Pagina 5: tre "
-  "nastri con motivi a cuore su fondo bianco."),
 ]
 
 # E tre risposte GIUSTE, perche' un giudice si tara in due versi. La terza

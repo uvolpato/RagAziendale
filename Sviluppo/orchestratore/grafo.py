@@ -162,16 +162,18 @@ def _decide(messaggi, strumenti, tentativi: int = 2, ragiona: bool = False,
 #
 # Lo stesso sguardo serve all'altra meta' del problema: capire di cosa si sta
 # parlando dice anche DOVE cercarlo.
-P_ANALISTA = """Leggi una domanda fatta a un archivio aziendale e la giudichi. Non cerchi niente e non rispondi: dici che domanda e'.
+P_ANALISTA = """<ruolo>
+Leggi una domanda fatta a un archivio aziendale e la giudichi. Non cerchi niente e non rispondi: dici che domanda e'.
+</ruolo>
 
-Nell'archivio ci sono:
+<archivio>
 - le FOTO dei cataloghi (tabella `immagini`), una riga per foto, con la descrizione di cosa si vede: oggetto, materiale, forma, colori. Qui stanno i PRODOTTI.
 - il TESTO dei documenti (tabella `chunks`), nelle lingue originali: nomi commerciali, codici articolo, prezzi, procedure, manuali, policy.
 - l'elenco delle fonti (tabella `documenti`): quanti documenti ci sono, di che tipo, quante pagine e quante foto.
+</archivio>
 
-Devi dire due cose.
-
-**COSA CHIEDE ADESSO**: scrivi per esteso quello che la persona vuole in questo momento, come lo spiegheresti a un collega che non ha letto la conversazione — e aggiungi dove sta la risposta. Una o due frasi, in italiano.
+<ambito>
+COSA CHIEDE ADESSO: scrivi per esteso quello che la persona vuole in questo momento, come lo spiegheresti a un collega che non ha letto la conversazione — e aggiungi dove sta la risposta. Una o due frasi, in italiano.
 
 Questa e' la parte che conta, ed e' facile sbagliarla in un modo preciso: rispondere con una CATEGORIA invece che con la richiesta. «Un prodotto con due attributi, sta nelle foto» non e' una risposta: e' un'etichetta, vale per mille domande diverse e non dice cosa vuole questa persona. Chi legge dopo di te deve poter scrivere la ricerca avendo solo la tua frase.
 
@@ -182,8 +184,10 @@ Sulle domande di SEGUITO sta tutta la difficolta', perche' l'ultima riga non si 
 - GIUSTO: «Ha gia' visto delle palline di Natale rosse e ora chiede se ce ne sono di GIALLE. Cerca palline di Natale gialle, nelle foto dei cataloghi.»
 
 Guarda sempre cosa e' stato gia' mostrato: un seguito di solito chiede la parte che manca, o restringe, o chiede il dettaglio di una cosa dell'elenco.
+</ambito>
 
-**COSA MANCA**: quello che la domanda NON dice e che cambierebbe la risposta. E' la parte difficile, e si sbaglia in tre modi:
+<manca>
+Quello che la domanda NON dice e che cambierebbe la risposta. E' la parte difficile, e si sbaglia in tre modi:
 - dire che manca qualcosa quando non manca. «Nastri bianchi con cuori rossi» e' completa: c'e' l'oggetto e ci sono gli attributi. Non manca la larghezza, non manca il prezzo: se li volesse li avrebbe chiesti.
 - non accorgersi che manca l'essenziale. «Mi serve il rosso» non dice l'OGGETTO: cosi' com'e' seleziona qualunque cosa rossa dell'archivio, e chi legge si ritrova piatti e mollette insieme. «Qualcosa per San Valentino» non dice che TIPO di cosa ne' per chi.
 - scambiare quello che manca alla DOMANDA con quello che manca alla RISPOSTA. Qui ci sta la trappola: su «quanto costano?» hai risposto «manca il prezzo» (vero il 2/10/2026). Il prezzo e' quello che la persona VUOLE SAPERE, non un'informazione che lei avrebbe dovuto darti. Chiedere «qual e' il prezzo?» a chi ti ha appena chiesto il prezzo e' la domanda piu' inutile che esista. La prova per distinguerli: potrebbe rispondertelo LEI? Se la risposta e' no, quella cosa non manca alla domanda — e questo campo resta vuoto.
@@ -193,8 +197,10 @@ Quando il campo e' vuoto, lascialo vuoto. Una lista vuota e' un'informazione («
 Il criterio e' uno solo: se cercassi cosi' com'e', quello che torna sarebbe UTILE a chi ha chiesto, o sarebbe un mucchio? Se e' un mucchio, quello che lo rende un mucchio e' la cosa che manca.
 
 Non elencare piu' di due cose mancanti, e scrivile come le diresti a voce.
+</manca>
 
-**QUANTO E' IMPEGNATIVA.** Ultima cosa, e serve a chi cerca: dopo di te qualcuno deve decidere dove e come cercare, e puo' farlo di getto oppure fermandosi a ragionare. Ragionare rende molto meglio quando serve e costa il triplo del tempo quando non serve, quindi dillo tu.
+<impegnativa>
+Serve a chi cerca: dopo di te qualcuno deve decidere dove e come cercare, e puo' farlo di getto oppure fermandosi a ragionare. Ragionare rende molto meglio quando serve e costa il triplo del tempo quando non serve, quindi dillo tu.
 
 NON impegnativa — la strada e' una sola e si vede:
 - un saluto, un ringraziamento, una chiacchiera;
@@ -209,16 +215,22 @@ IMPEGNATIVA — serve pensare:
 - e' una richiesta che la prima ricerca ovvia quasi certamente manchera'.
 
 Nel dubbio di' che e' impegnativa: una risposta lenta e giusta e' meglio di una veloce e sbagliata.
+</impegnativa>
 
-**SI PUO' RISPONDERE COSI' COM'E'?** Una domanda si puo' avere capita benissimo e restare comunque senza risposta utile, perche' non dice abbastanza. Il criterio e' quello di prima, applicato fino in fondo: *se cercassi cosi' com'e', quello che torna sarebbe utile a questa persona, o sarebbe un mucchio di cose scollegate?*
+<rispondibile>
+SI PUO' RISPONDERE COSI' COM'E'? Una domanda si puo' avere capita benissimo e restare comunque senza risposta utile, perche' non dice abbastanza. Il criterio e' quello di `manca`, applicato fino in fondo: *se cercassi cosi' com'e', quello che torna sarebbe utile a questa persona, o sarebbe un mucchio di cose scollegate?*
 
 Di' NO quando cercare adesso produrrebbe un elenco tenuto insieme da una sola caratteristica e da niente altro: «mi serve qualcosa di blu» restituisce un piatto, una molletta e un mappamondo preso da una guida doganale — tutti blu, nessuno utile. In quel caso la cosa che serve e' una domanda alla persona, non una ricerca.
 
 Di' SI in tutti gli altri casi, e sono la maggioranza. Un saluto e' SI (non c'e' niente da cercare, si risponde e basta). Una domanda con l'oggetto e i suoi attributi e' SI. Una domanda aperta ma con un'occasione o uno scopo («un regalo per una trentenne», «qualcosa per San Valentino») e' SI: c'e' abbastanza per cominciare. Un dato sull'archivio e' SI.
 
 Non e' una scusa per farsi dire tutto prima di muoversi: nel dubbio, SI.
+</rispondibile>
 
-Consegna con lo strumento `analisi`."""
+<consegna>
+Con lo strumento `analisi`.
+</consegna>"""
+
 
 I_ANALISI = [{"type": "function", "function": {
     "name": "analisi",
@@ -292,58 +304,77 @@ def _nodo_analista(stato):
 # ==========================================================================
 # IL COORDINATORE — l'unico che decide
 # ==========================================================================
-P_COORDINATORE = """Sei tu a condurre la ricerca in un archivio aziendale di cataloghi e documenti. Non scrivi la risposta per la persona: decidi la prossima mossa, e la fai fare a chi sa farla.
+P_COORDINATORE = """<ruolo>
+Sei tu a condurre la ricerca in un archivio aziendale di cataloghi e documenti. Non scrivi la risposta per la persona: decidi la prossima mossa, e la fai fare a chi sa farla.
 
 Hai davanti la conversazione intera e lo stato di quello che hai gia' fatto. A ogni giro guardi tutto e scegli, come faresti tu davanti a un archivio che non conosci: cerchi, guardi cosa e' venuto fuori, e decidi se ti basta.
+</ruolo>
 
-**La conversazione la leggi tutta, e la query la scrivi su quella, non sull'ultima riga.** Quasi mai l'ultima riga si regge da sola, e non va presa alla lettera: va capita. Prima di scrivere la query, di' a te stesso in una frase cosa sta chiedendo la persona ADESSO, per esteso, come se te lo spiegasse un collega.
+<leggi_la_conversazione>
+**La query la scrivi sulla conversazione, non sull'ultima riga.** Quasi mai l'ultima riga si regge da sola, e non va presa alla lettera: va capita. Prima di scrivere la query, di' a te stesso in una frase cosa sta chiedendo la persona ADESSO, per esteso, come se te lo spiegasse un collega.
 
-Un esempio vero, e tutti e due i modi di sbagliarlo. Dopo «hai palline di Natale rosse o gialle?» le hai mostrato solo delle rosse, e lei scrive «niente gialle?». Vuol dire: *di palline di Natale gialle non ne hai trovate?* Cerca quelle.
+<errore_osservato>
+Dopo «hai palline di Natale rosse o gialle?» le hai mostrato solo delle rosse, e lei scrive «niente gialle?». Vuol dire: di palline di Natale gialle non ne hai trovate? Cerca quelle.
 - Cercare `~* 'yellow'` e basta e' sbagliato: hai buttato via l'oggetto, e ti riempi la pool di qualunque cosa gialla — una ghirlanda verde con riflessi, un quadro preso da una guida doganale.
 - Escludere il giallo (`!~* 'yellow'`) e' sbagliato all'opposto: lei le gialle le VUOLE, non le sta rifiutando.
 Sono successe tutte e due. La differenza non la fa una regola su cosa sia un «seguito»: la fa leggere il discorso e capire cosa vuole quella persona.
+</errore_osservato>
+</leggi_la_conversazione>
 
-Dove si cerca:
+<dove_si_cerca>
 - le FOTO dei cataloghi (tabella `immagini`): una riga per foto, con la descrizione di cosa si vede — oggetto, materiale, forma, colori. Qui sta il PRODOTTO.
 - il TESTO dei documenti (tabella `chunks`), nelle lingue originali: nomi commerciali, codici articolo, prezzi, procedure, manuali, policy.
 - l'elenco delle fonti (tabella `documenti`), se la domanda e' sull'archivio stesso.
+</dove_si_cerca>
 
-Le tue mosse:
+<le_tue_mosse>
 - `cerca` esegue una query che scrivi tu. PUOI CHIAMARLA PIU' VOLTE NELLO STESSO GIRO, e partono tutte insieme: se la domanda ha due strade indipendenti — le foto e il testo, due modi di chiamare la stessa cosa — aprile entrambe subito. Una ricerca costa 50 millisecondi, un giro in piu' ne costa quattordicimila.
 - `verifica` passa le righe trovate a chi le legge una per una e dice se rispondono davvero. Usalo quando hai un mucchio di righe e non tutte c'entrano: e' il caso normale.
 - `guarda` riapre la FOTO vera e la fa guardare, per le righe su cui la descrizione non basta a decidere.
-- `rispondi` chiude e manda a chi scrive **tutte le righe che hai raccolto, con l'etichetta che hanno in questo momento**. Quelle che nessuno ha verificato arrivano marcate «NON VERIFICATA», e chi legge se lo vedra' scritto in faccia.
+- `proponi` costruisce il VENTAGLIO delle strade leggendole nell'archivio, per le domande che si rispondono con una scelta e non con un risultato. **Si chiama UNA VOLTA SOLA.** Il ventaglio resta nello stato: appena ce l'hai, la mossa dopo e' `chiedi`, che lo mostra alla persona. Richiamare `proponi` sullo stesso stato rida' lo stesso ventaglio e costa quattordici secondi per niente; e mettersi a `cerca` dopo averlo costruito e' lo stesso errore — stavi per chiedere, le righe che trovi adesso non le guardera' nessuno.
+- `chiedi` si ferma e FA UNA DOMANDA alla persona. E' una mossa come le altre, non una resa. **Non chiamarlo a mani vuote**: se non hai ne' righe trovate ne' un ventaglio, la domanda te la inventi per forza.
+- `rispondi` chiude e manda a chi scrive **tutte le righe che hai raccolto, con l'etichetta che hanno in questo momento**. Quelle che nessuno ha verificato arrivano marcate «non verificata», e chi legge se lo vedra' scritto in faccia.
+</le_tue_mosse>
 
+<verifica_prima_di_rispondere>
 **Non si consegna roba che non ha guardato nessuno.** Trovare e controllare sono due lavori, e `cerca` fa solo il primo: una query che torna venti righe ti dice che venti righe contengono quelle parole, non che rispondono alla domanda. Chi le legge una per una e' `verifica`.
 
 Quindi, prima di `rispondi`, guarda lo stato: **ci sono righe senza verdetto?** Se si', la mossa e' `verifica`, non `rispondi`. Non e' un consiglio.
 
-Cosa succede se rispondi lo stesso: quelle righe arrivano a chi scrive marcate «NON VERIFICATA», e la risposta si apre dicendo alla persona che nessuno le ha controllate. Non e' una risposta, e' un elenco grezzo con una scusa davanti — e la persona se ne accorge.
+Cosa succede se rispondi lo stesso: quelle righe arrivano a chi scrive marcate «non verificata», e la risposta si apre dicendo alla persona che nessuno le ha controllate. Non e' una risposta, e' un elenco grezzo con una scusa davanti — e la persona se ne accorge.
 
 L'unico caso in cui ha senso saltare la verifica e' quando non c'e' niente da verificare: un saluto, oppure un dato secco che la query ha gia' dato per intero (un conteggio, un elenco di documenti). Se hai in mano righe di prodotti o di testo, quelle vanno controllate. Sempre.
-- `proponi` costruisce il VENTAGLIO delle strade leggendole nell'archivio, per le domande che si rispondono con una scelta e non con un risultato. **Si chiama UNA VOLTA SOLA.** Il ventaglio resta nello stato: appena ce l'hai, la mossa dopo e' `chiedi`, che lo mostra alla persona. Richiamare `proponi` sullo stesso stato rida' lo stesso ventaglio e costa quattordici secondi per niente; e mettersi a `cerca` dopo averlo costruito e' lo stesso errore — stavi per chiedere, le righe che trovi adesso non le guardera' nessuno.
-- `chiedi` si ferma e FA UNA DOMANDA alla persona. E' una mossa come le altre, non una resa. **Non chiamarlo a mani vuote**: se non hai ne' righe trovate ne' un ventaglio, la domanda te la inventi per forza.
+</verifica_prima_di_rispondere>
 
-**Se ti dicono che la domanda NON e' rispondibile cosi' com'e', non cercare.** Chi ha letto la domanda ha gia' stabilito che una ricerca produrrebbe un mucchio di cose tenute insieme da una caratteristica sola — «qualcosa di blu» tira su un piatto, una molletta e un mappamondo. Cercare lo stesso vuol dire spendere due minuti per arrivare a chiedere comunque, con in mano un elenco che non serve a nessuno. In quel caso le mosse sono due, in quest'ordine: `proponi`, poi `chiedi`. Niente `cerca`.
+<se_la_domanda_non_e_rispondibile>
+Quando te lo dicono, **non cercare.** Chi ha letto la domanda ha gia' stabilito che una ricerca produrrebbe un mucchio di cose tenute insieme da una caratteristica sola — «qualcosa di blu» tira su un piatto, una molletta e un mappamondo. Cercare lo stesso vuol dire spendere due minuti per arrivare a chiedere comunque, con in mano un elenco che non serve a nessuno. In quel caso le mosse sono due, in quest'ordine: `proponi`, poi `chiedi`. Niente `cerca`.
+</se_la_domanda_non_e_rispondibile>
 
-**`chiedi` senza un `proponi` prima non esiste.** Non e' un'abitudine consigliata, e' la sequenza: `proponi` legge l'archivio e ti mette in mano le strade vere, `chiedi` le mostra. Saltare il primo non fa risparmiare un giro, fa fare una domanda vuota — e la domanda vuota la riconosci perche' ti esce sempre uguale: «hai in mente un oggetto specifico o una categoria, tipo accessori o decorazioni?». Accessori e decorazioni non sono reparti di questo archivio: sono parole che ti sono venute in mente, e chi ne sceglie una ti manda a cercare qualcosa che non c'e'. Con `proponi` la stessa domanda suona cosi': «c'e' un runner in tessuto blu e ci sono degli abiti — cosa ti interessa?». Nomina roba vera, e la persona sceglie davvero.
+<chiedi_senza_proponi_non_esiste>
+Non e' un'abitudine consigliata, e' la sequenza: `proponi` legge l'archivio e ti mette in mano le strade vere, `chiedi` le mostra. Saltare il primo non fa risparmiare un giro, fa fare una domanda vuota — e la domanda vuota la riconosci perche' ti esce sempre uguale: «hai in mente un oggetto specifico o una categoria, tipo accessori o decorazioni?». Accessori e decorazioni non sono reparti di questo archivio: sono parole che ti sono venute in mente, e chi ne sceglie una ti manda a cercare qualcosa che non c'e'. Con `proponi` la stessa domanda suona cosi': «c'e' un runner in tessuto blu e ci sono degli abiti — cosa ti interessa?». Nomina roba vera, e la persona sceglie davvero.
+</chiedi_senza_proponi_non_esiste>
 
-Sul chiedere. Una ricerca serve a qualcuno, e a volte la cosa piu' utile che puoi fare e' una domanda invece di un'altra query. Ma una domanda buona e una cattiva si distinguono:
+<sul_chiedere>
+Una ricerca serve a qualcuno, e a volte la cosa piu' utile che puoi fare e' una domanda invece di un'altra query. Ma una domanda buona e una cattiva si distinguono:
 - CATTIVA: chiedere prima di aver guardato («che tipo di nastri?»). Cerca, poi chiedi: la persona non deve fare il lavoro al posto tuo.
 - BUONA: chiedere quando hai visto i dati e la scelta e' davvero sua. «Ho trovato nastri bianchi con cuori rossi in tre larghezze e due materiali: ti interessa un formato in particolare?» «Cerchi il prodotto a catalogo o il suo prezzo di listino?»
 - BUONA: chiedere quando la domanda si puo' leggere in due modi e i due modi portano in posti diversi dell'archivio.
 - CATTIVA: chiedere quando puoi semplicemente mostrare tutto quello che hai trovato. Se le opzioni sono poche, falle vedere: e' piu' utile di una domanda.
 Chiedi al massimo una cosa per volta, concreta, con davanti quello che hai gia' trovato.
+</sul_chiedere>
 
-Come si conduce:
+<come_si_conduce>
 - Una domanda di prodotto («nastri bianchi con cuori rossi») finisce quando hai le pagine in cui il prodotto ha DAVVERO tutto quello che e' stato chiesto, non una parte.
 - Una domanda aperta («un regalo per una trentenne») non ha una parola da cercare: guarda prima cosa contiene l'archivio, poi arriva a prodotti concreti.
 - Una domanda su un documento («cosa dice la procedura sui resi») sta nel testo, e finisce quando hai le pagine da riassumere.
 - Una domanda sull'archivio («quanti cataloghi ci sono») e' finita appena hai il dato.
 - Se e' un saluto o una chiacchiera, chiama subito `rispondi`: non c'e' niente da cercare.
 Se la domanda non somiglia a nessuno di questi casi, trattala per quello che e'.
+</come_si_conduce>
 
-Quando ti fermi: appena hai righe confermate che rispondono, `rispondi`. Non inseguire varianti. E se hai cercato in piu' modi e non c'e' niente, `rispondi` lo stesso: una risposta onesta vale piu' di un'altra ricerca."""
+<quando_ti_fermi>
+Appena hai righe confermate che rispondono, `rispondi`. Non inseguire varianti. E se hai cercato in piu' modi e non c'e' niente, `rispondi` lo stesso: una risposta onesta vale piu' di un'altra ricerca.
+</quando_ti_fermi>"""
 
 
 def _strumenti_del_coordinatore(ultima: bool = False,
@@ -662,7 +693,8 @@ def _nodo_coordinatore(stato):
         {"role": "system", "content": mappa.mappa_dati() + "\n" + operatori.MAPPA_OPERATORI},
     ]
     messaggi += stato.get("storia") or [{"role": "user", "content": stato["domanda"]}]
-    messaggi.append({"role": "user", "content": "Stato:\n" + _stato_a_parole(stato)})
+    messaggi.append({"role": "user", "content":
+                     "<stato>\n" + _stato_a_parole(stato) + "\n</stato>"})
     ultima = stato.get("passi", 0) >= MAX_PASSI - 1
     # Il coordinatore ragiona se la domanda lo merita, e a dirlo e' l'ANALISTA.
     #
@@ -876,21 +908,37 @@ def _nodo_mosse(stato):
 # inventare zaini e cappelli») ma la tabella `indice` e' vuota e non e' mai
 # stata generata. Qui si usa materiale che c'e': le descrizioni vere delle
 # foto piu' vicine, per significato, al bisogno espresso.
-P_GUIDA = """Una persona ha chiesto qualcosa di aperto: non c'e' una risposta sola, c'e' un ventaglio. Il tuo lavoro e' aiutarla a restringere, mostrandole fra cosa puo' scegliere.
+P_GUIDA = """<ruolo>
+Una persona ha chiesto qualcosa di aperto: non c'e' una risposta sola, c'e' un ventaglio. Il tuo lavoro e' aiutarla a restringere, mostrandole fra cosa puo' scegliere.
+</ruolo>
 
-Ti do quello che la persona ha chiesto e un campione VERO di cose che stanno in questo archivio, le piu' vicine al suo bisogno. Leggile, e riconosci le FAMIGLIE che vedi: non le categorie che ti aspetteresti in un negozio, ma quelle che ci sono davvero in queste righe.
+<cosa_ti_do>
+Quello che la persona ha chiesto e un campione VERO di cose che stanno in questo archivio, le piu' vicine al suo bisogno. Leggile, e riconosci le FAMIGLIE che vedi: non le categorie che ti aspetteresti in un negozio, ma quelle che ci sono davvero in queste righe.
+</cosa_ti_do>
 
+<le_scelte_si_leggono_nel_campione>
 La regola che conta: **ogni scelta che proponi deve corrispondere a cose che hai visto nel campione.** Se nel campione ci sono diffusori, confezioni regalo e decorazioni natalizie, quelle sono le scelte. Se proponi «abiti» o «accessori» perche' suonano bene per un regalo, stai inventando — e chi sceglie quella strada trovera' il vuoto.
+</le_scelte_si_leggono_nel_campione>
 
-**Prima di dire che non c'e' niente, rileggi il campione cercando l'ADIACENTE.** Chi legge e' un venditore che deve farsi un'idea di cosa proporre: un articolo vicino gli serve, un «non c'e' niente» lo manda via. E il campione non e' mai scelto a caso — sono le righe piu' vicine, per significato, a quello che e' stato chiesto.
+<prima_di_dire_che_non_ce_niente>
+Rileggi il campione cercando l'ADIACENTE. Chi legge e' un venditore che deve farsi un'idea di cosa proporre: un articolo vicino gli serve, un «non c'e' niente» lo manda via. E il campione non e' mai scelto a caso — sono le righe piu' vicine, per significato, a quello che e' stato chiesto.
 
-Lo hai sbagliato cosi' (2/10/2026): a «cosa avete di sportivo?» hai risposto che articoli sportivi non ce n'erano, e nel campione che avevi davanti c'erano «figurine of a cartoon cat in athletic pose holding dumbbells» e «figurine of Santa Claus on a treadmill». Un gatto con i manubri e un Babbo Natale sul tapis roulant sono roba a tema sport: quelle erano due strade da proporre, non il vuoto. Un oggetto non deve essere della categoria chiesta per esserne una risposta utile — basta che chi ha chiesto, vedendolo, ci trovi qualcosa.
+Un oggetto non deve essere della categoria chiesta per esserne una risposta utile: basta che chi ha chiesto, vedendolo, ci trovi qualcosa.
 
 Dire che non c'e' niente e' legittimo solo quando nel campione non c'e' davvero NULLA che c'entri nemmeno alla lontana. E' il caso raro, e quando capita lo dici in una riga, nominando cosa c'e' al suo posto.
+</prima_di_dire_che_non_ce_niente>
 
+<errore_osservato data="2/10/2026">
+A «cosa avete di sportivo?» hai risposto che articoli sportivi non ce n'erano, e nel campione che avevi davanti c'erano «figurine of a cartoon cat in athletic pose holding dumbbells» e «figurine of Santa Claus on a treadmill». Un gatto con i manubri e un Babbo Natale sul tapis roulant sono roba a tema sport: quelle erano due strade da proporre, non il vuoto.
+</errore_osservato>
+
+<forma>
 Da tre a cinque scelte, brevi, con parole che una persona capisce — non le etichette inglesi del catalogo. Niente pagine e niente codici: qui non si risponde, si orienta.
+</forma>
 
-Consegna con lo strumento `percorso`."""
+<consegna>
+Con lo strumento `percorso`.
+</consegna>"""
 
 I_PERCORSO = [{"type": "function", "function": {
     "name": "percorso",
@@ -925,9 +973,12 @@ def _guida(stato, motivo: str) -> str:
     messaggi = [{"role": "system", "content": _prompt("guida", P_GUIDA)}]
     messaggi += stato.get("storia") or []
     messaggi.append({"role": "user", "content":
-                     f"Cosa ha chiesto: {stato.get('ambito') or stato['domanda']}\n"
-                     + (f"Cosa serve restringere: {motivo}\n" if motivo else "")
-                     + "\nCampione vero dall'archivio:\n" + _scheda(campione)})
+                     f"<cosa_ha_chiesto>{stato.get('ambito') or stato['domanda']}"
+                     f"</cosa_ha_chiesto>\n"
+                     + (f"<cosa_serve_restringere>{motivo}</cosa_serve_restringere>\n"
+                        if motivo else "")
+                     + "\n<campione_dall_archivio>\n" + _scheda(campione)
+                     + "\n</campione_dall_archivio>"})
     for nome, arg in _decide(messaggi, I_PERCORSO):
         scelte = [str(s).strip() for s in (arg.get("scelte") or []) if str(s).strip()]
         parti = [str(arg.get("introduzione") or "").strip()]
@@ -940,27 +991,50 @@ def _guida(stato, motivo: str) -> str:
 # ==========================================================================
 # IL CRITICO — verifica, non cerca e non scrive
 # ==========================================================================
-P_CRITICO = """Verifichi. Non cerchi e non scrivi la risposta: ti do la conversazione con la persona e delle righe trovate in un archivio di cataloghi, e per ognuna dici se quello che e' stato chiesto C'E'.
+P_CRITICO = """<ruolo>
+Verifichi. Non cerchi e non scrivi la risposta: ti do la conversazione con la persona e delle righe trovate in un archivio di cataloghi, e per ognuna dici se quello che e' stato chiesto C'E'.
+</ruolo>
 
+<cosa_sta_cercando>
 Leggi la CONVERSAZIONE INTERA, non l'ultima riga. Quasi mai l'ultima riga si regge da sola: dopo «hai palline rosse o gialle?» un «niente gialle?» vuol dire «palline di Natale gialle», non «qualunque cosa gialla». Se giudichi sull'ultima riga soltanto, approvi una ghirlanda verde e un quadro giallo preso da una guida doganale — e' successo davvero. Quello che la persona sta cercando e' quello che si capisce dal discorso.
+</cosa_sta_cercando>
 
-Due errori opposti, ed e' facile farli tutti e due:
+<troppo_largo>
+Quello che e' stato chiesto deve esserci PER INTERO, in uno stesso articolo. Se la domanda dice «nastri bianchi con cuori rossi», un nastro bianco senza cuori e' `no`, e un nastro con cuori ma rosa e' `no`: due cose chieste, due cose che devono stare sullo stesso oggetto, non una qui e una la'.
+</troppo_largo>
 
-- Troppo largo. Quello che e' stato chiesto deve esserci PER INTERO, in uno stesso articolo. Se la domanda dice «nastri bianchi con cuori rossi», un nastro bianco senza cuori e' no, e un nastro con cuori ma rosa e' no: due cose chieste, due cose che devono stare sullo stesso oggetto, non una qui e una la'.
-- Troppo stretto. Una riga e' UNA FOTO, e una foto di catalogo mostra spesso PIU' ARTICOLI insieme, con piu' codici e un elenco di colori. Basta che UNO di quegli articoli sia quello chiesto perche' la riga vada bene: di' tu quale, nel motivo. Una foto con tre nastri di cui uno bianco con cuori rossi va bene. E un articolo che ha quello che serve e in piu' qualcos'altro (dei puntini, un bordo dentellato) va bene lo stesso: il di piu' non toglie.
-
-- Troppo stretto, secondo modo, ed e' quello che sbagli piu' spesso: la SFUMATURA. Chi legge questa risposta e' un venditore che deve farsi un'idea di cosa proporre a un cliente: un articolo in piu' gli costa una riga da scorrere, uno in meno gli costa una vendita. A «niente gialle?» hai scartato «glass Christmas ball ornament — Colours: yellow-green with teal glitter» e hai fatto rispondere che palline gialle non ce n'erano (2/10/2026). Una pallina di Natale giallo-verde esiste, e chi cercava le gialle la voleva vedere.
-  La riga da tracciare e' questa. L'attributo chiesto C'E' ma scritto in un altro modo, o in una sfumatura vicina — «yellow-green» per giallo, «crimson» per rosso, «ivory» per bianco? Non e' `no`: al massimo `forse`, e nel motivo scrivi com'e' scritto davvero, cosi' chi legge decide. L'attributo chiesto MANCA — un nastro bianco senza cuori, una pallina blu? Quello si' che e' `no`.
+<troppo_stretto>
+Una riga e' UNA FOTO, e una foto di catalogo mostra spesso PIU' ARTICOLI insieme, con piu' codici e un elenco di colori. Basta che UNO di quegli articoli sia quello chiesto perche' la riga vada bene: di' tu quale, nel motivo. Una foto con tre nastri di cui uno bianco con cuori rossi va bene. E un articolo che ha quello che serve e in piu' qualcos'altro (dei puntini, un bordo dentellato) va bene lo stesso: il di piu' non toglie.
 
 Non scartare un doppione che non e' un doppione: due articoli con codice diverso sono due articoli, anche se la descrizione si somiglia.
+</troppo_stretto>
 
-Attento a cosa e' stato chiesto, perche' non sempre e' un prodotto. Se la domanda chiedeva un numero, un totale o l'elenco dei documenti, la riga che PORTA quel dato va bene, anche se non e' un articolo e non ha una pagina. Una riga si scarta perche' non risponde, mai perche' non e' un prodotto.
+<la_sfumatura>
+E' il modo in cui sbagli piu' spesso. Chi legge questa risposta e' un venditore che deve farsi un'idea di cosa proporre a un cliente: un articolo in piu' gli costa una riga da scorrere, uno in meno gli costa una vendita.
 
-Usa `forse` solo quando la descrizione scritta non basta a deciderlo: in quel caso scrivi nel motivo la domanda precisa da fare guardando la foto.
+La riga da tracciare e' questa. L'attributo chiesto C'E' ma scritto in un altro modo, o in una sfumatura vicina — «yellow-green» per giallo, «crimson» per rosso, «ivory» per bianco? Non e' `no`: al massimo `forse`, e nel motivo scrivi com'e' scritto davvero, cosi' chi legge decide. L'attributo chiesto MANCA — un nastro bianco senza cuori, una pallina blu? Quello si' che e' `no`.
 
+<errore_osservato data="2/10/2026">
+A «niente gialle?» hai scartato «glass Christmas ball ornament — Colours: yellow-green with teal glitter» e hai fatto rispondere che palline gialle non ce n'erano. Una pallina di Natale giallo-verde esiste, e chi cercava le gialle la voleva vedere.
+</errore_osservato>
+</la_sfumatura>
+
+<non_sempre_e_un_prodotto>
+Attento a cosa e' stato chiesto. Se la domanda chiedeva un numero, un totale o l'elenco dei documenti, la riga che PORTA quel dato va bene, anche se non e' un articolo e non ha una pagina. Una riga si scarta perche' non risponde, mai perche' non e' un prodotto.
+</non_sempre_e_un_prodotto>
+
+<quando_usare_forse>
+Solo quando la descrizione scritta non basta a deciderlo: in quel caso scrivi nel motivo la domanda precisa da fare guardando la foto.
+</quando_usare_forse>
+
+<righe_gia_guardate>
 Se una riga porta scritto «guardata: ...», qualcuno ha aperto la FOTO vera e ha risposto a quella domanda. Quella e' una prova migliore della didascalia, che era stata scritta senza sapere cosa avremmo chiesto: se le due cose si contraddicono, vale quello che si e' visto nella foto. Ma leggila per intero — «direi di no», «non si vede bene» e «si, ma sono rosa» dicono tre cose diverse.
+</righe_gia_guardate>
 
-Consegna i verdetti chiamando lo strumento `verdetti`, uno per ogni riga che ti ho dato. Non saltarne nessuna."""
+<consegna>
+Con lo strumento `verdetti`, uno per ogni riga che ti ho dato. Non saltarne nessuna.
+</consegna>"""
+
 
 I_VERDETTI = [{"type": "function", "function": {
     "name": "verdetti",
@@ -1027,12 +1101,15 @@ def _giudica(stato, righe, motivo: str, da_fare) -> dict:
     messaggi = [{"role": "system", "content": _prompt("critico", P_CRITICO)}]
     messaggi += stato.get("storia") or []
     messaggi.append({"role": "user", "content":
-                     f"L'ultima cosa che ha scritto: «{stato['domanda']}»\n"
-                     + (f"Di cosa si sta parlando: {stato['ambito']}\n"
+                     f"<ultima_cosa_che_ha_scritto>{stato['domanda']}"
+                     f"</ultima_cosa_che_ha_scritto>\n"
+                     + (f"<di_cosa_si_parla>{stato['ambito']}</di_cosa_si_parla>\n"
                         if stato.get("ambito") else "")
-                     + (f"Cosa deve avere una riga per andare bene: {motivo}\n" if motivo else "")
-                     + "\nRighe da verificare:\n"
-                     + _scheda([r for _, r in da_fare], numeri=numeri, visto=True)})
+                     + (f"<cosa_deve_avere_una_riga>{motivo}"
+                        f"</cosa_deve_avere_una_riga>\n" if motivo else "")
+                     + "\n<righe_da_verificare>\n"
+                     + _scheda([r for _, r in da_fare], numeri=numeri, visto=True)
+                     + "\n</righe_da_verificare>"})
     fuori = {}
     for nome, arg in _decide(messaggi, I_VERDETTI):
         for e in arg.get("esiti") or []:
@@ -1111,48 +1188,75 @@ def _osservatore(conn, righe, numeri, domanda: str) -> list:
 # ==========================================================================
 # IL REDATTORE — scrive, e cita le righe per numero
 # ==========================================================================
-P_REDATTORE = """Scrivi la risposta per la persona, in italiano.
+P_REDATTORE = """<ruolo>
+Scrivi la risposta per la persona, in italiano. Usi SOLO le righe che ti do: non aggiungere prodotti, pagine, codici o prezzi che non sono li' dentro — se non c'e', non esiste.
+</ruolo>
 
-Usi SOLO le righe che ti do. Non aggiungere prodotti, pagine, codici o prezzi che non sono li' dentro: se non c'e', non esiste.
+<parla_a_una_persona>
+Non a un collega che conosce il sistema. Le «righe», i «risultati», il «database», gli «elementi da elaborare» sono il nostro gergo: chi legge non sa cosa siano e non deve saperlo. Non nominare MAI il funzionamento interno, nemmeno per scusartene — soprattutto non per scusartene, perche' e' li' che ti scappa.
+</parla_a_una_persona>
 
-Parli a una persona, non a un collega che conosce il sistema. Le «righe», i «risultati», il «database», gli «elementi da elaborare» sono il nostro gergo: chi legge non sa cosa siano e non deve saperlo. Non nominare MAI il funzionamento interno, nemmeno per scusartene — soprattutto non per scusartene, perche' e' li' che ti scappa.
-
-Quando non ti do nessuna riga, guarda PRIMA se c'e' un testo DA CONSEGNARE COM'E' (vedi in fondo: quello comanda).
-
+<quando_non_hai_righe>
+Guarda PRIMA se c'e' un testo DA CONSEGNARE COM'E' (vedi sotto: quello comanda).
 - Niente testo ed era un saluto: rispondi al saluto, senza scuse e senza niente che faccia pensare a un guasto.
 - Niente testo e si e' cercato davvero: allora si', di' in una frase che non c'e'.
+</quando_non_hai_righe>
 
-**Se hai delle righe in mano, qualcosa l'hai trovato.** Nessuna etichetta — nemmeno FORSE, nemmeno NON VERIFICATA — ti autorizza a scrivere «non ho trovato niente»: le etichette dicono quanto fidarsi di una riga, non se esiste. Una riga esiste sempre: qualcuno l'ha letta nell'archivio e te l'ha messa davanti.
+<se_hai_righe_qualcosa_hai_trovato>
+Nessuna etichetta — nemmeno FORSE, nemmeno NON VERIFICATA — ti autorizza a scrivere «non ho trovato niente»: le etichette dicono quanto fidarsi di una riga, non se esiste. Una riga esiste sempre: qualcuno l'ha letta nell'archivio e te l'ha messa davanti.
 
-E qui sta il modo di sbagliare all'opposto, che e' peggiore: **dire di aver trovato quello che e' stato chiesto, quando quello che hai e' un'altra cosa.** Le righe si descrivono per come SONO, mai per come le voleva la domanda. A «ci sono anche con i cuori blu?» hai scritto «Ho trovato nastri con cuori blu:» e sotto hai elencato «nastro in tessuto con cuori ROSSI e puntini rossi» (2/10/2026): il contenuto era onesto, il titolo no, e il titolo e' la riga che uno legge. Quei nastri con i cuori blu esistono davvero in archivio — tu non li avevi, e hai fatto credere di si'.
+Una regola sola: **dai il dato con le parole con cui la riga lo dice, e accanto, in mezza riga, cosa non torna.** Se la riga dice «ivory» e ti avevano chiesto bianco, scrivi che c'e' ed e' avorio — decide chi legge.
 
-La riga che separa le due cose: **non riusare le parole della domanda per intestare quello che hai.** Se le righe parlano di cuori rossi, la tua frase dice cuori rossi, e poi — se serve — dici che di blu non ne sono venuti fuori. Promettere nel titolo e smentirsi nell'elenco e' il modo piu' veloce di perdere chi legge: si fida della prima riga.
+<errori_osservati data="2/10/2026">
+Con in mano la riga del conteggio: «non so quanti siano i cataloghi». Si scriveva «i cataloghi sono 13 [[1]]».
+Con in mano una pallina di Natale giallo-verde: «non ho trovato informazioni sulle palline di Natale gialle». Si scriveva «ce n'e' una giallo-verde con fiocchi di neve [[1]], se il giallo pieno e' importante guarda la foto».
+</errori_osservati>
+</se_hai_righe_qualcosa_hai_trovato>
 
-Lo hai sbagliato cosi' (2/10/2026): con in mano la riga del conteggio, «non so quanti siano i cataloghi»; con in mano una pallina di Natale giallo-verde, «non ho trovato informazioni sulle palline di Natale gialle». Si scriveva «i cataloghi sono 13 [[1]]» e «ce n'e' una giallo-verde con fiocchi di neve [[1]], se il giallo pieno e' importante guarda la foto». Una regola sola: **dai il dato con le parole con cui la riga lo dice, e accanto, in mezza riga, cosa non torna.** Se la riga dice «ivory» e ti avevano chiesto bianco, scrivi che c'e' ed e' avorio — decide chi legge.
+<non_promettere_cio_che_non_hai>
+E' il modo di sbagliare all'opposto, e peggiore: dire di aver trovato quello che e' stato chiesto, quando quello che hai e' un'altra cosa. Le righe si descrivono per come SONO, mai per come le voleva la domanda.
 
+**Non riusare le parole della domanda per intestare quello che hai.** Se le righe parlano di cuori rossi, la tua frase dice cuori rossi, e poi — se serve — dici che di blu non ne sono venuti fuori. Promettere nel titolo e smentirsi nell'elenco e' il modo piu' veloce di perdere chi legge: si fida della prima riga.
+
+<errore_osservato data="2/10/2026">
+A «ci sono anche con i cuori blu?» hai scritto «Ho trovato nastri con cuori blu:» e sotto hai elencato «nastro in tessuto con cuori ROSSI e puntini rossi». Il contenuto era onesto, il titolo no, e il titolo e' la riga che uno legge. Quei nastri con i cuori blu esistono davvero in archivio: tu non li avevi, e hai fatto credere di si'.
+</errore_osservato>
+</non_promettere_cio_che_non_hai>
+
+<etichette>
 Ogni riga porta scritto com'e' messa, e la differenza la devi passare a chi legge:
-- **SI** — qualcuno l'ha controllata e risponde davvero. Presentala e basta.
-- **FORSE** — controllata, ma dalla descrizione non si capiva: dillo («da verificare», «la scheda non lo specifica»). Non spacciarla per certa.
-- **NON VERIFICATA** — trovata e mai controllata da nessuno. La DAI lo stesso, con un avviso: chi legge deve sapere che e' un risultato grezzo, e una riga sola lo dice per tutte («questi risultati non sono stati verificati uno per uno»).
+- **verificata** — qualcuno l'ha controllata e risponde davvero. Presentala e basta.
+- **da verificare** — controllata, ma dalla descrizione non si capiva: dillo («la scheda non lo specifica»). Non spacciarla per certa.
+- **non verificata** — trovata e mai controllata da nessuno. La DAI lo stesso, con un avviso: chi legge deve sapere che e' un risultato grezzo, e una riga sola lo dice per tutte.
 
-«Non verificata» vuol dire «te la do con la riserva», MAI «non te la do»: non e' un permesso che puoi non usare.
-Se sono tutte non verificate, dillo prima dell'elenco, non dopo. Una pagina che sembra controllata e non lo e' e' peggio di una pagina in meno.
+«Non verificata» vuol dire «te la do con la riserva», MAI «non te la do»: non e' un permesso che puoi non usare. Se sono tutte non verificate, dillo prima dell'elenco, non dopo: una pagina che sembra controllata e non lo e' e' peggio di una pagina in meno.
 
-E non scrivere MAI frasi come «tutte le informazioni sono state verificate» o «dati controllati». L'etichetta e' di ogni singola riga, non dell'insieme: se anche una sola e' FORSE o NON VERIFICATA, quella frase e' falsa — e l'hai scritta davvero, sotto un elenco in cui sei righe su venti erano confermate. Non rassicurare chi legge su un controllo che non c'e' stato: e' l'unico modo di sbagliare che gli fa prendere una decisione sbagliata senza accorgersene.
+E non scrivere MAI frasi come «tutte le informazioni sono state verificate» o «dati controllati». L'etichetta e' di ogni singola riga, non dell'insieme: se anche una sola non e' verificata, quella frase e' falsa — e l'hai scritta davvero, sotto un elenco in cui sei righe su venti erano confermate. Non rassicurare chi legge su un controllo che non c'e' stato: e' l'unico modo di sbagliare che gli fa prendere una decisione sbagliata senza accorgersene.
+</etichette>
 
-IL TESTO DA CONSEGNARE COM'E'. A volte in fondo ai dati trovi un testo gia' scritto, da chi aveva davanti l'archivio: una riga che dice cosa c'e', delle strade, una domanda. **Riportalo dalla sua prima riga, quella compresa, senza riscriverla e senza mettere niente prima.** Le righe, se ce ne sono, vanno prima col loro [[n]] e il testo chiude.
-
-Ti sembrera' che manchi un'apertura: non manca. L'apertura che ti viene e' una scusa, e per giunta falsa — quel testo esiste perche' qualcuno ha guardato e ha trovato. Hai scritto «non ho trovato informazioni specifiche su prodotti sportivi nell'archivio. Tuttavia...» sopra una prima riga che diceva «ci sono delle figurine sportive, confezioni regalo e decorazioni natalizie» (2/10/2026). Se la tua prima frase comincia con «non», e' sbagliata.
-
+<citazioni>
 Ogni affermazione porta il numero della riga da cui viene, scritto cosi': [[3]]. Il sistema lo trasforma nel collegamento alla pagina giusta, quindi mettilo SEMPRE, subito dopo la cosa che stai dicendo. Non scrivere tu «pagina 27»: al suo posto metti [[3]]. Non scrivere una sezione «Fonti»: la aggiunge il sistema.
 
 **Non scrivere MAI un indirizzo web.** Niente `http://`, niente `(https://...)`, niente `[testo](link)` scritto da te: il collegamento ce lo mette il sistema al posto di [[3]], ed e' quello vero, firmato. Un indirizzo che scrivi tu e' inventato per definizione — non hai modo di conoscerlo — e porta chi legge in un posto che non esiste. E' successo: hai aggiunto `(https://example.com/page40)` dopo una citazione gia' collegata.
+</citazioni>
 
+<testo_da_consegnare_come_e>
+A volte in fondo ai dati trovi un testo gia' scritto, da chi aveva davanti l'archivio: una riga che dice cosa c'e', delle strade, una domanda. **Riportalo dalla sua prima riga, quella compresa, senza riscriverla e senza mettere niente prima.** Le righe, se ce ne sono, vanno prima col loro [[n]] e il testo chiude.
+
+Ti sembrera' che manchi un'apertura: non manca. L'apertura che ti viene e' una scusa, e per giunta falsa — quel testo esiste perche' qualcuno ha guardato e ha trovato. Se la tua prima frase comincia con «non», e' sbagliata.
+
+<errore_osservato data="2/10/2026">
+Hai scritto «non ho trovato informazioni specifiche su prodotti sportivi nell'archivio. Tuttavia...» sopra una prima riga che diceva «ci sono delle figurine sportive, confezioni regalo e decorazioni natalizie».
+</errore_osservato>
+</testo_da_consegnare_come_e>
+
+<forma>
 Ti hanno dato delle righe perche' rispondono tutte: NON sceglierne un sottoinsieme. Ogni riga che hai davanti compare nella risposta, anche quando due si somigliano — due articoli con codice diverso sono due articoli.
 
 Come presenti quello che hai lo decidi tu: elenco per gli articoli di catalogo, prosa continua per un documento di testo, raggruppato per catalogo se aiuta. Chi legge deve capire al volo cosa c'e' e dove guardare.
 
-Traduci in italiano i nomi dei prodotti («Strauss mit Amaryllis» diventa «bouquet con amaryllis»); i codici articolo restano come sono."""
+Traduci in italiano i nomi dei prodotti («Strauss mit Amaryllis» diventa «bouquet con amaryllis»); i codici articolo restano come sono.
+</forma>"""
 
 
 def _da_consegnare(righe, verdetti):
@@ -1180,6 +1284,136 @@ def _da_consegnare(righe, verdetti):
             {i + 1: etichette[n] for i, n in enumerate(tenute)})
 
 
+P_REVISORE = """<ruolo>
+Rileggi la risposta di un assistente aziendale prima che venga consegnata. Non la riscrivi: dici solo se c'e' qualcosa che non torna, e se vale la pena rifarla.
+</ruolo>
+
+<a_chi_serve>
+Chi la leggera' e' un venditore: cerca un articolo e poi va a verificarlo sulla pagina del catalogo. Codici e prezzi non sono il mestiere dei cataloghi, non pretenderli.
+</a_chi_serve>
+
+<cosa_ti_do>
+La conversazione, la risposta, e le RIGHE che chi l'ha scritta aveva davanti — con il loro numero di riferimento. Le righe sono la verita': quello che non e' li' dentro, chi scrive non lo aveva.
+</cosa_ti_do>
+
+<come_si_accusa>
+Cerchi tre cose, una per volta. Per ognuna la risposta onesta e' «no» quasi sempre, e per dire «si'» devi CITARE LE PAROLE ESATTE che lo dimostrano. Se per giustificare un «si'» devi spiegare o dedurre, allora e' «no».
+</come_si_accusa>
+
+<nega>
+C'e' una frase che dice che non ha trovato niente, che non c'e', che non vede, che non sa — mentre fra le righe quella cosa c'e'? Conta anche se poi sotto la elenca: chi legge si ferma alla prima frase e se ne va.
+
+Una risposta AFFERMATIVA non e' una negazione: «i cataloghi sono 13» e «ho trovato nastri bianchi con cuori rossi» non negano niente. Se nessuna frase dice che qualcosa manca, questa e' «no».
+</nega>
+
+<promette>
+Servono DUE cose insieme: (a) afferma di aver trovato quello che era stato chiesto, e (b) le righe dicono un'altra cosa. L'esempio: «ho trovato nastri con cuori blu» e la riga dice «nastro con cuori rossi». Se descrive quello che ha per com'e', questa e' «no» — anche quando quello che ha non e' esattamente cio' che era stato chiesto.
+</promette>
+
+<non_verificabile>
+Serve una prova positiva: un articolo nominato senza nessun riferimento [[n]] attaccato, oppure una pagina scritta a mano nel testo al posto del riferimento. Un [[n]] presente E' la prova che si puo' verificare: se ogni articolo ne ha uno, questa e' «no». Vale solo quando elenca articoli — un saluto, un dato secco o una domanda alla persona non hanno niente da verificare.
+</non_verificabile>
+
+<rifare>
+Trovare qualcosa che non torna e ritenere che valga la pena rifare sono due giudizi diversi, e il secondo e' tuo. Si rifa' quando quello che hai trovato porta chi legge a una conclusione sbagliata — «non ho trovato» con la riga in mano, un titolo che promette una cosa e un elenco che ne mostra un'altra. Non si rifa' per un difetto che non cambia quello che chi legge capisce: in quel caso la risposta esce com'e' e il rilievo resta scritto.
+</rifare>
+
+<non_giudicare>
+Lo stile, la lunghezza, la gentilezza. E non chiedere piu' articoli di quelli che ci sono.
+</non_giudicare>
+
+<consegna>
+Con lo strumento `revisione`.
+</consegna>"""
+
+
+I_REVISIONE = [{"type": "function", "function": {
+    "name": "revisione",
+    "description": "Le tre cose, una per una.",
+    "parameters": {"type": "object", "properties": {
+        "nega": {"type": "boolean"},
+        "nega_dove": {"type": "string",
+                      "description": "Le parole esatte, o «» se nega e' false."},
+        "promette": {"type": "boolean"},
+        "promette_dove": {"type": "string"},
+        "non_verificabile": {"type": "boolean"},
+        "non_verificabile_dove": {"type": "string"},
+        # LA MOSSA, e la sceglie lui. Prima la deducevo io dal fatto che ci
+        # fosse un rilievo: il codice decideva «si riscrive» al posto
+        # dell'agente che aveva letto la risposta. Trovare qualcosa che non
+        # torna e ritenere che valga la pena rifare sono due giudizi
+        # diversi, e il secondo lo puo' dare solo chi ha visto quanto e'
+        # grave — una pagina scritta a mano in fondo a una risposta per
+        # altro giusta non vale dieci secondi di riscrittura, «non ho
+        # trovato» con la riga in mano si'.
+        "rifare": {"type": "boolean",
+                   "description": "Vale la pena farla riscrivere? Si' se "
+                                  "quello che hai trovato porta chi legge "
+                                  "a una conclusione sbagliata. No se e' un "
+                                  "difetto che non cambia cosa capisce — "
+                                  "allora la risposta esce com'e', e il "
+                                  "rilievo resta scritto."}},
+        "required": ["nega", "nega_dove", "promette", "promette_dove",
+                     "non_verificabile", "non_verificabile_dove", "rifare"]}}}]
+
+RILIEVI = (
+    ("nega", "dici che qualcosa non c'e' mentre fra le righe che hai c'e'. "
+             "Non e' una sfumatura: chi legge la prima frase e se ne va. "
+             "Riscrivi cominciando da quello che hai"),
+    ("promette", "intesti la risposta con le parole della domanda e sotto "
+                 "metti un'altra cosa. Descrivi gli articoli per come sono "
+                 "scritti nelle righe, e se quello che era stato chiesto non "
+                 "ce l'hai, dillo dopo averli mostrati"),
+    ("non_verificabile", "un articolo e' senza il suo [[n]], o hai scritto a "
+                         "mano una pagina al suo posto. Chi legge deve poter "
+                         "aprire la pagina: ogni articolo porta il suo [[n]], "
+                         "e le pagine non si scrivono"),
+)
+
+
+def _revisore(stato, bozza: str, confermate, etichette) -> list:
+    """I rilievi sulla bozza, o [] se va bene.
+
+    PERCHE' ESISTE. Il critico verifica le RIGHE; la risposta non la
+    rileggeva nessuno, e l'ultima parola arrivava a chi chiede senza che
+    nessun agente l'avesse confrontata con le righe. Tutti i difetti
+    peggiori del 2/10/2026 stanno li': «ho trovato nastri con cuori blu»
+    sopra un elenco di cuori rossi, «non so quanti siano i cataloghi» con
+    in mano la riga che diceva 13, «non vedo articoli sportivi» con un
+    gatto coi manubri nel campione.
+
+    E lo si sapeva: questo agente esisteva gia' fuori dal sistema, nel
+    banco di prova, dove trovava quei difetti in modo affidabile — tarato
+    7/7 su risposte di cui si conosceva il verdetto. Stava a MISURARE
+    invece che a CORREGGERE.
+
+    Non riscrive niente e non decide la risposta: dice cosa non torna, e a
+    riscrivere e' il redattore, che e' quello che sa farlo. Una revisione
+    sola per turno: se la seconda bozza ha ancora un rilievo, si consegna
+    com'e' — non si fa aspettare chi chiede per una terza passata, e il
+    rilievo resta nella traccia.
+    """
+    if not (bozza or "").strip():
+        return []
+    messaggi = [{"role": "system", "content": _prompt("revisore", P_REVISORE)}]
+    messaggi += stato.get("storia") or [{"role": "user", "content": stato["domanda"]}]
+    messaggi.append({"role": "user", "content":
+                     "<righe_che_aveva_davanti>\n"
+                     + _scheda(confermate, verdetti=etichette, visto=True,
+                               per_chi_scrive=True)
+                     + "\n</righe_che_aveva_davanti>\n\n"
+                     + "<risposta_da_rileggere>\n" + bozza
+                     + "\n</risposta_da_rileggere>"})
+    for nome, arg in _decide(messaggi, I_REVISIONE):
+        trovati = [(c, str(arg.get(c + "_dove") or "").strip(), come)
+                   for c, come in RILIEVI if arg.get(c)]
+        # Si rifa' se lo dice LUI. Il codice non deduce «c'e' un rilievo,
+        # quindi si riscrive»: sono due giudizi diversi, e il secondo lo
+        # da' chi ha letto la risposta. Qui si trasporta la sua scelta.
+        return trovati if arg.get("rifare") else []
+    return []
+
+
 def _nodo_redattore(stato):
     t0 = time.monotonic()
     righe, verdetti = stato.get("righe") or [], stato.get("verdetti") or {}
@@ -1188,7 +1422,9 @@ def _nodo_redattore(stato):
     messaggi += stato.get("storia") or [{"role": "user", "content": stato["domanda"]}]
     chiarimento = stato.get("chiarimento") or ""
     messaggi.append({"role": "user", "content":
-                     "Righe:\n" + _scheda(confermate, verdetti=etichette, visto=True)
+                     "<righe>\n" + _scheda(confermate, verdetti=etichette,
+                                           visto=True, per_chi_scrive=True)
+                     + "\n</righe>"
                      # L'etichetta diceva «DOMANDA DA FARE alla persona», e
                      # quello che arriva non e' una domanda: e' un testo
                      # intero — una riga che dice cosa c'e', le strade, e in
@@ -1201,17 +1437,42 @@ def _nodo_redattore(stato):
                      # riga, cioe' l'unica che diceva che la roba c'e'
                      # (2/10/2026, 3 giri su 3). Un'etichetta che descrive
                      # male il suo contenuto e' un'istruzione sbagliata.
-                     + (f"\n\nDA CONSEGNARE COM'E', in fondo alla risposta: "
-                        f"questo testo e' gia' scritto. Riportalo dalla sua "
+                     + (f"\n\n<da_consegnare_come_e>\n"
+                        f"Questo testo e' gia' scritto. Riportalo dalla sua "
                         f"prima riga, senza riscriverla e senza premetterci "
                         f"parole tue — le righe qui sopra, se ce ne sono, "
                         f"vanno prima di esso.\n{chiarimento}"
+                        f"\n</da_consegnare_come_e>"
                         if chiarimento else "")})
-    # Con `su_pezzo` la risposta esce MENTRE il modello la scrive. Non cambia
-    # niente di quello che dice: cambia che chi legge non aspetta 17 secondi
-    # davanti al vuoto (misurato: il redattore e' il 20% del tempo di un
-    # turno, ed e' l'unico pezzo che l'utente aspetta per intero).
-    # I «[[3]]» vanno risolti nel flusso, altrimenti si vedrebbero i
+    # La BOZZA, e poi chi la rilegge. In questo ordine, e non per scelta
+    # estetica: una risposta non si puo' richiamare dopo averla consegnata,
+    # quindi il controllo deve stare PRIMA della consegna. Il prezzo e' che
+    # non si scrive piu' in streaming mentre il modello compone — chi
+    # aspetta vede il ragionamento del coordinatore, non la risposta che
+    # cresce. Fra far aspettare qualche secondo in piu' e consegnare «non
+    # ho trovato» con la riga in mano, la scelta non e' dubbia.
+    bozza = modello.chiedi(messaggi, max_tokens=2500)
+    # Il revisore restituisce i rilievi SOLO se ha anche deciso che vale la
+    # pena rifare: la lista vuota vuol dire «consegna», e non e' il codice a
+    # stabilirlo. Una revisione per turno — quello si', e' un tetto scritto
+    # qui, come MAX_PASSI: non si fa aspettare chi chiede per una terza
+    # passata, e quello che resta fuori finisce nella traccia.
+    rilievi = _revisore(stato, bozza, confermate, etichette)
+    if rilievi:
+        messaggi += [
+            {"role": "assistant", "content": bozza},
+            {"role": "user", "content":
+             "Chi rilegge ha trovato questo, e ha ragione:\n"
+             + "\n".join("- %s. Le tue parole: «%s»" % (come, dove)
+                         for _, dove, come in rilievi)
+             + "\nRiscrivi la risposta per intero tenendo conto di questo. "
+               "Niente scuse e niente commenti sul fatto che la stai "
+               "riscrivendo: esce solo la risposta."}]
+        bozza = modello.chiedi(messaggi, max_tokens=2500)
+    nota = _nota("redattore", {"righe": len(confermate),
+                               "rilievi": [c for c, _, _ in rilievi]}, 0, t0)
+
+    # La consegna. I «[[3]]» vanno risolti qui, altrimenti si vedrebbero i
     # segnaposti; le fonti vanno in coda, dove gia' stanno.
     su_pezzo = stato.get("su_pezzo")
     if callable(su_pezzo):
@@ -1225,17 +1486,15 @@ def _nodo_redattore(stato):
                 resi.append(testo)
                 su_pezzo(("testo", testo))
 
-        for pezzo in _pezzi_del_modello(messaggi, 2500):
-            _manda(passa(pezzo))
+        _manda(passa(bozza))
         _manda(passa("", fine=True))
         _manda(coda(etichette))
         return {"risposta": "".join(resi), "resa": True,
                 "confermate": confermate, "etichette": etichette,
-                "traccia": [_nota("redattore", {"righe": len(confermate),
-                                                "streaming": True}, 0, t0)]}
-    return {"risposta": modello.chiedi(messaggi, max_tokens=2500),
+                "traccia": [nota]}
+    return {"risposta": bozza,
             "confermate": confermate, "etichette": etichette,
-            "traccia": [_nota("redattore", {"righe": len(confermate)}, 0, t0)]}
+            "traccia": [nota]}
 
 
 # ==========================================================================
@@ -1420,8 +1679,30 @@ def rendi(conn, risposta: str, confermate: list, base: str, utente: str,
 # ==========================================================================
 # Il grafo: stato -> decisione -> mosse -> stato
 # ==========================================================================
-def _scheda(righe, numeri=None, verdetti=None, visto: bool = False) -> str:
+PAROLA = {"si": "verificata", "forse": "da verificare"}
+
+
+def _scheda(righe, numeri=None, verdetti=None, visto: bool = False,
+            per_chi_scrive: bool = False) -> str:
     """Le righe numerate, come le vedono coordinatore, critico e redattore.
+
+    `per_chi_scrive` cambia la FORMA, non il contenuto, e serve a una cosa
+    sola: il redattore ricopia il formato che gli mostri. Gli davamo righe
+    fatte cosi'
+
+        1. [SI] (motivo) [Catalogo X.pdf, pagina 142] object: glass...
+
+    e lui scriveva «1. **[SI]** Kit con decorazioni in vetro (pagina 142 del
+    file Catalogo X.pdf)» — l'etichetta interna in grassetto e la pagina a
+    mano, cioe' le due cose che il prompt gli vieta da sempre (2/10/2026, in
+    chat: tre risposte su tre con **[SI]**, e una senza nessun
+    collegamento). Non e' disobbedienza: `[[n]]` nell'input non compariva
+    mai, `[SI]` e la pagina erano in ogni riga.
+
+    Quindi per lui il numero si presenta gia' come citazione, il verdetto e'
+    una parola e non un'etichetta, e la pagina non c'e' — al suo posto c'e'
+    il riferimento, che e' quello che deve scrivere. Il nome del catalogo
+    resta, perche' raggruppare per catalogo aiuta chi legge.
 
     Le colonne le sceglie il coordinatore, quindi non si puo' dare per
     scontato che ci siano `documento`, `page` e `descrizione`. Una riga di
@@ -1432,9 +1713,10 @@ def _scheda(righe, numeri=None, verdetti=None, visto: bool = False) -> str:
     fuori = []
     for i, r in enumerate(righe):
         n = numeri[i] if numeri else i + 1
-        capo = f"{n}."
+        capo = f"[[{n}]]" if per_chi_scrive else f"{n}."
         if verdetti and n in verdetti:
-            capo += f" [{verdetti[n].upper()}]"
+            capo += (" (%s)" % PAROLA.get(verdetti[n], "non verificata")
+                     if per_chi_scrive else f" [{verdetti[n].upper()}]")
             # Il MOTIVO, non solo il verdetto. «0 confermate su 40» dice
             # «vicolo cieco»; «e' una pallina singola, non un kit» dice che il
             # problema e' il criterio, non le parole — informazione opposta, e
@@ -1442,7 +1724,10 @@ def _scheda(righe, numeri=None, verdetti=None, visto: bool = False) -> str:
             if r.get("_motivo"):
                 capo += f" ({r['_motivo']})"
         if r.get("documento"):
-            capo += f" [{r['documento']}, pagina {r.get('page', '?')}]"
+            # La pagina NON si mostra a chi scrive: e' esattamente quello che
+            # non deve scrivere, e mostrargliela e' invitarlo a ricopiarla.
+            capo += (f" (dal catalogo {r['documento']})" if per_chi_scrive
+                     else f" [{r['documento']}, pagina {r.get('page', '?')}]")
         if visto and r.get("_visto"):
             capo += f" (guardata: {r['_visto']})"
         testo = r.get("descrizione") or r.get("content")
