@@ -86,7 +86,7 @@ for attesa, domanda, storia, risposta in PROVE:
     conv.append({"role": "user", "content": domanda})
     campione = operatori.vicinato(conn, "immagini", domanda, G, A, quanti=10)
     v = banco.giudica(caso, conv, risposta, [], campione) or {}
-    trovate = [c for c, _ in banco.COLPE if v.get(c)]
+    trovate = [c for c, _ in banco.COLPE if str(v.get(c + "_prova") or "").strip()]
     print("%-18s attesa=%-18s trovate=%s  %s"
           % ("OK " if attesa in trovate else "MANCATA",
              attesa, trovate or "nessuna",
@@ -100,8 +100,8 @@ for nome, domanda, storia, risposta, citate in BUONE:
     conv.append({"role": "user", "content": domanda})
     campione = operatori.vicinato(conn, "immagini", domanda, G, A, quanti=10)
     v = banco.giudica(caso, conv, risposta, citate, campione) or {}
-    trovate = [c for c, _ in banco.COLPE if v.get(c)]
+    trovate = [c for c, _ in banco.COLPE if str(v.get(c + "_prova") or "").strip()]
     print("%-18s buona=%-18s trovate=%s  %s"
           % ("OK " if not trovate else "FALSO ALLARME", nome,
              trovate or "nessuna",
-             "; ".join(str(v.get(c + "_dove") or "")[:60] for c in trovate)))
+             "; ".join(str(v.get(c + "_prova") or "")[:110] for c in trovate)))

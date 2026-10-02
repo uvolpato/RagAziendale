@@ -106,19 +106,23 @@ BATTERIA = [
                "cose blu scollegate e' il fallimento."},
     {"nome": "aperta-regalo",
      "domanda": "mi proponi qualcosa per il compleanno di mia mamma?",
-     "attesa": "Domanda aperta con un'occasione. Deve mostrare fra cosa si "
-               "puo' scegliere, con strade che corrispondono a cose davvero "
-               "presenti in archivio, oppure direttamente degli articoli. "
-               "Proporre famiglie di prodotti che nel campione non esistono "
-               "e' il fallimento."},
+     "attesa": "Un'occasione, non un oggetto: dice PERCHE' serve un regalo, "
+               "non CHE COSA. Come un commesso, deve CHIEDERE invece di "
+               "andare in magazzino — e la domanda deve offrire strade "
+               "concrete lette nell'archivio (che tipo di oggetto, quali "
+               "famiglie ci sono), non categorie inventate. Mettersi a "
+               "cercare e consegnare un elenco di cose vagamente adatte a un "
+               "compleanno e' il fallimento: chi ha chiesto preferisce "
+               "rispondere a una domanda che scorrere quaranta articoli."},
     {"nome": "aperta-tema", "domanda": "cosa avete di sportivo?",
-     "attesa": "Domanda aperta su un tema. Nel campione qui sotto vedrai se "
-               "l'archivio ha roba a tema sport: se ce l'ha, dire che non c'e' "
-               "niente e' un fallimento grave, anche se poi sotto elenca "
-               "qualcosa — chi legge si ferma alla prima frase. Un articolo "
-               "ADIACENTE (una figurina in posa atletica, una bottiglia "
-               "«sport») e' una risposta legittima: chi usa il sistema e' un "
-               "venditore, e un articolo in piu' da mostrare gli serve."},
+     "attesa": "Un tema, non un oggetto: «sportivo» non dice se cerca una "
+               "palla, un nastro con i palloni o una decorazione. Come un "
+               "commesso, deve CHIEDERE che tipo di oggetto serve, mostrando "
+               "quali famiglie a tema sport ci sono davvero in archivio — nel "
+               "campione qui sotto vedi cosa c'e'. Due fallimenti: dire che "
+               "di sportivo non c'e' niente quando il campione dice il "
+               "contrario, e consegnare un elenco lungo senza aver ristretto "
+               "niente."},
     {"nome": "seguito", "domanda": "niente gialle?",
      "storia": [("user", "hai palline di Natale rosse?"),
                 ("assistant", "Si', ne ho trovate: palline di Natale rosse "
@@ -174,22 +178,22 @@ Ti do cinque cose:
 - le RIGHE CHE HA CITATO: sono quello che aveva davvero in mano;
 - un CAMPIONE dell'archivio su quel tema, preso per significato. Non e' quello che il sistema ha trovato: e' quello che in archivio C'E'. Serve per l'unico giudizio che dalla sola risposta non si puo' dare — ha detto che non c'era niente mentre c'era?
 
-Non dai un voto complessivo. Rispondi a DUE domande separate, ognuna si' o no. Ognuna cerca una colpa precisa, e la risposta onesta e' «no» quasi sempre: di' «si'» solo se puoi CITARE LE PAROLE ESATTE della risposta che lo dimostrano. Se per giustificare un «si'» devi spiegare o dedurre, allora e' «no».
+Non dai un voto. Per ognuna delle due colpe qui sotto scrivi UN SOLO CAMPO: **la riga che la dimostra, copiata.** Se quella riga non c'e', lasci il campo vuoto, e vuoto vuol dire «nessuna colpa».
 
-1. HA NEGATO QUELLO CHE AVEVA? Cioe': ha scritto da qualche parte che non ha trovato niente, che non c'e', che non vede, che non sa — mentre aveva delle righe in mano o mentre il campione mostra che la cosa c'e'? Conta anche se poi sotto elenca qualcosa: chi legge si ferma alla prima frase.
-   ATTENZIONE, e' qui che si sbaglia: una risposta AFFERMATIVA non e' una negazione. «I cataloghi sono 13» non nega niente, afferma. «Ho trovato nastri bianchi con cuori rossi» non nega niente. Se nella risposta non c'e' una frase che dice che qualcosa manca, questa e' NO.
+Non c'e' nessun altro modo di accusare: l'accusa E' la prova. Una colpa senza la riga copiata non e' una colpa, e' un sospetto — e un sospetto non si consegna.
 
-2. HA PROMESSO QUELLO CHE NON AVEVA? Questa colpa richiede DUE cose insieme, e senza tutte e due e' «no»:
-   (a) la risposta afferma di aver trovato quello che e' stato chiesto, E
-   (b) hai sotto gli occhi la prova che e' falso — una riga citata che descrive un'altra cosa, oppure un campione in cui quella cosa non compare per niente.
-   L'esempio: «Ho trovato nastri con cuori blu» e la riga citata dice «nastro con cuori rossi». Afferma (a) e la prova (b) lo smentisce. Questa e' «si'».
-   Se la (b) non ce l'hai, e' «no». Non dedurla dall'assenza di citazioni: una risposta che MOSTRA FRA COSA SCEGLIERE («ci sono confezioni regalo, diffusori e decorazioni natalizie», poi tre strade) non cita niente perche' non sta proponendo articoli, sta orientando, e quelle famiglie si ritrovano nel campione. Non e' una promessa, e' una mappa: «no».
+La riga che copi deve parlare della stessa cosa di cui parla la risposta. Una riga qualsiasi non e' una prova: se la stai scegliendo perche' «qualcosa non torna» e non perche' smentisce quello che la risposta dice, allora il campo va lasciato vuoto.
 
-PER OGNI «SI'» DEVI ESIBIRE LA PROVA, non descriverla: nel campo `_prova` ci copi la riga — citata o del campione — che smentisce quello che la risposta dice. Se quella riga non riesci a copiarla perche' non c'e', allora la colpa non c'e': metti «no» e vai avanti. Accusare e' facile, e un metro che accusa tutti non misura niente: sono passato da un giudice che bocciava ogni risposta con «ha negato avendo» a uno che boccia i ventagli con «ha promesso», e tutte e due le volte la colpa era inventata per riempire una casella.
+1. NEGA QUELLO CHE AVEVA. Nella risposta c'e' una frase che dice che non ha trovato niente, che non c'e', che non vede o che non sa — e fra le righe citate o nel campione quella cosa c'e'. Copia quella riga.
+   Conta anche se poi sotto la elenca: chi legge si ferma alla prima frase.
+   Una risposta affermativa non e' una negazione: se nessuna frase dice che qualcosa manca, il campo resta vuoto.
 
-La citazione [[n]] NON la giudichi tu. Da quando il sistema ha un revisore che rilegge la risposta prima di consegnarla, quel controllo sta li', dentro il flusso, dove puo' anche correggerla. Qui si guarda se quello che dice e' vero, non come e' impaginato: una risposta giusta senza riferimenti e una risposta giusta con i riferimenti ricevono lo stesso verdetto, e quanti ne porta si legge nella colonna dei numeri.
+2. PROMETTE QUELLO CHE NON AVEVA. L'apertura afferma di aver trovato quello che era stato chiesto, e una riga CITATA descrive un'altra cosa. Copia quella riga.
+   **Per questa colpa la prova puo' venire SOLO dalle righe citate, mai dal campione.** Una promessa si smentisce con quello che chi scriveva aveva in mano, non con quello che esiste altrove nell'archivio: il campione contiene tutto, e pescarci dentro fa accusare chiunque. Se le righe citate sono zero, questo campo resta vuoto — sempre, senza eccezioni.
+   Se la risposta descrive quello che ha per com'e', il campo resta vuoto, anche quando quello che ha non e' esattamente cio' che era stato chiesto.
+   Una risposta che fa una domanda o che mostra delle scelte non promette niente: non sta proponendo articoli, sta orientando.
 
-Il CAMPIONE serve a UNA cosa sola: capire se una negazione era falsa. Non e' l'elenco di quello che la risposta avrebbe dovuto contenere, e non si confronta col numero di righe citate. Una risposta che cita tre articoli giusti va benissimo anche se il campione ne mostra dieci.
+Il CAMPIONE serve a UNA cosa sola: capire se una NEGAZIONE era falsa. Non si usa per la seconda colpa. Non e' l'elenco di quello che la risposta avrebbe dovuto contenere, e non si confronta col numero di righe citate. Una risposta che cita tre articoli giusti va benissimo anche se il campione ne mostra dieci.
 
 Non giudicare lo stile, la lunghezza o la gentilezza. Non pretendere codici o prezzi: non e' il mestiere dei cataloghi. Non punire una risposta perche' e' secca, e non premiarla perche' e' scritta bene.
 
@@ -255,8 +259,13 @@ def giudica(caso, conversazione, risposta, citate, campione):
                     f"CAMPIONE DELL'ARCHIVIO su questo tema (cosa c'e' "
                     f"davvero):\n{_righe_a_testo(campione)}"}]
     for _ in range(2):
-        m = modello.messaggio(messaggi, max_tokens=900, tools=I_VERDETTO,
-                              tool_choice="required", ragiona=False)
+        # Il giudice RAGIONA. Gli si chiede un controllo a piu' passi —
+        # trova la frase nella risposta, poi la riga che la smentisce, poi
+        # valuta se parlano della stessa cosa — e glielo si chiedeva di
+        # getto. Da li' le accuse senza prova e le prove a caso: un ramo di
+        # limoni esibito per smentire delle confezioni regalo (2/10/2026).
+        m = modello.messaggio(messaggi, max_tokens=2500, tools=I_VERDETTO,
+                              tool_choice="required", ragiona=True)
         m.pop("reasoning_content", None)
         for tc in m.get("tool_calls") or []:
             if tc.get("function", {}).get("name") == "verdetto":
@@ -344,8 +353,8 @@ def main():
             if v is None:
                 motivi.append("il giudice non ha deciso")
                 continue
-            colpe = [(e, str(v.get(c + "_dove") or "")) for c, e in COLPE
-                     if v.get(c)]
+            colpe = [(e, str(v.get(c + "_prova") or "").strip())
+                     for c, e in COLPE if str(v.get(c + "_prova") or "").strip()]
             ok_n += not colpe
             motivi += ["%s: %s" % (e, d[:60]) for e, d in colpe]
         print("%-16s %d/%-5d %6.0fs  %4.0fs (%.1f)  %s"
@@ -372,13 +381,13 @@ def main():
                 print("   ESPLOSO %s" % g["esploso"])
                 continue
             v = g["verdetto"] or {}
-            colpe = [(e, str(v.get(c + "_dove") or "")) for c, e in COLPE
-                     if v.get(c)]
+            colpe = [(e, str(v.get(c + "_prova") or "").strip())
+                     for c, e in COLPE if str(v.get(c + "_prova") or "").strip()]
             print("   %-3s %3.0fs %-2dq %-2dcit  %s"
                   % ("NO" if colpe else "si", g["secondi"],
                      g["eseguite"], g["citate"], " > ".join(g["mosse"])))
             for e, d in colpe:
-                print("       giudice: %s — «%s»" % (e, d[:130]))
+                print("       giudice: %s — prova: «%s»" % (e, d[:120]))
             print("       %s" % " ".join(g["risposta"].split())[:160])
 
 
