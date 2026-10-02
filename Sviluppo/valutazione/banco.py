@@ -174,31 +174,52 @@ Ti do cinque cose:
 - le RIGHE CHE HA CITATO: sono quello che aveva davvero in mano;
 - un CAMPIONE dell'archivio su quel tema, preso per significato. Non e' quello che il sistema ha trovato: e' quello che in archivio C'E'. Serve per l'unico giudizio che dalla sola risposta non si puo' dare — ha detto che non c'era niente mentre c'era?
 
-Rispondi a una domanda sola: **ha fatto quello che doveva?** Si' o no, piu' mezza riga di motivo.
+Non dai un voto complessivo. Rispondi a TRE domande separate, ognuna si' o no. Ognuna cerca una colpa precisa, e la risposta onesta e' «no» quasi sempre: di' «si'» solo se puoi CITARE LE PAROLE ESATTE della risposta che lo dimostrano. Se per giustificare un «si'» devi spiegare o dedurre, allora e' «no».
 
-Tre modi di sbagliare, e li sbaglia tutti e tre:
+1. HA NEGATO QUELLO CHE AVEVA? Cioe': ha scritto da qualche parte che non ha trovato niente, che non c'e', che non vede, che non sa — mentre aveva delle righe in mano o mentre il campione mostra che la cosa c'e'? Conta anche se poi sotto elenca qualcosa: chi legge si ferma alla prima frase.
+   ATTENZIONE, e' qui che si sbaglia: una risposta AFFERMATIVA non e' una negazione. «I cataloghi sono 13» non nega niente, afferma. «Ho trovato nastri bianchi con cuori rossi» non nega niente. Se nella risposta non c'e' una frase che dice che qualcosa manca, questa e' NO.
 
-1. NEGARE AVENDO. Dire «non ho trovato» con delle righe in mano, o mentre il campione mostra che la cosa c'e'. Conta la PRIMA FRASE: chi legge si ferma li', e un «non c'e' niente» seguito da tre articoli resta un fallimento.
+2. HA PROMESSO QUELLO CHE NON AVEVA? Questa colpa richiede DUE cose insieme, e senza tutte e due e' «no»:
+   (a) la risposta afferma di aver trovato quello che e' stato chiesto, E
+   (b) hai sotto gli occhi la prova che e' falso — una riga citata che descrive un'altra cosa, oppure un campione in cui quella cosa non compare per niente.
+   L'esempio: «Ho trovato nastri con cuori blu» e la riga citata dice «nastro con cuori rossi». Afferma (a) e la prova (b) lo smentisce. Questa e' «si'».
+   Se la (b) non ce l'hai, e' «no». Non dedurla dall'assenza di citazioni: una risposta che MOSTRA FRA COSA SCEGLIERE («ci sono confezioni regalo, diffusori e decorazioni natalizie», poi tre strade) non cita niente perche' non sta proponendo articoli, sta orientando, e quelle famiglie si ritrovano nel campione. Non e' una promessa, e' una mappa: «no».
 
-2. PROMETTERE SENZA AVERE. Intestare la risposta con le parole della domanda quando quello che ha e' un'altra cosa: «Ho trovato nastri con cuori blu» sopra un elenco di cuori rossi. Il titolo e' quello che conta.
+3. HA IMPEDITO DI VERIFICARE? Cioe': mostra degli ARTICOLI senza il riferimento [[n]] accanto, oppure scrive la pagina a mano nel testo («pagina 39») invece del riferimento. Vale solo quando elenca articoli: se fa una domanda, se risponde a un saluto o se da' un dato secco, questa e' NO.
 
-3. NON FAR VERIFICARE. Gli articoli vanno accompagnati dal riferimento [[n]], che diventa il collegamento alla pagina. Una pagina scritta a mano nel testo («pagina 39») non e' un collegamento e non serve. Questo vale quando mostra degli ARTICOLI, non quando fa una domanda o risponde a un saluto.
+Il CAMPIONE serve a UNA cosa sola: capire se una negazione era falsa. Non e' l'elenco di quello che la risposta avrebbe dovuto contenere, e non si confronta col numero di righe citate. Una risposta che cita tre articoli giusti va benissimo anche se il campione ne mostra dieci.
 
-Non giudicare lo stile, la lunghezza o la gentilezza. Non pretendere codici o prezzi: non e' il loro mestiere. Non premiare una risposta perche' e' scritta bene, e non punirla perche' e' secca.
+Non giudicare lo stile, la lunghezza o la gentilezza. Non pretendere codici o prezzi: non e' il mestiere dei cataloghi. Non punire una risposta perche' e' secca, e non premiarla perche' e' scritta bene.
 
 Consegna con lo strumento `verdetto`."""
 
 I_VERDETTO = [{"type": "function", "function": {
     "name": "verdetto",
-    "description": "Il tuo giudizio su questo giro.",
+    "description": "Le tre colpe, una per una.",
     "parameters": {"type": "object", "properties": {
-        "rispetta": {"type": "boolean",
-                     "description": "true se ha fatto quello che doveva."},
-        "perche": {"type": "string",
-                   "description": "Mezza riga. Se e' no, DI' QUALE delle tre "
-                                  "cose ha sbagliato e cita il pezzo di "
-                                  "risposta che lo mostra."}},
-        "required": ["rispetta", "perche"]}}}]
+        "nega": {"type": "boolean",
+                 "description": "true SOLO se nella risposta c'e' una frase "
+                                "che dice che qualcosa non c'e' o non si sa, "
+                                "e invece c'era."},
+        "nega_dove": {"type": "string",
+                      "description": "Le parole esatte della risposta che lo "
+                                     "dimostrano, o «» se nega e' false."},
+        "promette": {"type": "boolean",
+                     "description": "true SOLO se l'apertura afferma di aver "
+                                    "trovato una cosa che le righe citate "
+                                    "smentiscono."},
+        "promette_dove": {"type": "string",
+                          "description": "Le parole esatte, o «»."},
+        "non_verificabile": {"type": "boolean",
+                             "description": "true SOLO se elenca articoli "
+                                            "senza [[n]] accanto."},
+        "non_verificabile_dove": {"type": "string",
+                                  "description": "Le parole esatte, o «»."}},
+        "required": ["nega", "nega_dove", "promette", "promette_dove",
+                     "non_verificabile", "non_verificabile_dove"]}}}]
+
+COLPE = (("nega", "nega avendo"), ("promette", "promette senza avere"),
+         ("non_verificabile", "non si puo' verificare"))
 
 
 def _righe_a_testo(righe, quante=10):
@@ -312,9 +333,10 @@ def main():
             if v is None:
                 motivi.append("il giudice non ha deciso")
                 continue
-            ok_n += bool(v.get("rispetta"))
-            if not v.get("rispetta"):
-                motivi.append(str(v.get("perche") or "")[:70])
+            colpe = [(e, str(v.get(c + "_dove") or "")) for c, e in COLPE
+                     if v.get(c)]
+            ok_n += not colpe
+            motivi += ["%s: %s" % (e, d[:60]) for e, d in colpe]
         print("%-16s %d/%-5d %6.0fs  %4.0fs (%.1f)  %s"
               % (caso["nome"], ok_n, volte,
                  statistics.median(tempi) if tempi else 0,
@@ -339,10 +361,13 @@ def main():
                 print("   ESPLOSO %s" % g["esploso"])
                 continue
             v = g["verdetto"] or {}
+            colpe = [(e, str(v.get(c + "_dove") or "")) for c, e in COLPE
+                     if v.get(c)]
             print("   %-3s %3.0fs %-2dq %-2dcit  %s"
-                  % ("si" if v.get("rispetta") else "NO", g["secondi"],
+                  % ("NO" if colpe else "si", g["secondi"],
                      g["eseguite"], g["citate"], " > ".join(g["mosse"])))
-            print("       giudice: %s" % str(v.get("perche") or "(nessuno)")[:160])
+            for e, d in colpe:
+                print("       giudice: %s — «%s»" % (e, d[:130]))
             print("       %s" % " ".join(g["risposta"].split())[:160])
 
 

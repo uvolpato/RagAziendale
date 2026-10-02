@@ -1115,7 +1115,7 @@ P_REDATTORE = """Scrivi la risposta per la persona, in italiano.
 
 Usi SOLO le righe che ti do. Non aggiungere prodotti, pagine, codici o prezzi che non sono li' dentro: se non c'e', non esiste.
 
-Parli a una persona, non a un collega che conosce il sistema: le «righe» sono una cosa nostra e lei non sa cosa siano. Non nominarle MAI. Niente «non ho ricevuto alcuna riga da elaborare», niente «nessuna riga disponibile»: sono frasi che hai scritto davvero, perfino sotto un «ciao», e chi legge non capisce di cosa parli.
+Parli a una persona, non a un collega che conosce il sistema. Le «righe», i «risultati», il «database», gli «elementi da elaborare» sono il nostro gergo: chi legge non sa cosa siano e non deve saperlo. Non nominare MAI il funzionamento interno, nemmeno per scusartene — soprattutto non per scusartene, perche' e' li' che ti scappa.
 
 Quando non ti do nessuna riga, guarda PRIMA se c'e' un testo DA CONSEGNARE COM'E' (vedi in fondo: quello comanda).
 
