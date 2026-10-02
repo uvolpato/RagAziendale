@@ -100,6 +100,41 @@ def ventaglio_poi_basta(g):
     return True, ""
 
 
+NEGAZIONI = ("non vedo", "non ho trovato", "non ci sono", "non sono presenti",
+             "niente di", "non e' presente", "non è presente", "nessun ")
+
+
+def nega_cio_che_esiste(risposta: str) -> str:
+    """La frase di negazione dentro una risposta, o «».
+
+    Serve per i casi in cui si e' VERIFICATO nel database che roba
+    attinente c'e'. Li' negare non e' prudenza: e' un falso negativo, ed
+    e' il modo peggiore di sbagliare perche' chi legge smette di cercare.
+    """
+    testo = " ".join(risposta.lower().split())
+    return next((n for n in NEGAZIONI if n in testo), "")
+
+
+def ventaglio_senza_negare(g):
+    """Domanda aperta su un tema per cui l'archivio HA della roba (per
+    «sportivo» c'e' il nastro con i palloni da calcio, la bottiglia). Due
+    cose insieme: le strade si leggono nei dati, e non si dice che non
+    c'e' niente.
+
+    La prima da sola non bastava. Il 2/10/2026 ho spento il ragionamento
+    sulle domande aperte, il tempo e' sceso da 77 a 11 secondi, il caso
+    e' rimasto 3/3 — e la risposta era «Non vedo articoli sportivi negli
+    oggetti descritti». Un criterio che promuove quella risposta non sta
+    misurando niente."""
+    ok, perche = ventaglio(g)
+    if not ok:
+        return ok, perche
+    nega = nega_cio_che_esiste(g["risposta"])
+    if nega and g["citate"] == 0:
+        return False, "dice «%s» ma in archivio c'e' dell'attinente" % nega
+    return True, ""
+
+
 def non_pappagalla(g):
     """Le frasi letterali nei prompt sono la cosa che funziona meglio e il
     rischio piu' grosso insieme: il modello le ricopia. Misurato il
@@ -136,7 +171,7 @@ BATTERIA = [
     {"nome": "aperta-regalo", "domanda": "mi proponi qualcosa per il compleanno di mia mamma?",
      "attesa": ventaglio},
     {"nome": "aperta-tema", "domanda": "cosa avete di sportivo?",
-     "attesa": ventaglio},
+     "attesa": ventaglio_senza_negare},
     {"nome": "seguito", "domanda": "niente gialle?",
      "storia": [("user", "hai palline di Natale rosse?"),
                 ("assistant", "Si', ne ho trovate: palline di Natale rosse "
@@ -168,12 +203,20 @@ def un_giro(conn, caso):
         except Exception:
             pass
         return {"esploso": "%s: %s" % (type(e).__name__, e), "secondi": 0,
+                "coordinatore": 0, "giri": 0,
                 "mosse": [], "eseguite": 0, "citate": 0, "risposta": ""}
     ric = meta.get("ricerca") or ""
     eseguite = int((re.search(r"query=(\d+)ok", ric) or [0, 0])[1])
+    # Il tempo diviso in due, perche' per tagliarlo serve sapere DOVE sta.
+    # Finora lo deducevo a mano da una traccia per volta: il coordinatore
+    # e' il 60-90% di ogni turno, e l'ho scoperto tre volte di seguito.
+    passi = meta.get("strumenti") or []
+    pensa = sum(s.get("ms") or 0 for s in passi if s["strumento"] == "coordinatore")
     return {"esploso": None,
             "secondi": time.monotonic() - t0,
-            "mosse": [s["strumento"] for s in meta.get("strumenti") or []],
+            "coordinatore": pensa / 1000.0,
+            "giri": sum(1 for s in passi if s["strumento"] == "coordinatore"),
+            "mosse": [s["strumento"] for s in passi],
             "eseguite": eseguite,
             "citate": len({int(n) for n in re.findall(r"\[\[\s*(\d+)\s*\]\]",
                                                       risposta or "")}),
@@ -186,11 +229,12 @@ def main():
     casi = [c for c in BATTERIA if not solo or c["nome"] == solo]
     conn = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
     print("IL BANCO — %d domande x %d giri\n" % (len(casi), volte))
-    print("%-14s %-7s %-9s %s" % ("caso", "esito", "secondi", "cosa non va"))
-    print("-" * 82)
+    print("%-14s %-7s %-8s %-11s %s"
+          % ("caso", "esito", "secondi", "coord(giri)", "cosa non va"))
+    print("-" * 88)
     totali, esiti = [], {}
     for caso in casi:
-        ok_n, tempi, motivi, giri = 0, [], [], []
+        ok_n, tempi, motivi, giri, coord, ngiri = 0, [], [], [], [], []
         for _ in range(volte):
             g = un_giro(conn, caso)
             giri.append(g)
@@ -198,17 +242,21 @@ def main():
                 motivi.append(g["esploso"])
                 continue
             tempi.append(g["secondi"])
+            coord.append(g["coordinatore"])
+            ngiri.append(g["giri"])
             ok, perche = caso["attesa"](g)
             ok_n += bool(ok)
             if perche:
                 motivi.append(perche)
         mediana = statistics.median(tempi) if tempi else 0
-        print("%-14s %d/%-5d %6.0fs    %s"
+        print("%-14s %d/%-5d %6.0fs  %4.0fs (%.1f)  %s"
               % (caso["nome"], ok_n, volte, mediana,
-                 "; ".join(dict.fromkeys(motivi))[:46]))
+                 statistics.median(coord) if coord else 0,
+                 statistics.median(ngiri) if ngiri else 0,
+                 "; ".join(dict.fromkeys(motivi))[:40]))
         totali.append((caso["nome"], ok_n, volte, mediana))
         esiti[caso["nome"]] = giri
-    print("-" * 82)
+    print("-" * 88)
     print("TOTALE  %d / %d        tempo mediano complessivo %.0fs"
           % (sum(t[1] for t in totali), sum(t[2] for t in totali),
              sum(t[3] for t in totali)))

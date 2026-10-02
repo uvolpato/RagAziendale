@@ -882,7 +882,11 @@ Ti do quello che la persona ha chiesto e un campione VERO di cose che stanno in 
 
 La regola che conta: **ogni scelta che proponi deve corrispondere a cose che hai visto nel campione.** Se nel campione ci sono diffusori, confezioni regalo e decorazioni natalizie, quelle sono le scelte. Se proponi «abiti» o «accessori» perche' suonano bene per un regalo, stai inventando — e chi sceglie quella strada trovera' il vuoto.
 
-Se il campione non contiene niente di adatto a quello che chiede, dillo: e' un'informazione utile. «Nei cataloghi non vedo articoli sportivi» vale piu' di cinque scelte finte.
+**Prima di dire che non c'e' niente, rileggi il campione cercando l'ADIACENTE.** Chi legge e' un venditore che deve farsi un'idea di cosa proporre: un articolo vicino gli serve, un «non c'e' niente» lo manda via. E il campione non e' mai scelto a caso — sono le righe piu' vicine, per significato, a quello che e' stato chiesto.
+
+Lo hai sbagliato cosi' (2/10/2026): a «cosa avete di sportivo?» hai risposto che articoli sportivi non ce n'erano, e nel campione che avevi davanti c'erano «figurine of a cartoon cat in athletic pose holding dumbbells» e «figurine of Santa Claus on a treadmill». Un gatto con i manubri e un Babbo Natale sul tapis roulant sono roba a tema sport: quelle erano due strade da proporre, non il vuoto. Un oggetto non deve essere della categoria chiesta per esserne una risposta utile — basta che chi ha chiesto, vedendolo, ci trovi qualcosa.
+
+Dire che non c'e' niente e' legittimo solo quando nel campione non c'e' davvero NULLA che c'entri nemmeno alla lontana. E' il caso raro, e quando capita lo dici in una riga, nominando cosa c'e' al suo posto.
 
 Da tre a cinque scelte, brevi, con parole che una persona capisce — non le etichette inglesi del catalogo. Niente pagine e niente codici: qui non si risponde, si orienta.
 
@@ -893,8 +897,15 @@ I_PERCORSO = [{"type": "function", "function": {
     "description": "Le strade fra cui la persona puo' scegliere.",
     "parameters": {"type": "object", "properties": {
         "introduzione": {"type": "string",
-                         "description": "Una riga: cosa c'e' in archivio di "
-                                        "attinente, o che non c'e' niente."},
+                         "description": "Una riga che NOMINA quello che hai "
+                                        "visto nel campione: «ci sono dei "
+                                        "diffusori, delle confezioni regalo e "
+                                        "qualche decorazione». Comincia da "
+                                        "cosa c'e', mai da cosa manca — questa "
+                                        "riga e' la prima che la persona "
+                                        "legge, e se dice «non c'e' niente» "
+                                        "smette li', anche se sotto hai "
+                                        "elencato tre cose."},
         "scelte": {"type": "array", "items": {"type": "string"},
                    "description": "Da tre a cinque strade, brevi, ognuna "
                                   "corrispondente a cose viste nel campione."},
@@ -1106,33 +1117,28 @@ Usi SOLO le righe che ti do. Non aggiungere prodotti, pagine, codici o prezzi ch
 
 Parli a una persona, non a un collega che conosce il sistema: le «righe» sono una cosa nostra e lei non sa cosa siano. Non nominarle MAI. Niente «non ho ricevuto alcuna riga da elaborare», niente «nessuna riga disponibile»: sono frasi che hai scritto davvero, perfino sotto un «ciao», e chi legge non capisce di cosa parli.
 
-Quando non ti do nessuna riga, guarda PRIMA se c'e' una domanda da fare alla persona.
+Quando non ti do nessuna riga, guarda PRIMA se c'e' un testo DA CONSEGNARE COM'E' (vedi in fondo: quello comanda).
 
-- C'e' una domanda: falla, e basta. Non dire che non hai trovato niente — nessuno ha cercato, quindi non lo sai, e dirlo manda via una persona che avrebbe avuto quello che cercava.
-- Non c'e' nessuna domanda ed era un saluto: rispondi al saluto, senza scuse e senza niente che faccia pensare a un guasto.
-- Non c'e' nessuna domanda e si e' cercato davvero: allora si', dillo in una frase.
+- Niente testo ed era un saluto: rispondi al saluto, senza scuse e senza niente che faccia pensare a un guasto.
+- Niente testo e si e' cercato davvero: allora si', di' in una frase che non c'e'.
 
 **Se hai delle righe in mano, qualcosa l'hai trovato.** Nessuna etichetta — nemmeno FORSE, nemmeno NON VERIFICATA — ti autorizza a scrivere «non ho trovato niente»: le etichette dicono quanto fidarsi di una riga, non se esiste. Una riga esiste sempre: qualcuno l'ha letta nell'archivio e te l'ha messa davanti.
 
-Lo hai sbagliato due volte in un giorno, in due modi che sembrano diversi e sono lo stesso (2/10/2026): con in mano la riga del conteggio hai scritto «non so quanti siano i cataloghi», e con in mano una pallina di Natale giallo-verde hai scritto «non ho trovato informazioni sulle palline di Natale gialle». Tutte e due false, e tutte e due mandano via una persona che aveva gia' sotto il naso quello che cercava.
-
-Si scriveva «i cataloghi sono 13 [[1]]», e «ce n'e' una giallo-verde con fiocchi di neve [[1]], se il giallo pieno e' importante guarda la foto». Due casi diversi, una regola sola: **dai il dato con le parole con cui la riga lo dice, e accanto, in mezza riga, cosa non torna.** Non e' una resa e non e' una promessa: e' quello che sai, detto per intero. Se la riga dice «ivory» e ti avevano chiesto bianco, scrivi che c'e' ed e' avorio — e lascia decidere a chi legge.
-
-«Non ho trovato niente» si scrive solo con ZERO righe davanti. Sempre.
+Lo hai sbagliato cosi' (2/10/2026): con in mano la riga del conteggio, «non so quanti siano i cataloghi»; con in mano una pallina di Natale giallo-verde, «non ho trovato informazioni sulle palline di Natale gialle». Si scriveva «i cataloghi sono 13 [[1]]» e «ce n'e' una giallo-verde con fiocchi di neve [[1]], se il giallo pieno e' importante guarda la foto». Una regola sola: **dai il dato con le parole con cui la riga lo dice, e accanto, in mezza riga, cosa non torna.** Se la riga dice «ivory» e ti avevano chiesto bianco, scrivi che c'e' ed e' avorio — decide chi legge.
 
 Ogni riga porta scritto com'e' messa, e la differenza la devi passare a chi legge:
 - **SI** — qualcuno l'ha controllata e risponde davvero. Presentala e basta.
 - **FORSE** — controllata, ma dalla descrizione non si capiva: dillo («da verificare», «la scheda non lo specifica»). Non spacciarla per certa.
 - **NON VERIFICATA** — trovata e mai controllata da nessuno. La DAI lo stesso, con un avviso: chi legge deve sapere che e' un risultato grezzo, e una riga sola lo dice per tutte («questi risultati non sono stati verificati uno per uno»).
 
-«Non verificata» vuol dire «te la do con la riserva», MAI «non te la do». Non e' un permesso che puoi non usare: quel dato ce l'hai davanti, qualcuno l'ha letto nell'archivio, e dire di non saperlo e' falso. Hai scritto davvero «Non so quanti siano i cataloghi, perche' non ho verificato questa informazione [[1]]» avendo in mano la riga che diceva 13: la risposta era «i cataloghi sono 13 [[1]]», al massimo con un «questo numero non l'ha ricontrollato nessuno». Chi legge voleva il numero, e tu ce l'avevi.
+«Non verificata» vuol dire «te la do con la riserva», MAI «non te la do»: non e' un permesso che puoi non usare.
 Se sono tutte non verificate, dillo prima dell'elenco, non dopo. Una pagina che sembra controllata e non lo e' e' peggio di una pagina in meno.
 
 E non scrivere MAI frasi come «tutte le informazioni sono state verificate» o «dati controllati». L'etichetta e' di ogni singola riga, non dell'insieme: se anche una sola e' FORSE o NON VERIFICATA, quella frase e' falsa — e l'hai scritta davvero, sotto un elenco in cui sei righe su venti erano confermate. Non rassicurare chi legge su un controllo che non c'e' stato: e' l'unico modo di sbagliare che gli fa prendere una decisione sbagliata senza accorgersene.
 
-Se ti do anche una DOMANDA DA FARE alla persona, chiudi con quella: prima mostri quello che hai trovato (se hai trovato qualcosa), poi la fai, in una riga, senza girarci intorno e senza scusarti.
+IL TESTO DA CONSEGNARE COM'E'. A volte in fondo ai dati trovi un testo gia' scritto, da chi aveva davanti l'archivio: una riga che dice cosa c'e', delle strade, una domanda. **Riportalo dalla sua prima riga, quella compresa, senza riscriverla e senza mettere niente prima.** Le righe, se ce ne sono, vanno prima col loro [[n]] e il testo chiude.
 
-E in quel caso **non dire che non hai trovato niente**: se c'e' una domanda da fare, vuol dire che la richiesta era troppo generica per cercare — non che l'archivio sia vuoto. «Non trovo niente su questo nei cataloghi» davanti a «mi serve qualcosa di blu» e' falso: di cose blu ce ne sono a decine, semplicemente non si e' guardato. Scrivere che non c'e' niente senza aver guardato e' il modo peggiore di sbagliare, perche' chi legge smette di cercare. Fai la domanda e basta.
+Ti sembrera' che manchi un'apertura: non manca. L'apertura che ti viene e' una scusa, e per giunta falsa — quel testo esiste perche' qualcuno ha guardato e ha trovato. Hai scritto «non ho trovato informazioni specifiche su prodotti sportivi nell'archivio. Tuttavia...» sopra una prima riga che diceva «ci sono delle figurine sportive, confezioni regalo e decorazioni natalizie» (2/10/2026). Se la tua prima frase comincia con «non», e' sbagliata.
 
 Ogni affermazione porta il numero della riga da cui viene, scritto cosi': [[3]]. Il sistema lo trasforma nel collegamento alla pagina giusta, quindi mettilo SEMPRE, subito dopo la cosa che stai dicendo. Non scrivere tu «pagina 27»: al suo posto metti [[3]]. Non scrivere una sezione «Fonti»: la aggiunge il sistema.
 
@@ -1179,7 +1185,23 @@ def _nodo_redattore(stato):
     chiarimento = stato.get("chiarimento") or ""
     messaggi.append({"role": "user", "content":
                      "Righe:\n" + _scheda(confermate, verdetti=etichette, visto=True)
-                     + (f"\n\nDOMANDA DA FARE alla persona: {chiarimento}"
+                     # L'etichetta diceva «DOMANDA DA FARE alla persona», e
+                     # quello che arriva non e' una domanda: e' un testo
+                     # intero — una riga che dice cosa c'e', le strade, e in
+                     # fondo la domanda. Il redattore leggeva l'etichetta
+                     # alla lettera, concludeva che l'apertura mancasse, e se
+                     # la scriveva: «non ho trovato informazioni specifiche su
+                     # prodotti sportivi nell'archivio. Tuttavia...» davanti a
+                     # un ventaglio che cominciava con «ci sono delle figurine
+                     # sportive». Teneva le scelte e buttava via la prima
+                     # riga, cioe' l'unica che diceva che la roba c'e'
+                     # (2/10/2026, 3 giri su 3). Un'etichetta che descrive
+                     # male il suo contenuto e' un'istruzione sbagliata.
+                     + (f"\n\nDA CONSEGNARE COM'E', in fondo alla risposta: "
+                        f"questo testo e' gia' scritto. Riportalo dalla sua "
+                        f"prima riga, senza riscriverla e senza premetterci "
+                        f"parole tue — le righe qui sopra, se ce ne sono, "
+                        f"vanno prima di esso.\n{chiarimento}"
                         if chiarimento else "")})
     # Con `su_pezzo` la risposta esce MENTRE il modello la scrive. Non cambia
     # niente di quello che dice: cambia che chi legge non aspetta 17 secondi
