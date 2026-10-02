@@ -322,9 +322,11 @@ Cosa succede se rispondi lo stesso: quelle righe arrivano a chi scrive marcate �
 
 L'unico caso in cui ha senso saltare la verifica e' quando non c'e' niente da verificare: un saluto, oppure un dato secco che la query ha gia' dato per intero (un conteggio, un elenco di documenti). Se hai in mano righe di prodotti o di testo, quelle vanno controllate. Sempre.
 - `proponi` costruisce il VENTAGLIO delle strade leggendole nell'archivio, per le domande che si rispondono con una scelta e non con un risultato. **Si chiama UNA VOLTA SOLA.** Il ventaglio resta nello stato: appena ce l'hai, la mossa dopo e' `chiedi`, che lo mostra alla persona. Richiamare `proponi` sullo stesso stato rida' lo stesso ventaglio e costa quattordici secondi per niente; e mettersi a `cerca` dopo averlo costruito e' lo stesso errore — stavi per chiedere, le righe che trovi adesso non le guardera' nessuno.
-- `chiedi` si ferma e FA UNA DOMANDA alla persona. E' una mossa come le altre, non una resa.
+- `chiedi` si ferma e FA UNA DOMANDA alla persona. E' una mossa come le altre, non una resa. **Non chiamarlo a mani vuote**: se non hai ne' righe trovate ne' un ventaglio, la domanda te la inventi per forza.
 
-**Se ti dicono che la domanda NON e' rispondibile cosi' com'e', non cercare.** Chi ha letto la domanda ha gia' stabilito che una ricerca produrrebbe un mucchio di cose tenute insieme da una caratteristica sola — «qualcosa di blu» tira su un piatto, una molletta e un mappamondo. Cercare lo stesso vuol dire spendere due minuti per arrivare a chiedere comunque, con in mano un elenco che non serve a nessuno. In quel caso le mosse sono due: `proponi` per vedere fra cosa si puo' scegliere, poi `chiedi`. Niente `cerca`.
+**Se ti dicono che la domanda NON e' rispondibile cosi' com'e', non cercare.** Chi ha letto la domanda ha gia' stabilito che una ricerca produrrebbe un mucchio di cose tenute insieme da una caratteristica sola — «qualcosa di blu» tira su un piatto, una molletta e un mappamondo. Cercare lo stesso vuol dire spendere due minuti per arrivare a chiedere comunque, con in mano un elenco che non serve a nessuno. In quel caso le mosse sono due, in quest'ordine: `proponi`, poi `chiedi`. Niente `cerca`.
+
+**`chiedi` senza un `proponi` prima non esiste.** Non e' un'abitudine consigliata, e' la sequenza: `proponi` legge l'archivio e ti mette in mano le strade vere, `chiedi` le mostra. Saltare il primo non fa risparmiare un giro, fa fare una domanda vuota — e la domanda vuota la riconosci perche' ti esce sempre uguale: «hai in mente un oggetto specifico o una categoria, tipo accessori o decorazioni?». Accessori e decorazioni non sono reparti di questo archivio: sono parole che ti sono venute in mente, e chi ne sceglie una ti manda a cercare qualcosa che non c'e'. Con `proponi` la stessa domanda suona cosi': «c'e' un runner in tessuto blu e ci sono degli abiti — cosa ti interessa?». Nomina roba vera, e la persona sceglie davvero.
 
 Sul chiedere. Una ricerca serve a qualcuno, e a volte la cosa piu' utile che puoi fare e' una domanda invece di un'altra query. Ma una domanda buona e una cattiva si distinguono:
 - CATTIVA: chiedere prima di aver guardato («che tipo di nastri?»). Cerca, poi chiedi: la persona non deve fare il lavoro al posto tuo.
@@ -525,7 +527,24 @@ def _strumenti_del_coordinatore(ultima: bool = False,
 
 def _stato_a_parole(stato) -> str:
     """Lo stato come lo leggerebbe una persona. E' quello che il coordinatore
-    ha davanti a ogni giro: non un riassunto scelto dal codice, ma tutto."""
+    ha davanti a ogni giro: non un riassunto scelto dal codice, ma tutto.
+
+    LA REGOLA: qui dentro ci stanno i FATTI, la strategia sta nel prompt.
+
+    Era mescolata. Accanto a ogni fatto il codice aggiungeva la mossa da
+    fare — «non spendere una ricerca: `proponi` poi `chiedi`», «e' la
+    materia prima di `chiedi`», «la mossa che resta e' `chiedi`». Sono
+    decisioni, scritte da chi non ha letto la conversazione, e il
+    coordinatore le subisce: su «quanto costano?» il verdetto sbagliato
+    dell'analista («manca: il prezzo») arrivava con attaccato l'ordine di
+    chiedere, e dopo 73 secondi la risposta era «posso cercare nel testo
+    dei documenti» (2/10/2026).
+
+    Dove la strategia serviva davvero sta nel prompt del coordinatore, che
+    la legge una volta per tutte: il `proponi` che si chiama una volta
+    sola, il «non cercare se la domanda non e' rispondibile». Li' e'
+    un'istruzione che lui puo' pesare insieme a tutto il resto; qui era un
+    cartello appeso a un dato."""
     righe, verdetti = stato.get("righe") or [], stato.get("verdetti") or {}
     parti = [f"Domanda: «{stato['domanda']}»"]
     if stato.get("ambito"):
@@ -540,14 +559,10 @@ def _stato_a_parole(stato) -> str:
             "ATTENZIONE, chi ha letto la domanda dice che COSI' COM'E' non "
             "si puo' rispondere: cercando verrebbe fuori un mucchio di cose "
             "tenute insieme da una caratteristica sola, non una risposta "
-            "utile. Non spendere una ricerca: `proponi` per vedere fra "
-            "cosa si puo' scegliere, poi `chiedi`.")
+            "utile.")
     if stato.get("manca"):
         parti.append("Chi ha letto la domanda dice che NON dice: "
-                     + "; ".join(stato["manca"])
-                     + ".\nE' la materia prima di `chiedi`: se cercando cosi' "
-                       "com'e' torna un mucchio di cose scollegate, la domanda "
-                       "da fare e' questa.")
+                     + "; ".join(stato["manca"]) + ".")
     if stato.get("chiarimento"):
         # Il ventaglio e' un pezzo di stato DUREVOLE, come le righe e i
         # verdetti, e come loro va detto a ogni giro. Finiva solo negli
@@ -557,9 +572,7 @@ def _stato_a_parole(stato) -> str:
         # trentotto secondi. Stesso difetto di `esiti` e di `rispondibile`:
         # un dato che lo stato ha e non pronuncia.
         parti.append("IL VENTAGLIO E' GIA' PRONTO — l'hai costruito tu, e "
-                     "non e' cambiato niente da allora:\n" + stato["chiarimento"]
-                     + "\nNon ricostruirlo e non cercare: la mossa che resta "
-                       "e' `chiedi`, che lo mostra alla persona.")
+                     "non e' cambiato niente da allora:\n" + stato["chiarimento"])
     if not righe:
         parti.append("Non hai ancora trovato niente.")
     else:
@@ -764,7 +777,19 @@ def _nodo_mosse(stato):
             risultati = [l.result() for l in lavori]
         viste = {r.get("id") for r in righe if r.get("id") is not None}
         for (_, arg), (nuove, testo, esito) in zip(ricerche, risultati):
-            viste_sql.add(" ".join(str(arg.get("sql", "")).split()).rstrip(";").lower())
+            # Solo le query che sono ANDATE DAVVERO al database entrano fra le
+            # «gia' viste». Ci entravano tutte, respinte comprese, e il
+            # risultato era un messaggio falso al momento peggiore: il modello
+            # correggeva la query appena respinta, la chiave minuscola la
+            # faceva coincidere con quella di prima («christmas balls» /
+            # «Christmas balls»), e invece del motivo del rifiuto — l'unica
+            # cosa azionabile che avesse — si sentiva dire «l'hai gia'
+            # eseguita, il risultato e' lo stesso di prima». Non l'aveva
+            # eseguita, e un risultato non c'era. Misurato il 2/10/2026 su
+            # «niente gialle?»: 3 giri su 3, falso negativo su palline che
+            # esistono.
+            if esito in ("eseguita", "vuota"):
+                viste_sql.add(" ".join(str(arg.get("sql", "")).split()).rstrip(";").lower())
             if esito == "respinta":
                 respinte += 1
             elif esito != "ripetuta":
@@ -912,6 +937,9 @@ Due errori opposti, ed e' facile farli tutti e due:
 
 - Troppo largo. Quello che e' stato chiesto deve esserci PER INTERO, in uno stesso articolo. Se la domanda dice «nastri bianchi con cuori rossi», un nastro bianco senza cuori e' no, e un nastro con cuori ma rosa e' no: due cose chieste, due cose che devono stare sullo stesso oggetto, non una qui e una la'.
 - Troppo stretto. Una riga e' UNA FOTO, e una foto di catalogo mostra spesso PIU' ARTICOLI insieme, con piu' codici e un elenco di colori. Basta che UNO di quegli articoli sia quello chiesto perche' la riga vada bene: di' tu quale, nel motivo. Una foto con tre nastri di cui uno bianco con cuori rossi va bene. E un articolo che ha quello che serve e in piu' qualcos'altro (dei puntini, un bordo dentellato) va bene lo stesso: il di piu' non toglie.
+
+- Troppo stretto, secondo modo, ed e' quello che sbagli piu' spesso: la SFUMATURA. Chi legge questa risposta e' un venditore che deve farsi un'idea di cosa proporre a un cliente: un articolo in piu' gli costa una riga da scorrere, uno in meno gli costa una vendita. A «niente gialle?» hai scartato «glass Christmas ball ornament — Colours: yellow-green with teal glitter» e hai fatto rispondere che palline gialle non ce n'erano (2/10/2026). Una pallina di Natale giallo-verde esiste, e chi cercava le gialle la voleva vedere.
+  La riga da tracciare e' questa. L'attributo chiesto C'E' ma scritto in un altro modo, o in una sfumatura vicina — «yellow-green» per giallo, «crimson» per rosso, «ivory» per bianco? Non e' `no`: al massimo `forse`, e nel motivo scrivi com'e' scritto davvero, cosi' chi legge decide. L'attributo chiesto MANCA — un nastro bianco senza cuori, una pallina blu? Quello si' che e' `no`.
 
 Non scartare un doppione che non e' un doppione: due articoli con codice diverso sono due articoli, anche se la descrizione si somiglia.
 
@@ -1084,10 +1112,20 @@ Quando non ti do nessuna riga, guarda PRIMA se c'e' una domanda da fare alla per
 - Non c'e' nessuna domanda ed era un saluto: rispondi al saluto, senza scuse e senza niente che faccia pensare a un guasto.
 - Non c'e' nessuna domanda e si e' cercato davvero: allora si', dillo in una frase.
 
+**Se hai delle righe in mano, qualcosa l'hai trovato.** Nessuna etichetta — nemmeno FORSE, nemmeno NON VERIFICATA — ti autorizza a scrivere «non ho trovato niente»: le etichette dicono quanto fidarsi di una riga, non se esiste. Una riga esiste sempre: qualcuno l'ha letta nell'archivio e te l'ha messa davanti.
+
+Lo hai sbagliato due volte in un giorno, in due modi che sembrano diversi e sono lo stesso (2/10/2026): con in mano la riga del conteggio hai scritto «non so quanti siano i cataloghi», e con in mano una pallina di Natale giallo-verde hai scritto «non ho trovato informazioni sulle palline di Natale gialle». Tutte e due false, e tutte e due mandano via una persona che aveva gia' sotto il naso quello che cercava.
+
+Si scriveva «i cataloghi sono 13 [[1]]», e «ce n'e' una giallo-verde con fiocchi di neve [[1]], se il giallo pieno e' importante guarda la foto». Due casi diversi, una regola sola: **dai il dato con le parole con cui la riga lo dice, e accanto, in mezza riga, cosa non torna.** Non e' una resa e non e' una promessa: e' quello che sai, detto per intero. Se la riga dice «ivory» e ti avevano chiesto bianco, scrivi che c'e' ed e' avorio — e lascia decidere a chi legge.
+
+«Non ho trovato niente» si scrive solo con ZERO righe davanti. Sempre.
+
 Ogni riga porta scritto com'e' messa, e la differenza la devi passare a chi legge:
 - **SI** — qualcuno l'ha controllata e risponde davvero. Presentala e basta.
 - **FORSE** — controllata, ma dalla descrizione non si capiva: dillo («da verificare», «la scheda non lo specifica»). Non spacciarla per certa.
-- **NON VERIFICATA** — trovata e mai controllata da nessuno. La puoi dare, ma chi legge deve sapere che e' un risultato grezzo: una riga sola lo dice per tutte («questi risultati non sono stati verificati uno per uno»).
+- **NON VERIFICATA** — trovata e mai controllata da nessuno. La DAI lo stesso, con un avviso: chi legge deve sapere che e' un risultato grezzo, e una riga sola lo dice per tutte («questi risultati non sono stati verificati uno per uno»).
+
+«Non verificata» vuol dire «te la do con la riserva», MAI «non te la do». Non e' un permesso che puoi non usare: quel dato ce l'hai davanti, qualcuno l'ha letto nell'archivio, e dire di non saperlo e' falso. Hai scritto davvero «Non so quanti siano i cataloghi, perche' non ho verificato questa informazione [[1]]» avendo in mano la riga che diceva 13: la risposta era «i cataloghi sono 13 [[1]]», al massimo con un «questo numero non l'ha ricontrollato nessuno». Chi legge voleva il numero, e tu ce l'avevi.
 Se sono tutte non verificate, dillo prima dell'elenco, non dopo. Una pagina che sembra controllata e non lo e' e' peggio di una pagina in meno.
 
 E non scrivere MAI frasi come «tutte le informazioni sono state verificate» o «dati controllati». L'etichetta e' di ogni singola riga, non dell'insieme: se anche una sola e' FORSE o NON VERIFICATA, quella frase e' falsa — e l'hai scritta davvero, sotto un elenco in cui sei righe su venti erano confermate. Non rassicurare chi legge su un controllo che non c'e' stato: e' l'unico modo di sbagliare che gli fa prendere una decisione sbagliata senza accorgersene.
