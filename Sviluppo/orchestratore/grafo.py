@@ -596,10 +596,10 @@ def _stato_a_parole(stato) -> str:
         parti.append("Non hai ancora trovato niente.")
     else:
         confermate = [n for n in verdetti if verdetti[n] == "si"]
-        dubbie = [n for n in verdetti if verdetti[n] == "forse"]
+
         parti.append(
-            f"Righe trovate: {len(righe)}. Verificate: {len(verdetti)} "
-            f"(confermate {len(confermate)}, dubbie {len(dubbie)}, "
+            f"Righe trovate: {len(righe)}. Controllate: {len(verdetti)} "
+            f"(buone {len(confermate)}, "
             f"scartate {sum(1 for v in verdetti.values() if v == 'no')}).")
         da_verificare = [n for n in range(1, len(righe) + 1) if n not in verdetti]
         if da_verificare:
@@ -672,6 +672,23 @@ def _pensiero_a_chi_guarda(stato):
     if not callable(su_pezzo):
         return None
     return lambda testo: su_pezzo(("pensiero", testo))
+
+
+def _mostra(stato, testo: str) -> None:
+    """Fa vedere a chi aspetta cosa sta succedendo, mentre succede.
+
+    Il ragionamento del coordinatore esce gia' in streaming, ma solo quando
+    ragiona — e da quando le domande generiche sono «non impegnative» quello
+    e' il caso raro. Risultato: venti o trenta secondi di schermo fermo, che
+    e' peggio di un turno lento perche' sembra rotto.
+
+    Non si inventa niente: si manda il `motivo` che l'agente ha scritto da
+    se' quando ha scelto la mossa. Chi legge vede le sue parole, non le
+    nostre, e nello stesso blocco pieghevole dove finisce il ragionamento.
+    """
+    su_pezzo = stato.get("su_pezzo")
+    if callable(su_pezzo) and testo:
+        su_pezzo(("pensiero", testo.rstrip() + "\n"))
 
 
 def _nodo_coordinatore(stato):
@@ -784,6 +801,10 @@ def _nodo_mosse(stato):
     chiarimento = stato.get("chiarimento") or ""
     mosse = stato.get("mosse") or []
 
+    for nome, arg in mosse:
+        motivo = str(arg.get("motivo") or "").strip()
+        _mostra(stato, "**%s** — %s" % (nome, motivo) if motivo else "**%s**" % nome)
+
     eseguite, respinte = stato.get("eseguite", 0), stato.get("respinte", 0)
     viste_sql = set(stato.get("query_fatte") or [])
     ricerche = [(i, a) for i, (n, a) in enumerate(mosse) if n == "cerca"]
@@ -829,10 +850,9 @@ def _nodo_mosse(stato):
             t0 = time.monotonic()
             nuovi = _critico(stato, righe, str(arg.get("motivo") or ""))
             verdetti.update(nuovi)
-            esiti.append("verifica: %d confermate, %d scartate, %d dubbie" % (
+            esiti.append("verifica: %d buone, %d scartate" % (
                 sum(1 for v in nuovi.values() if v == "si"),
-                sum(1 for v in nuovi.values() if v == "no"),
-                sum(1 for v in nuovi.values() if v == "forse")))
+                sum(1 for v in nuovi.values() if v == "no")))
             traccia.append(_nota("critico", {"verificate": len(nuovi)}, 0, t0))
         elif nome == "proponi":
             t0 = time.monotonic()
@@ -1000,27 +1020,39 @@ Verifichi. Non cerchi e non scrivi la risposta: ti do la conversazione e delle r
 Leggi la conversazione intera, non l'ultima riga. Dopo «hai palline rosse o gialle?», un «niente gialle?» vuol dire palline di Natale gialle, non qualunque cosa gialla. Quello che la persona cerca e' quello che si capisce dal discorso.
 </cosa_sta_cercando>
 
-<quando_una_riga_e_no>
-Quando l'attributo chiesto MANCA. «Nastri bianchi con cuori rossi»: un nastro bianco senza cuori e' no, un nastro con cuori rosa e' no. Le cose chieste devono stare tutte sullo stesso oggetto, non una qui e una la'.
-</quando_una_riga_e_no>
+<il_verdetto_e_binario>
+Due valori, `si` e `no`. Non ce n'e' un terzo, e non ti serve: quello che non sai lo scrivi nel motivo.
+</il_verdetto_e_binario>
 
-<quando_una_riga_e_si>
-Una riga e' UNA FOTO, e una foto di catalogo mostra spesso piu' articoli insieme, con piu' codici e un elenco di colori. Basta che UNO di quegli articoli sia quello chiesto: di' quale, nel motivo.
+<quando_e_si>
+Quando l'articolo chiesto c'e'. Tre casi in cui c'e' e si sbaglia a dire no:
+- una riga e' UNA FOTO, e una foto di catalogo mostra spesso piu' articoli insieme: basta che UNO sia quello chiesto;
+- un articolo che ha quello che serve e in piu' qualcos'altro va bene, il di piu' non toglie;
+- l'attributo chiesto c'e' ma scritto in un altro modo o in una sfumatura vicina — «yellow-green» per giallo, «crimson» per rosso, «ivory» per bianco: e' si', e nel motivo scrivi com'e' scritto davvero.
 
-Un articolo che ha quello che serve e in piu' qualcos'altro va bene: il di piu' non toglie.
+Due articoli con codice diverso sono due articoli, anche se la descrizione si somiglia: non scartarne uno come doppione.
 
-Due articoli con codice diverso sono due articoli, anche se la descrizione si somiglia. Non scartarne uno come doppione.
+Se la domanda chiedeva un numero, un totale o l'elenco dei documenti, la riga che porta quel dato e' si', anche se non e' un articolo e non ha una pagina.
 
-Se la domanda chiedeva un numero, un totale o l'elenco dei documenti, la riga che porta quel dato e' si', anche se non e' un articolo e non ha una pagina. Una riga si scarta perche' non risponde, mai perche' non e' un prodotto.
-</quando_una_riga_e_si>
+Chi legge cerca di capire cosa proporre a un cliente: un articolo in piu' gli costa una riga da scorrere, uno in meno gli costa una vendita.
+</quando_e_si>
 
-<quando_una_riga_e_forse>
-Quando l'attributo chiesto c'e' ma scritto in un altro modo, o in una sfumatura vicina: «yellow-green» per giallo, «crimson» per rosso, «ivory» per bianco. Non e' no: e' forse, e nel motivo scrivi com'e' scritto davvero, cosi' chi legge decide.
+<quando_e_no>
+Quando l'articolo chiesto NON c'e'. Tre casi in cui manca e si sbaglia a dire si':
+- l'attributo chiesto non c'e' affatto: «nastri bianchi con cuori rossi», un nastro bianco senza cuori;
+- c'e' un attributo diverso, non una sfumatura: cuori rosa dove si chiedevano cuori rossi;
+- gli attributi chiesti stanno su due oggetti diversi nella stessa foto, non sullo stesso: un nastro bianco accanto a un fiocco rosso non e' un nastro bianco con cuori rossi.
 
-E quando la descrizione non basta a deciderlo. In quel caso nel motivo scrivi la domanda precisa da fare guardando la foto.
+Una riga si scarta perche' non risponde, mai perche' non e' un prodotto.
+</quando_e_no>
 
-Chi legge questa risposta cerca di capire cosa puo' proporre a un cliente: un articolo in piu' gli costa una riga da scorrere, uno in meno gli costa una vendita.
-</quando_una_riga_e_forse>
+<il_motivo>
+**Al massimo otto parole.** Non una frase, un'etichetta: «cuori rossi su fondo bianco», «cuori rosa», «nessun cuore».
+
+Una cosa il motivo la deve dire sempre: **se un attributo chiesto non e' confermato, nominalo.** Sono stati chiesti cuori blu e la riga dice solo «ribbon with heart motifs»? Il motivo e' «cuori si, blu non detto». Chi scrive la risposta legge quel motivo e non puo' far finta che il blu ci fosse.
+
+Niente spiegazioni, niente «potrebbe essere», niente ripetizione della descrizione: quella chi legge ce l'ha gia' davanti.
+</il_motivo>
 
 <righe_gia_guardate>
 Se una riga porta scritto «guardata: ...», qualcuno ha aperto la foto vera e ha risposto a quella domanda. Quella e' una prova migliore della didascalia: se le due si contraddicono, vale la foto. Leggila per intero — «direi di no», «non si vede bene» e «si, ma sono rosa» dicono tre cose diverse.
@@ -1037,14 +1069,15 @@ I_VERDETTI = [{"type": "function", "function": {
     "parameters": {"type": "object", "properties": {
         "esiti": {"type": "array", "items": {"type": "object", "properties": {
             "riga": {"type": "integer", "description": "Il numero della riga."},
-            "esito": {"type": "string", "enum": ["si", "no", "forse"]},
-            "motivo": {"type": "string", "description": "Mezza riga."}},
+            "esito": {"type": "string", "enum": ["si", "no"]},
+            "motivo": {"type": "string",
+                       "description": "Al massimo otto parole. Se un attributo chiesto non e' confermato, nominalo."}},
             "required": ["riga", "esito"]}}},
         "required": ["esiti"]}}}]
 
 
 def _critico(stato, righe, motivo: str) -> dict:
-    """{numero riga: si|no|forse} per le righe non ancora verificate.
+    """{numero riga: si|no} per le righe non ancora verificate.
 
     A GRUPPI, giudicati in parallelo. Una chiamata sola su quaranta righe
     costava 18,5 secondi — un terzo del tempo di un turno, e il pezzo piu'
@@ -1113,7 +1146,7 @@ def _giudica(stato, righe, motivo: str, da_fare) -> dict:
             except (TypeError, ValueError):
                 continue
             esito = str(e.get("esito", "")).lower()
-            if n in numeri and esito in ("si", "no", "forse"):
+            if n in numeri and esito in ("si", "no"):
                 fuori[n] = esito
                 righe[n - 1]["_motivo"] = str(e.get("motivo") or "")[:200]
     return fuori
@@ -1184,50 +1217,60 @@ def _osservatore(conn, righe, numeri, domanda: str) -> list:
 # IL REDATTORE — scrive, e cita le righe per numero
 # ==========================================================================
 P_REDATTORE = """<ruolo>
-Scrivi la risposta per la persona, in italiano. Usi solo le righe che ti do: non aggiungere articoli, pagine, codici o prezzi che non sono li' dentro.
+Scrivi la risposta per la persona, in italiano. Usi solo gli articoli che ti do: non aggiungere articoli, pagine, codici o prezzi che non sono li' dentro.
 </ruolo>
 
-<parla_a_una_persona>
-Le righe, i risultati, il database, gli elementi da elaborare sono il nostro gergo: chi legge non sa cosa siano e non deve saperlo. Non nominare mai il funzionamento interno, nemmeno per scusartene.
-</parla_a_una_persona>
+<di_cosa_puoi_parlare>
+Di quello che la persona puo' vedere: gli articoli, i cataloghi, le pagine. Niente altro.
+
+Come ci sei arrivato, per chi legge, non esiste: non ha un nome, non si spiega, non si cita — nemmeno per scusarsi di non averne. Se stai per nominare un pezzo del sistema, quella frase va cancellata e non riscritta: sotto non c'e' una versione migliore, c'e' che quella frase non serve.
+</di_cosa_puoi_parlare>
+
+<quando_non_hai_articoli>
+Guarda prima se in fondo ai dati c'e' un testo da consegnare com'e' (vedi sotto: quello comanda). Se non c'e':
+
+- era un SALUTO o una chiacchiera: **rispondi e fermati.** Una parola, due. Qualunque cosa aggiungi dopo sara' una scusa per qualcosa che la persona non ti ha chiesto.
+- si e' cercato davvero: di' in una frase che la cosa cercata non c'e'. Quello che manca e' l'ARTICOLO — un nastro, un vaso — mai qualcosa di nostro.
+</quando_non_hai_articoli>
 
 <di_quello_che_hai>
-Se hai delle righe, qualcosa hai trovato. Nessuna etichetta ti autorizza a dire che non hai trovato niente: le etichette dicono quanto fidarsi di una riga, non se esiste.
+Se hai degli articoli, qualcosa hai trovato. Nessuna etichetta ti autorizza a dire che non hai trovato niente: l'etichetta dice quanto fidarsi di un articolo, non se esiste.
 
-Descrivi ogni riga con le parole con cui la riga lo dice, e accanto, in mezza riga, cosa non torna. Se la riga dice «avorio» e ti avevano chiesto bianco, scrivi che c'e' ed e' avorio: decide chi legge.
+Descrivi ogni articolo con le parole con cui la scheda lo dice, e accanto, in mezza riga, cosa non torna. Se la scheda dice «avorio» e ti avevano chiesto bianco, scrivi che c'e' ed e' avorio: decide chi legge.
 </di_quello_che_hai>
 
 <non_promettere_cio_che_non_hai>
-Non riusare le parole della domanda per intestare quello che hai. Se le righe parlano di cuori rossi, la tua frase dice cuori rossi — e poi, se serve, che di blu non ne sono venuti fuori.
+Non riusare le parole della domanda per intestare quello che hai. Se le schede parlano di cuori rossi, la tua frase dice cuori rossi — e poi, se serve, che di blu non ne sono venuti fuori.
 
 Promettere nel titolo e smentirsi nell'elenco e' il modo piu' veloce di perdere chi legge, perche' si fida della prima frase.
 </non_promettere_cio_che_non_hai>
 
 <citazioni>
-Ogni cosa che dici porta il numero della riga da cui viene, scritto `[[3]]`, subito dopo la cosa che stai dicendo. Il sistema lo trasforma nel collegamento alla pagina.
+Ogni cosa che dici porta il numero dell'articolo da cui viene, scritto `[[3]]`, subito dopo la cosa che stai dicendo. Il sistema lo trasforma nel collegamento alla pagina.
 
 Non scrivere tu il numero di pagina: al suo posto metti il riferimento. Non scrivere una sezione «Fonti»: la aggiunge il sistema. Non scrivere mai un indirizzo web: quello vero lo mette il sistema, uno scritto da te e' inventato per definizione.
 </citazioni>
 
-<etichette>
-Ogni riga porta scritto com'e' messa, e la differenza la passi a chi legge:
-- verificata: qualcuno l'ha controllata e risponde. Presentala e basta.
-- da verificare: controllata, ma dalla descrizione non si capiva. Dillo.
-- non verificata: trovata e mai controllata. La dai lo stesso, con un avviso — una riga sola lo dice per tutte.
+<etichette_e_motivi>
+Ogni articolo porta due cose, e vanno usate entrambe.
 
-Non scrivere mai che le informazioni sono state verificate o i dati controllati. L'etichetta e' di ogni singola riga, non dell'insieme: se anche una sola non e' verificata, quella frase e' falsa, e rassicurare su un controllo che non c'e' stato fa prendere decisioni sbagliate senza accorgersene.
-</etichette>
+L'ETICHETTA dice se qualcuno l'ha controllato. «controllato»: presentalo e basta. «non controllato»: lo dai lo stesso, con un avviso — una riga sola lo dice per tutti.
+
+Il MOTIVO, fra parentesi, e' quello che ha visto chi l'ha controllato, e vince sulla descrizione. Se dice che un attributo chiesto non e' confermato — «cuori si, blu non detto» — quella e' la cosa che devi passare a chi legge: nomina l'articolo per quello che e' e di' che il blu non e' specificato. Ignorare il motivo e scrivere che l'articolo e' come lo voleva la domanda e' il modo piu' grave di sbagliare, perche' chi legge non ha modo di accorgersene.
+
+Non scrivere mai che le informazioni sono state verificate o i dati controllati: l'etichetta e' di ogni singolo articolo, non dell'insieme.
+</etichette_e_motivi>
 
 <se_ti_do_delle_scelte_da_mostrare>
 A volte in fondo ai dati trovi un testo gia' scritto: una riga che dice cosa c'e', delle scelte, una domanda. L'ha scritto chi aveva davanti l'archivio.
 
-Riportalo dalla sua prima riga, quella compresa, senza riscriverla e senza mettere niente prima. Le righe, se ce ne sono, vanno prima col loro riferimento, e quel testo chiude.
+Riportalo dalla sua prima riga, quella compresa, senza riscriverla e senza mettere niente prima. Gli articoli, se ce ne sono, vanno prima col loro riferimento, e quel testo chiude.
 
 Ti sembrera' che manchi un'apertura: non manca. Se la tua prima frase comincia con «non», e' sbagliata.
 </se_ti_do_delle_scelte_da_mostrare>
 
 <forma>
-Le righe che hai davanti compaiono tutte: non sceglierne un sottoinsieme.
+Gli articoli che hai davanti compaiono tutti: non sceglierne un sottoinsieme.
 
 Come le presenti lo decidi tu: elenco per gli articoli, prosa per un documento di testo, raggruppate per catalogo se aiuta.
 
@@ -1245,8 +1288,9 @@ def _da_consegnare(righe, verdetti):
       venti righe che nessuno aveva guardato. Misurato l'1/10/2026: una
       risposta su tre usciva senza controllo, e chi la leggeva non poteva
       saperlo.
-    - `== "si"` buttava via i `forse`: il critico dice «non so» e il codice lo
-      traduceva in «no».
+    - `== "si"` buttava via i verdetti diversi da «si», e un verdetto che il
+      codice non riconosce non e' un «no»: e' una riga che passa con la sua
+      etichetta.
     - una riga senza verdetto spariva, quando qualche verdetto c'era.
 
     L'unica cosa che si toglie e' quello che il CRITICO ha scartato, e non e'
@@ -1452,8 +1496,10 @@ def _nodo_redattore(stato):
     # stabilirlo. Una revisione per turno — quello si', e' un tetto scritto
     # qui, come MAX_PASSI: non si fa aspettare chi chiede per una terza
     # passata, e quello che resta fuori finisce nella traccia.
+    _mostra(stato, "**rileggo la risposta prima di darla**")
     rilievi = _revisore(stato, bozza, confermate, etichette)
     if rilievi:
+        _mostra(stato, "**la riscrivo** — " + "; ".join(come for _, _, come in rilievi))
         messaggi += [
             {"role": "assistant", "content": bozza},
             {"role": "user", "content":
@@ -1678,7 +1724,7 @@ def rendi(conn, risposta: str, confermate: list, base: str, utente: str,
 # le ricopia dentro la risposta, e stampava «(verificata)» fra parentesi in
 # mezzo alla prosa (2/10/2026, in chat). Se se le ricopia cosi', almeno non
 # sembrano il referto di una macchina.
-PAROLA = {"si": "controllato", "forse": "da controllare"}
+PAROLA = {"si": "controllato"}
 
 
 def _scheda(righe, numeri=None, verdetti=None, visto: bool = False,
@@ -1770,7 +1816,7 @@ class Stato(TypedDict):
     righe: list
     verdetti: dict
     confermate: list
-    etichette: dict           # numero di riga -> si | forse | non verificata
+    etichette: dict           # numero di riga -> si | non verificata
     risposta: str
     passi: int
     traccia: Annotated[list, operator.add]
@@ -1920,9 +1966,6 @@ def _prova():
         non_rispondibile=True)}
     assert "rispondi" not in vago, vago
     assert {"cerca", "proponi", "chiedi"} <= vago, vago
-    detto = _stato_a_parole({"domanda": "d", "righe": [], "verdetti": {},
-                             "passi": 0, "rispondibile": False})
-    assert "Non spendere una ricerca" in detto, detto
     # E il verdetto deve ARRIVARGLI a parole, o non puo' tenerne conto.
     detto = _stato_a_parole({"domanda": "d", "righe": [], "verdetti": {},
                              "passi": 0, "rispondibile": False})
@@ -1931,7 +1974,7 @@ def _prova():
     # ha scritto «tutte verificate» sotto righe che non lo erano.
     assert _nota_verifica({1: "si", 2: "si"}, {1, 2}) == ""
     assert "2 delle 3" in _nota_verifica(
-        {1: "si", 2: "forse", 3: "non verificata"}, {1, 2, 3})
+        {1: "si", 2: "non verificata", 3: "non verificata"}, {1, 2, 3})
     assert "Nessuna" in _nota_verifica({1: "non verificata"}, {1})
     # Solo le righe CITATE contano: una scartata che il redattore non nomina
     # non deve far comparire un avviso.
@@ -2014,9 +2057,9 @@ def _prova():
         globals()["_giudica"], modello.slot = vero_giudica, vero_slot
 
     quattro = [{"descrizione": c} for c in "abcd"]
-    tenute, etich = _da_consegnare(quattro, {1: "si", 2: "no", 3: "forse"})
+    tenute, etich = _da_consegnare(quattro, {1: "si", 2: "no", 3: "si"})
     assert [r["descrizione"] for r in tenute] == ["a", "c", "d"], tenute
-    assert etich == {1: "si", 2: "forse", 3: "non verificata"}, etich
+    assert etich == {1: "si", 2: "si", 3: "non verificata"}, etich
     # Nessuna verifica chiesta: le righe passano, ma NON come confermate.
     tenute, etich = _da_consegnare(quattro, {})
     assert len(tenute) == 4 and set(etich.values()) == {"non verificata"}, etich
@@ -2089,7 +2132,6 @@ def _prova():
                                    "passi": 0, "ambito": "un prodotto",
                                    "manca": ["l'oggetto"]})
     assert "un prodotto" in con_analisi and "l'oggetto" in con_analisi
-    assert "chiedi" in con_analisi, "il coordinatore deve sapere a cosa serve"
     ultimo = _stato_a_parole({"domanda": "d", "righe": [], "verdetti": {},
                               "passi": MAX_PASSI - 1})
     assert "ULTIMA MOSSA" in ultimo

@@ -188,7 +188,10 @@ La riga che copi deve parlare della stessa cosa di cui parla la risposta. Una ri
    Conta anche se poi sotto la elenca: chi legge si ferma alla prima frase.
    Una risposta affermativa non e' una negazione: se nessuna frase dice che qualcosa manca, il campo resta vuoto.
 
-2. PROMETTE QUELLO CHE NON AVEVA. L'apertura afferma di aver trovato quello che era stato chiesto, e una riga CITATA descrive un'altra cosa. Copia quella riga.
+2. PROMETTE QUELLO CHE NON AVEVA. L'apertura afferma di aver trovato quello che era stato chiesto, e NESSUNA delle righe citate lo sostiene. Copia la riga che dovrebbe sostenerlo e non lo fa.
+
+   **Basta UNA riga che sostenga l'affermazione perche' questa colpa non ci sia.** Se la risposta cita tre articoli e il terzo e' quello giusto, la promessa e' mantenuta: il campo resta vuoto. Non fermarti alla prima riga che non c'entra — leggile tutte, e cerca se almeno una regge quello che la risposta dice.
+   Su «ci sono anche con i cuori blu?» hai bocciato una risposta che citava due articoli, esibendo come prova il primo (cuori rossi) e ignorando il secondo, che diceva «light blue with blue glitter hearts» (2/10/2026). La risposta era corretta.
    **Per questa colpa la prova puo' venire SOLO dalle righe citate, mai dal campione.** Una promessa si smentisce con quello che chi scriveva aveva in mano, non con quello che esiste altrove nell'archivio: il campione contiene tutto, e pescarci dentro fa accusare chiunque. Se le righe citate sono zero, questo campo resta vuoto — sempre, senza eccezioni.
    Se la risposta descrive quello che ha per com'e', il campo resta vuoto, anche quando quello che ha non e' esattamente cio' che era stato chiesto.
    Una risposta che fa una domanda o che mostra delle scelte non promette niente: non sta proponendo articoli, sta orientando.
@@ -264,8 +267,16 @@ def giudica(caso, conversazione, risposta, citate, campione):
         # valuta se parlano della stessa cosa — e glielo si chiedeva di
         # getto. Da li' le accuse senza prova e le prove a caso: un ramo di
         # limoni esibito per smentire delle confezioni regalo (2/10/2026).
-        m = modello.messaggio(messaggi, max_tokens=2500, tools=I_VERDETTO,
-                              tool_choice="required", ragiona=True)
+        # Un 500 del server non e' un verdetto: il 2/10/2026 ne e' arrivato
+        # uno a meta' batteria e si e' portato via le quattro domande che
+        # restavano. Qui si conta come «il giudice non ha deciso».
+        try:
+            m = modello.messaggio(messaggi, max_tokens=2500, tools=I_VERDETTO,
+                                  tool_choice="required", ragiona=True)
+        except Exception as e:
+            print("   (il giudice e' esploso: %s: %s)"
+                  % (type(e).__name__, str(e)[:90]))
+            return None
         m.pop("reasoning_content", None)
         for tc in m.get("tool_calls") or []:
             if tc.get("function", {}).get("name") == "verdetto":
@@ -276,6 +287,19 @@ def giudica(caso, conversazione, risposta, citate, campione):
         messaggi += [m, {"role": "user",
                          "content": "Rispondi chiamando lo strumento `verdetto`."}]
     return None
+
+
+# Una prova che non contiene parole non e' una prova. Il giudice, messo
+# davanti all'obbligo di copiare la riga, ha imparato a scrivere «» e «[»:
+# non vuoti, quindi contavano come accusa, e su un «Ciao!» ne sono arrivate
+# due (2/10/2026). Qui non si giudica niente: si guarda se c'e' del testo.
+_PAROLE = re.compile(r"[0-9A-Za-zÀ-ɏ]{3,}")
+
+
+def prova_vera(testo) -> str:
+    """Il testo della prova se contiene almeno due parole, altrimenti «»."""
+    t = str(testo or "").strip()
+    return t if len(_PAROLE.findall(t)) >= 2 else ""
 
 
 def citate_davvero(risposta, righe):
@@ -353,8 +377,8 @@ def main():
             if v is None:
                 motivi.append("il giudice non ha deciso")
                 continue
-            colpe = [(e, str(v.get(c + "_prova") or "").strip())
-                     for c, e in COLPE if str(v.get(c + "_prova") or "").strip()]
+            colpe = [(e, prova_vera(v.get(c + "_prova")))
+                     for c, e in COLPE if prova_vera(v.get(c + "_prova"))]
             ok_n += not colpe
             motivi += ["%s: %s" % (e, d[:60]) for e, d in colpe]
         print("%-16s %d/%-5d %6.0fs  %4.0fs (%.1f)  %s"
@@ -381,8 +405,8 @@ def main():
                 print("   ESPLOSO %s" % g["esploso"])
                 continue
             v = g["verdetto"] or {}
-            colpe = [(e, str(v.get(c + "_prova") or "").strip())
-                     for c, e in COLPE if str(v.get(c + "_prova") or "").strip()]
+            colpe = [(e, prova_vera(v.get(c + "_prova")))
+                     for c, e in COLPE if prova_vera(v.get(c + "_prova"))]
             print("   %-3s %3.0fs %-2dq %-2dcit  %s"
                   % ("NO" if colpe else "si", g["secondi"],
                      g["eseguite"], g["citate"], " > ".join(g["mosse"])))

@@ -69,6 +69,20 @@ BUONE = [
  # come si deve, e in coda una domanda. Il giudice diceva «non si puo'
  # verificare» con il [[1]] sotto gli occhi. Un riferimento presente E' la
  # prova del contrario, e andava detto.
+ # Il falso negativo che mi e' costato tre bocciature: due articoli
+ # citati, il secondo ha davvero i cuori blu, e il giudice esibiva come
+ # prova il primo. Basta UNA riga che regga l'affermazione.
+ ("piu_righe_una_regge", "ci sono anche con i cuori blu?",
+  [("user", "ho bisogno di nastri bianchi con cuori rossi"),
+   ("assistant", "Ne ho trovati nel catalogo Packara.")],
+  "Ho trovato nastri bianchi con cuori rossi [[1]]. Ci sono anche nastri "
+  "con cuori blu [[2]].",
+  [{"documento": "Packara.pdf", "page": 5,
+    "descrizione": "three ribbons with heart motifs. Colours: white with "
+                   "red hearts, pink with silver hearts"},
+   {"documento": "Packara.pdf", "page": 6,
+    "descrizione": "two ribbons with heart motifs. Colours: pink with pink "
+                   "glitter hearts, light blue with blue glitter hearts"}]),
  ("citato+domanda", "e di blu invece?",
   [("user", "hai palline di Natale rosse?"),
    ("assistant", "Si', ne ho trovate nel catalogo Packara.")],
@@ -86,7 +100,7 @@ for attesa, domanda, storia, risposta in PROVE:
     conv.append({"role": "user", "content": domanda})
     campione = operatori.vicinato(conn, "immagini", domanda, G, A, quanti=10)
     v = banco.giudica(caso, conv, risposta, [], campione) or {}
-    trovate = [c for c, _ in banco.COLPE if str(v.get(c + "_prova") or "").strip()]
+    trovate = [c for c, _ in banco.COLPE if banco.prova_vera(v.get(c + "_prova"))]
     print("%-18s attesa=%-18s trovate=%s  %s"
           % ("OK " if attesa in trovate else "MANCATA",
              attesa, trovate or "nessuna",
@@ -100,7 +114,7 @@ for nome, domanda, storia, risposta, citate in BUONE:
     conv.append({"role": "user", "content": domanda})
     campione = operatori.vicinato(conn, "immagini", domanda, G, A, quanti=10)
     v = banco.giudica(caso, conv, risposta, citate, campione) or {}
-    trovate = [c for c, _ in banco.COLPE if str(v.get(c + "_prova") or "").strip()]
+    trovate = [c for c, _ in banco.COLPE if banco.prova_vera(v.get(c + "_prova"))]
     print("%-18s buona=%-18s trovate=%s  %s"
           % ("OK " if not trovate else "FALSO ALLARME", nome,
              trovate or "nessuna",

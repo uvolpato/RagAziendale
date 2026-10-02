@@ -1041,6 +1041,45 @@ in mano, decidere cosa unire. Il primo passo e' la tabella, non il
 
 ---
 
+## 8-bis. Proposta, NON implementata: le righe come struttura, non come riga
+
+**Da non fare senza chiedere** (deciso il 2/10/2026).
+
+Oggi il foglio delle righe arriva al redattore cosi':
+
+    [[1]] (controllato) (cuori si, blu non detto) (dal catalogo P.pdf) ribbon with heart motifs
+
+Il difetto non e' che sia poco leggibile: e' che mette sullo stesso piano
+cinque cose di natura diversa, tutte fra parentesi. `[[1]]` va SCRITTO tale
+e quale; la descrizione va RACCONTATA; «controllato» va TRASMESSO;
+«cuori si, blu non detto» e' un'ISTRUZIONE di onesta'; il catalogo e'
+contesto. Una sintassi sola per cinque ruoli, e il modello sbaglia
+esattamente li'.
+
+E sopra a questo c'e' la cosa misurata tre volte il 2/10/2026: **il
+redattore ricopia la forma che gli dai.** Ha scritto `**[SI]**` nella
+risposta, poi `(verificata)` fra parentesi in mezzo alla prosa, poi «ho
+trovato queste righe che parlano di nastri blu» — tre difetti con una causa
+sola. Una riga di frammenti fra parentesi E' prosa annotata, quindi la
+incolla come prosa.
+
+La forma proposta non si puo' incollare in una frase:
+
+    <articolo n="1">
+      <scrivi>[[1]]</scrivi>
+      <cosa>ribbon with heart motifs</cosa>
+      <controllo>controllato</controllo>
+      <avvertenza>cuori si, blu non detto</avvertenza>
+    </articolo>
+
+Costo: due o tre volte i token del foglio, su venti righe.
+
+Cautela, e vale piu' dell'argomento: il 2/10/2026 ho misurato DUE volte che
+riformattare cambia il comportamento in modo imprevedibile — spezzare un
+paragrafo in due voci di elenco, stesse regole e stesso ordine, ha portato
+il banco da 42/45 a 35/45. Quindi «meglio in principio» qui non vale: si
+misura prima e dopo, con il giudice tarato, o non si fa.
+
 ## 9. Una nota di configurazione, non di progetto
 
 Il container in esecuzione ha `SQL_AGENTE=1`. Su disco `.env` e
