@@ -74,13 +74,7 @@ def compila(conn, sql: str) -> tuple[str, list[str]]:
         # `sql_agente` respinge le frasi. Qui si scartano invece di respingere
         # la query, perche' il modello non li ha scritti lui.
         voci = [v for v in dict.fromkeys(voci) if v and not re.search(r"\s", v)]
-        # Col confine di parola davanti, che e' il motivo per cui TERMINI
-        # esiste: «ready for a ~*» vuol dire che non deve pescare la parola
-        # dentro un'altra parola. `stone` senza confine trova «polystone»,
-        # `red` trova «textured`: misurato il 3/10/2026 su «sassi rossi», le
-        # venti righe tornate erano vasi in polystone e di sassi ce n'erano
-        # due su otto che esistono.
-        return ("'" + "|".join(r"\m" + v.replace("'", "") for v in voci) + "'")
+        return "'" + "|".join(v.replace("'", "") for v in voci) + "'"
 
     def _simile(m):
         testo = (m.group(1) or "").replace("''", "'").strip()
@@ -209,7 +203,7 @@ def _perche(e: Exception) -> str:
 
 
 MAPPA_OPERATORI = (
-    "COME SI CERCA: hai TRE operatori, e la scelta e' tua.\n"
+    "COME SI CERCA: hai DUE operatori, e la scelta e' tua.\n"
     "1. `~*` cerca le LETTERE, e le cerca anche DENTRO le altre parole: "
     "`~* 'red'` trova «textured» e «covered», `~* 'stone'` trova "
     "«polystone». Per questo ogni parola si scrive col confine davanti: "
@@ -247,9 +241,6 @@ MAPPA_OPERATORI = (
     "filtrare: se vuoi meno righe usa LIMIT.\n"
     "   Usalo quando non sai con che parola il catalogo chiama una cosa — cioe' "
     "quasi sempre.\n"
-    "3. `TERMINI('nastri')` ti da' le parole che questo corpus usa davvero per "
-    "quella cosa, gia' pronte per un ~*:\n"
-    "     WHERE descrizione ~* TERMINI('nastri')\n"
     "\n"
     "IL MODO MIGLIORE E' METTERLI INSIEME: un ~* coi confini che taglia "
     "via il grosso, e SIMILE che ordina il resto.\n"
@@ -270,6 +261,11 @@ MAPPA_OPERATORI = (
     "fiori e lanterne comprese: misurato su «hai nastri blu», con "
     "`'\\mblue'` da solo due righe su venti erano nastri, con `'\\mblue'` "
     "AND `'\\mribbon'` venti su venti.\n"
+    "I SINONIMI li scrivi tu, dentro il `|`: le didascalie sono in inglese e "
+    "ogni catalogo ha il suo vocabolario, quindi di una cosa metti tutti i "
+    "nomi che le daresti — `'\\mstone|\\mrock|\\mpebble|\\mgravel'` per i "
+    "sassi. Il `|` non costa niente: una parola in piu' nell'elenco e' una "
+    "pagina che altrimenti non vedevi.\n"
     "Se non sai nemmeno da che parte cominciare, usa SIMILE da solo, senza "
     "WHERE: e' sempre meglio di una parola indovinata.\n"
 )
