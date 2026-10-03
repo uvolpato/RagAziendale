@@ -333,7 +333,7 @@ I pezzi fissati sono quelli che ha detto LA PERSONA. Quello che c'era nella risp
   **Ordina sempre per pertinenza e metti un limite**: `ORDER BY SIMILE('la richiesta in italiano') LIMIT 20`. Senza, torni quaranta righe in ordine qualsiasi: chi le verifica le legge tutte una per una, e quelle che arrivano a chi ha chiesto non sono le piu' vicine a quello che voleva. Un `~*` coi confini di parola che taglia il grosso, piu' `SIMILE` che ordina il resto: e' la combinazione che rende di piu'.
 - `verifica` fa leggere le righe trovate una per una e dice quali rispondono davvero.
 - `guarda` riapre la foto vera, per le righe su cui la descrizione non basta a decidere.
-- `proponi` costruisce le scelte da mostrare alla persona, leggendole nell'archivio. Si chiama una volta per giro, e il risultato resta nello stato.
+- `proponi` costruisce le scelte da mostrare alla persona, leggendole nell'archivio. Gli dici TU cosa cercare, con le parole con cui la chiamerebbe lei — «oggetti sportivi», «regali per una mamma» — come dentro `SIMILE()`. Si chiama una volta per giro, e il risultato resta nello stato.
 - `chiedi` si ferma e mostra quelle scelte alla persona. E' una mossa come le altre, non una resa.
 - `rispondi` chiude e manda a chi scrive tutte le righe raccolte, con l'etichetta che hanno adesso.
 </le_tue_mosse>
@@ -529,9 +529,20 @@ def _strumenti_del_coordinatore(ultima: bool = False,
                             "strade LEGGENDOLE nell'archivio, invece di "
                             "inventarle. Poi chiudi con `chiedi`."),
             "parameters": {"type": "object", "properties": {
+                "cerca": {"type": "string",
+                          "description": "LA COSA da cercare nell'archivio, in "
+                                         "italiano, con le parole con cui la "
+                                         "chiamerebbe la persona: «oggetti "
+                                         "sportivi», «regali per una mamma», "
+                                         "«nastri blu». Due o tre parole, come "
+                                         "dentro SIMILE(). Non una frase su di "
+                                         "lei: il campione lo trova la "
+                                         "somiglianza, e «la persona sta "
+                                         "cercando...» somiglia alle foto "
+                                         "delle persone."},
                 "motivo": {"type": "string",
                            "description": "Cosa c'e' da restringere."}},
-                "required": []}}},
+                "required": ["cerca"]}}},
         {"type": "function", "function": {
             "name": "verifica",
             "description": ("Fa leggere le righe trovate una per una e dice quali "
@@ -880,7 +891,8 @@ def _nodo_mosse(stato):
                       "scegli tu una delle strade e la cerchi.")
                 traccia.append(_nota("guida", {"gia_fatto": True}, 0, t0))
                 continue
-            proposta = _guida(stato, str(arg.get("motivo") or ""))
+            proposta = _guida(stato, str(arg.get("motivo") or ""),
+                              str(arg.get("cerca") or ""))
             if proposta:
                 chiarimento = proposta
                 esiti.append("proponi: ventaglio pronto, chiudi con `chiedi`")
@@ -943,9 +955,13 @@ Le scelte sono la distinzione che DIVIDE MEGLIO quello che resta. In ordine, di 
 Ti fermi quando con le scelte in mano si potrebbe scrivere una ricerca: cioe' quando si sa che oggetto e' e qual e' la caratteristica che conta. Non serve arrivare a un singolo articolo.
 </un_passo_dell_imbuto>
 
-<le_scelte_si_leggono_nel_campione>
-Ogni scelta che proponi deve corrispondere a righe che vedi nel campione. Se proponi una famiglia che nel campione non c'e', chi la scegliera' trovera' il vuoto.
-</le_scelte_si_leggono_nel_campione>
+<ogni_scelta_porta_le_sue_righe>
+Il campione e' numerato. Ogni scelta che scrivi porta i numeri delle righe che SONO quella scelta: almeno uno.
+
+Non e' una formalita', e' il cuore del tuo lavoro: se per una strada non trovi nemmeno una riga, quella strada non esiste nell'archivio e chi la sceglie trovera' il vuoto. Cancellala e proponi quello che c'e' davvero, anche se sono due cose invece di cinque.
+
+Quindi si parte dal campione e si arriva alle scelte, mai il contrario: non pensare a come si divide quello che la persona ha chiesto, guarda cosa c'e' scritto nelle righe e raggruppalo.
+</ogni_scelta_porta_le_sue_righe>
 
 <ogni_scelta_passa_una_prova>
 Prima di scrivere una scelta, fatti questa domanda: **un cliente puo' ordinarla?**
@@ -954,7 +970,7 @@ Il campione viene dalle foto dei cataloghi, e un catalogo non e' fatto solo di a
 
 Passano la prova le famiglie di oggetti: nastri, vasi, candele, palline, confezioni, sassi, fiori finti.
 
-Non la passano, e sono gli scarti in cui caschi: «una pagina di catalogo con tabelle», «etichette blu», «tabelle con testo blu», «foto di persone con abiti blu», «un'immagine con sfondo blu». Descrivono com'e' fatta la pagina, non cosa c'e' in vendita.
+Un oggetto si ordina. Il modo in cui una pagina e' fatta, no: quello che descrive la pagina invece della merce non e' una scelta.
 
 Se dopo la prova ti restano due scelte, proponi due scelte. Meglio due ordinabili che cinque di cui tre non esistono come merce.
 </ogni_scelta_passa_una_prova>
@@ -986,18 +1002,41 @@ I_PERCORSO = [{"type": "function", "function": {
                                         "legge, e se dice «non c'e' niente» "
                                         "smette li', anche se sotto hai "
                                         "elencato tre cose."},
-        "scelte": {"type": "array", "items": {"type": "string"},
-                   "description": "Da tre a cinque strade, brevi, ognuna "
-                                  "corrispondente a cose viste nel campione."},
+        "scelte": {"type": "array", "items": {"type": "object", "properties": {
+            "strada": {"type": "string",
+                       "description": "La strada, in due o tre parole, come la "
+                                      "direbbe una persona."},
+            "righe": {"type": "array", "items": {"type": "integer"},
+                      "description": "I numeri delle righe del campione che "
+                                     "sono questa strada. Almeno uno: se non "
+                                     "lo trovi, questa strada non c'e'."}},
+            "required": ["strada", "righe"]},
+                   "description": "Da due a cinque strade, ognuna con le "
+                                  "righe del campione che la contengono."},
         "domanda": {"type": "string",
                     "description": "La domanda con cui chiudere, una riga."}},
         "required": ["introduzione", "scelte", "domanda"]}}}]
 
 
-def _guida(stato, motivo: str) -> str:
-    """Il ventaglio di strade, costruito sulle righe vere. "" se non riesce."""
+def _guida(stato, motivo: str, cerca: str = "") -> str:
+    """Il ventaglio di strade, costruito sulle righe vere. "" se non riesce.
+
+    Il campione si cercava con `ambito`, che e' la frase dell'analista — e una
+    frase che comincia con «la persona sta cercando» somiglia, per un modello
+    di embedding, alle FOTO DELLE PERSONE. Misurato il 3/10/2026 su «cosa
+    avete di sportivo»: 7 righe su 8 erano ritratti fotografici, e la guida
+    offriva «foto di persone in abiti formali» — leggeva bene il suo
+    campione, era il campione a non avere niente a che fare con la domanda.
+    Con «oggetti sportivi» le stesse 8 righe sono scarpe da corsa, palloni da
+    basket, un ciclista e un Babbo Natale sul tapis roulant.
+
+    Quindi la cosa da cercare la scrive il coordinatore, con le parole con cui
+    la chiamerebbe chi ha chiesto: e' la stessa decisione che prende quando
+    scrive `SIMILE('nastri blu')`, e la prende lui, non questo codice.
+    """
     campione = operatori.vicinato(
-        stato["conn"], "immagini", stato.get("ambito") or stato["domanda"],
+        stato["conn"], "immagini",
+        cerca.strip() or stato.get("ambito") or stato["domanda"],
         stato["gruppi"], stato["aziende"], quanti=GUIDA_CAMPIONE,
         colonne="id, documento, page, descrizione")
     if not campione:
@@ -1012,7 +1051,16 @@ def _guida(stato, motivo: str) -> str:
                      + "\n<campione_dall_archivio>\n" + _scheda(campione)
                      + "\n</campione_dall_archivio>"})
     for nome, arg in _decide(messaggi, I_PERCORSO):
-        scelte = [str(s).strip() for s in (arg.get("scelte") or []) if str(s).strip()]
+        scelte = []
+        for voce in (arg.get("scelte") or []):
+            if isinstance(voce, dict):
+                testo, quali = str(voce.get("strada") or "").strip(), voce.get("righe")
+                # Una strada senza righe e' una strada inventata: lo strumento
+                # chiedeva da quali righe viene e non e' arrivato niente.
+                if testo and quali:
+                    scelte.append(testo)
+            elif str(voce).strip():
+                scelte.append(str(voce).strip())
         parti = [str(arg.get("introduzione") or "").strip()]
         parti += [f"- {s}" for s in scelte[:5]]
         parti.append(str(arg.get("domanda") or "").strip())
