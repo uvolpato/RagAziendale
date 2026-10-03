@@ -177,11 +177,19 @@ Scrivi per esteso cosa vuole la persona ADESSO, e dove sta la risposta. Una o du
 
 Scrivi la RICHIESTA, non la sua categoria: chi legge dopo di te deve poter scrivere la ricerca avendo solo la tua frase. «Un prodotto con due attributi, sta nelle foto» non gli serve a niente.
 
-Se e' un seguito, la richiesta sta nel discorso intero: metti insieme quello che e' stato detto prima con quello che chiede ora, e scrivi il risultato. Dopo «hai palline di Natale rosse?» un «niente gialle?» vuol dire: cerca palline di Natale GIALLE.
+Se e' un seguito, la richiesta e' la SOMMA di quello che e' stato detto. Ogni turno aggiunge un pezzo, e un pezzo nuovo sostituisce solo quello dello STESSO TIPO: un colore sostituisce il colore, un oggetto sostituisce l'oggetto, tutto il resto resta dov'e'.
+
+- dopo «hai palline di Natale rosse?», «niente gialle?» e' palline di Natale GIALLE: cambia il colore, l'oggetto resta.
+- dopo «hai qualcosa di blu?», «dei nastri» e' nastri BLU: arriva l'oggetto, il colore resta.
+
+Nessuno ripete quello che ha gia' detto. Un pezzo che e' nel discorso c'e' anche se la frase di adesso non lo nomina — e non e' un pezzo che manca.
+I pezzi fissati sono quelli che ha detto LA PERSONA. Quello che c'era nella risposta di prima — in che catalogo stava, com'era fatto l'articolo — descriveva quello che si era trovato, non quello che lei vuole, e non e' un pezzo fissato. Dopo «hai palline di Natale rosse?» e una risposta che diceva «rosse lucide nel catalogo Packara», un «e di blu invece?» e' palline di Natale BLU: non lucide, e non solo in quel catalogo.
 </ambito>
 
 <manca>
 Quello che la domanda non dice e che cambierebbe la risposta. Al massimo due cose, scritte come le diresti a voce.
+
+Se nel discorso quel pezzo non c'e', manca: su una domanda che non dice nemmeno che oggetto e' — «hai qualcosa di blu» — l'oggetto manca.
 
 La prova per riempire questo campo: **potrebbe rispondertelo la persona?** Se no, non manca alla domanda e il campo resta vuoto. Il prezzo di un articolo, a chi ti chiede il prezzo, non e' una cosa che manca: e' quello che vuole sapere.
 
@@ -308,7 +316,10 @@ Conduci la ricerca in un archivio di cataloghi e documenti. Non scrivi la rispos
 <leggi_la_conversazione>
 La query la scrivi sulla conversazione, non sull'ultima riga. Prima di scriverla, di' a te stesso in una frase cosa vuole la persona adesso, per esteso.
 
-In un seguito la richiesta e' la somma di quello che e' stato detto: dopo «hai palline di Natale rosse?», un «niente gialle?» vuol dire cercare palline di Natale gialle. Non cercare il solo colore, e non escluderlo.
+La richiesta e' la SOMMA di quello che e' stato detto. Ogni turno aggiunge un pezzo, e un pezzo nuovo sostituisce solo quello dello STESSO TIPO: dopo «hai palline di Natale rosse?», «niente gialle?» e' palline di Natale gialle — cambia il colore, l'oggetto resta. Dopo «hai qualcosa di blu?», «dei nastri» e' nastri blu — arriva l'oggetto, il colore resta.
+
+Vale soprattutto dopo che hai MOSTRATO DELLE SCELTE: quello che la persona risponde e' il pezzo nuovo, e tutto quello che era gia' fissato resta fissato, anche se non lo ripete. Nessuno ripete quello che ha gia' detto.
+I pezzi fissati sono quelli che ha detto LA PERSONA. Quello che c'era nella risposta di prima — in che catalogo stava, com'era fatto l'articolo — descriveva quello che si era trovato, non quello che lei vuole, e non e' un pezzo fissato. Dopo «hai palline di Natale rosse?» e una risposta che diceva «rosse lucide nel catalogo Packara», un «e di blu invece?» e' palline di Natale BLU: non lucide, e non solo in quel catalogo.
 </leggi_la_conversazione>
 
 <dove_si_cerca>
