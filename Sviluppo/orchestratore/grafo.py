@@ -1306,11 +1306,11 @@ Guarda prima se in fondo ai dati c'e' un testo da consegnare com'e' (vedi sotto:
 <di_quello_che_hai>
 Se hai degli articoli, qualcosa hai trovato. Nessuna etichetta ti autorizza a dire che non hai trovato niente: l'etichetta dice quanto fidarsi di un articolo, non se esiste.
 
-Descrivi ogni articolo con le parole con cui la scheda lo dice, e accanto, in mezza riga, cosa non torna. Se la scheda dice «avorio» e ti avevano chiesto bianco, scrivi che c'e' ed e' avorio: decide chi legge.
+Descrivi ogni articolo con le parole di `<descrivi>`, e accanto, in mezza riga, cosa non torna. Se `<descrivi>` dice «avorio» e ti avevano chiesto bianco, scrivi che c'e' ed e' avorio: decide chi legge.
 </di_quello_che_hai>
 
 <non_promettere_cio_che_non_hai>
-Non riusare le parole della domanda per intestare quello che hai. Se le schede parlano di cuori rossi, la tua frase dice cuori rossi — e poi, se serve, che di blu non ne sono venuti fuori.
+Non riusare le parole della domanda per intestare quello che hai. Se gli articoli parlano di cuori rossi, la tua frase dice cuori rossi — e poi, se serve, che di blu non ne sono venuti fuori.
 
 Promettere nel titolo e smentirsi nell'elenco e' il modo piu' veloce di perdere chi legge, perche' si fida della prima frase.
 </non_promettere_cio_che_non_hai>
@@ -1321,15 +1321,19 @@ Ogni cosa che dici porta il numero dell'articolo da cui viene, scritto `[[3]]`, 
 Non scrivere tu il numero di pagina: al suo posto metti il riferimento. Non scrivere una sezione «Fonti»: la aggiunge il sistema. Non scrivere mai un indirizzo web: quello vero lo mette il sistema, uno scritto da te e' inventato per definizione.
 </citazioni>
 
-<etichette_e_motivi>
-Ogni articolo porta due cose, e vanno usate entrambe.
+<come_ti_arrivano_gli_articoli>
+Ogni articolo e' una struttura, e ogni tag vuole una cosa diversa da te:
 
-L'ETICHETTA dice se qualcuno l'ha controllato. «controllato»: presentalo e basta. «non controllato»: lo dai lo stesso, con un avviso — una riga sola lo dice per tutti.
+- `<scrivi_questo>` lo ricopi esattamente come sta, dentro la frase in cui parli di quell'articolo. E' quello che diventa il collegamento alla pagina.
+- `<descrivi>` e' la scheda, in inglese. Non si ricopia: si racconta in italiano, con le sue parole ma dette a una persona.
+- `<controllo>` dice se qualcuno l'ha guardato. «controllato»: presenti l'articolo e basta. «non controllato»: lo dai lo stesso, con un avviso — una riga sola lo dice per tutti.
+- `<di_anche>` e' quello che ha visto chi ha controllato, e **vince sulla descrizione**. Se dice che un attributo chiesto non e' confermato — «cuori si, blu non detto» — quella cosa deve arrivare a chi legge: nomini l'articolo per quello che e' e dici che il blu non e' specificato. Ignorarlo e scrivere che l'articolo e' come lo voleva la domanda e' il modo piu' grave di sbagliare, perche' chi legge non ha modo di accorgersene.
+- `<catalogo>` e' il nome del catalogo. Serve a te, per raggruppare, se aiuta.
 
-Il MOTIVO, fra parentesi, e' quello che ha visto chi l'ha controllato, e vince sulla descrizione. Se dice che un attributo chiesto non e' confermato — «cuori si, blu non detto» — quella e' la cosa che devi passare a chi legge: nomina l'articolo per quello che e' e di' che il blu non e' specificato. Ignorare il motivo e scrivere che l'articolo e' come lo voleva la domanda e' il modo piu' grave di sbagliare, perche' chi legge non ha modo di accorgersene.
+I tag sono la forma in cui ti arrivano i dati: nella risposta non ne compare nessuno, e nemmeno i loro nomi.
 
-Non scrivere mai che le informazioni sono state verificate o i dati controllati: l'etichetta e' di ogni singolo articolo, non dell'insieme.
-</etichette_e_motivi>
+Non scrivere mai che le informazioni sono state verificate o i dati controllati: il controllo e' di ogni singolo articolo, non dell'insieme.
+</come_ti_arrivano_gli_articoli>
 
 <se_ti_do_delle_scelte_da_mostrare>
 A volte in fondo ai dati trovi un testo gia' scritto: una riga che dice cosa c'e', delle scelte, una domanda. L'ha scritto chi aveva davanti l'archivio.
@@ -1825,6 +1829,8 @@ def _scheda(righe, numeri=None, verdetti=None, visto: bool = False,
     come le altre diventava «1. [?, pagina ?]» seguito dal vuoto, e il critico
     la scartava — non perche' non rispondesse, ma perche' non la VEDEVA
     («quanti cataloghi ci sono» restava senza risposta, il 30/09/2026)."""
+    if per_chi_scrive:
+        return _schede_xml(righe, numeri, verdetti, visto)
     fuori = []
     for i, r in enumerate(righe):
         n = numeri[i] if numeri else i + 1
@@ -1867,6 +1873,49 @@ def _scheda(righe, numeri=None, verdetti=None, visto: bool = False,
         fuori.append(f"{capo} {corpo}".strip())
     return "\n".join(fuori) or "(nessuna riga)"
 
+
+
+def _schede_xml(righe, numeri=None, verdetti=None, visto: bool = False) -> str:
+    """Gli articoli per CHI SCRIVE, uno per struttura invece che per riga.
+
+    Il foglio di prima metteva cinque cose di natura diversa tutte fra
+    parentesi sulla stessa riga: `[[1]] (controllato) (cuori si, blu non
+    detto) (dal catalogo P.pdf) ribbon with heart motifs`. Ma `[[1]]` va
+    ricopiato tale e quale, la descrizione va RACCONTATA, «controllato» va
+    trasmesso, il motivo e' un'istruzione di onesta' e il catalogo e'
+    contesto: una sintassi sola per cinque ruoli. E una riga di frammenti fra
+    parentesi E' prosa annotata, quindi il redattore la incollava come prosa
+    — misurato in chat il 3/10/2026: «[[1]] (controllato) (nastri con disegni
+    di foglie): tre nastri sottili...», con l'etichetta e il motivo dentro la
+    risposta.
+
+    I nomi dei tag sono VERBI, non nomi di cose: il redattore ricopia quello
+    che vede, e se ricopiasse «scrivi_questo» o «di_anche» sarebbe una frase
+    storta, mentre «riga», «verdetto» o «etichetta» sarebbero il nostro gergo
+    in faccia a chi legge.
+    """
+    fuori = []
+    for i, r in enumerate(righe):
+        n = numeri[i] if numeri else i + 1
+        pezzi = ["  <scrivi_questo>[[%d]]</scrivi_questo>" % n]
+        testo = r.get("descrizione") or r.get("content")
+        if not testo:
+            testo = "; ".join(f"{c}: {v}" for c, v in r.items()
+                              if not str(c).startswith("_")
+                              and c not in ("id", "source_id", "documento", "page")
+                              and v is not None)
+        pezzi.append("  <descrivi>%s</descrivi>" % " ".join(str(testo).split()))
+        if verdetti and n in verdetti:
+            pezzi.append("  <controllo>%s</controllo>"
+                         % PAROLA.get(verdetti[n], "non controllato"))
+            if r.get("_motivo"):
+                pezzi.append("  <di_anche>%s</di_anche>" % r["_motivo"])
+        if visto and r.get("_visto"):
+            pezzi.append("  <di_anche>%s</di_anche>" % r["_visto"])
+        if r.get("documento"):
+            pezzi.append("  <catalogo>%s</catalogo>" % r["documento"])
+        fuori.append("<articolo>\n%s\n</articolo>" % "\n".join(pezzi))
+    return "\n".join(fuori) or "(nessun articolo)"
 
 def _nota(nome, dettagli, righe, t0) -> dict:
     return {"strumento": nome, "argomenti": dettagli,
