@@ -74,7 +74,13 @@ def compila(conn, sql: str) -> tuple[str, list[str]]:
         # `sql_agente` respinge le frasi. Qui si scartano invece di respingere
         # la query, perche' il modello non li ha scritti lui.
         voci = [v for v in dict.fromkeys(voci) if v and not re.search(r"\s", v)]
-        return "'" + "|".join(v.replace("'", "") for v in voci) + "'"
+        # Col confine di parola davanti, che e' il motivo per cui TERMINI
+        # esiste: «ready for a ~*» vuol dire che non deve pescare la parola
+        # dentro un'altra parola. `stone` senza confine trova «polystone»,
+        # `red` trova «textured`: misurato il 3/10/2026 su «sassi rossi», le
+        # venti righe tornate erano vasi in polystone e di sassi ce n'erano
+        # due su otto che esistono.
+        return ("'" + "|".join(r"\m" + v.replace("'", "") for v in voci) + "'")
 
     def _simile(m):
         testo = (m.group(1) or "").replace("''", "'").strip()
@@ -204,18 +210,28 @@ def _perche(e: Exception) -> str:
 
 MAPPA_OPERATORI = (
     "COME SI CERCA: hai TRE operatori, e la scelta e' tua.\n"
-    "1. `~*` cerca le LETTERE. `descrizione ~* 'ribbon'` trova anche "
-    "«ribbons», ma `~* 'ribbons'` NON trova «ribbon»: scrivi la forma corta. "
-    "Il `|` dentro lo stesso ~* e' una O (`'soccer|football'`); per la E metti "
+    "1. `~*` cerca le LETTERE, e le cerca anche DENTRO le altre parole: "
+    "`~* 'red'` trova «textured» e «covered», `~* 'stone'` trova "
+    "«polystone». Per questo ogni parola si scrive col confine davanti: "
+    "`\\m` vuol dire «qui comincia una parola», e `~* '\\mred'` prende «red», "
+    "«reds» e «reddish» ma non «textured». La coda resta libera di proposito: "
+    "cosi' `'\\mribbon'` trova anche «ribbons», mentre `'ribbons'` non "
+    "troverebbe «ribbon». Scrivi sempre la forma corta col confine davanti: "
+    "`'\\mribbon'`, non `'ribbon'` e non `'ribbons'`. Misurato: `'red'` prende "
+    "5627 righe, `'\\mred'` ne prende 1846, e le 3781 che cadono sono parole "
+    "come «textured». Una `\\m` per parola, attaccata alla sua prima "
+    "lettera. "
+    "Il `|` dentro lo stesso ~* e' una O (`'\\msoccer|\\mfootball'`); per la E metti "
     "due condizioni con AND. MAI piu' parole dentro un solo ~*, in NESSUNA "
     "tabella: `~*` cerca la sequenza esatta di lettere, spazi compresi. Nelle "
-    "didascalie delle foto le parole non stanno nemmeno vicine (`~* 'white "
-    "ribbon'` trova zero righe, dove 'white' AND 'ribbon' ne trova ventuno); "
+    "didascalie delle foto le parole non stanno nemmeno vicine (`~* '\\mwhite "
+    "\\mribbon'` trova zero righe, dove '\\mwhite' AND '\\mribbon' ne "
+    "trova ventuno); "
     "nel testo dei documenti stanno vicine ma non in quell'ordine e non senza "
-    "niente in mezzo — 'red christmas balls' non trova «Christmas balls, red» "
+    "niente in mezzo — '\\mred christmas balls' non trova «Christmas balls, red» "
     "ne' «red glitter Christmas balls». Una parola per condizione, unite con "
     "AND: cosi' vale in tutte e due. Non usare LIKE con '%'.\n"
-    "   Per il NON, l'operatore e' `!~*`: `descrizione !~* 'yellow'`. "
+    "   Per il NON, l'operatore e' `!~*`: `descrizione !~* '\\myellow'`. "
     "`NOT ~*` NON ESISTE e da' errore di sintassi. Ma pensaci due volte prima "
     "di escludere qualcosa: un `!~*` butta via una riga per una parola che "
     "magari descriveva un altro articolo nella stessa foto.\n"
@@ -235,13 +251,25 @@ MAPPA_OPERATORI = (
     "quella cosa, gia' pronte per un ~*:\n"
     "     WHERE descrizione ~* TERMINI('nastri')\n"
     "\n"
-    "IL MODO MIGLIORE E' METTERLI INSIEME: un ~* largo che taglia via il "
-    "grosso, e SIMILE che ordina il resto.\n"
+    "IL MODO MIGLIORE E' METTERLI INSIEME: un ~* coi confini che taglia "
+    "via il grosso, e SIMILE che ordina il resto.\n"
     "     SELECT id, documento, page, descrizione FROM immagini\n"
-    "     WHERE descrizione ~* 'ribbon|tape'\n"
+    "     WHERE descrizione ~* '\\mribbon|\\mtape'\n"
     "     ORDER BY SIMILE('nastri bianchi con cuori rossi') LIMIT 20\n"
     "Misurato su questa domanda: il solo ~* trova 5 pagine giuste su 7, il solo "
     "SIMILE 6 su 7, i due insieme 7 su 7.\n"
+    "Il LIMIT taglia DOPO il WHERE, e li' il confine di parola decide tutto: "
+    "se il ~* prende la parola dentro le altre parole, le venti righe che "
+    "restano sono le sue, e quelle giuste non arrivano. Misurato su «sassi "
+    "rossi»: con `'red'` e `'stone'` le venti righe erano vasi in polystone e "
+    "superfici textured, e di sassi rossi ne arrivavano DUE; con `'\\mred'` e "
+    "`'\\mstone|\\mrock|\\mpebble|\\mgravel'`, otto.\n"
+    "Nel WHERE va l'OGGETTO che si cerca, non il suo colore: `'\\mribbon'`, "
+    "e il blu lo lascia ordinare a SIMILE — o lo aggiungi con un AND. Col "
+    "solo colore nel WHERE i candidati diventano tutto quello che e' blu, "
+    "fiori e lanterne comprese: misurato su «hai nastri blu», con "
+    "`'\\mblue'` da solo due righe su venti erano nastri, con `'\\mblue'` "
+    "AND `'\\mribbon'` venti su venti.\n"
     "Se non sai nemmeno da che parte cominciare, usa SIMILE da solo, senza "
     "WHERE: e' sempre meglio di una parola indovinata.\n"
 )

@@ -319,7 +319,7 @@ In un seguito la richiesta e' la somma di quello che e' stato detto: dopo «hai 
 
 <le_tue_mosse>
 - `cerca` esegue una query che scrivi tu. Puoi chiamarla piu' volte nello stesso giro e partono tutte insieme: se ci sono due strade indipendenti, aprile subito entrambe. Una ricerca costa cinquanta millisecondi, un giro in piu' ne costa quattordicimila.
-  **Ordina sempre per pertinenza e metti un limite**: `ORDER BY SIMILE('la richiesta in italiano') LIMIT 20`. Senza, torni quaranta righe in ordine qualsiasi: chi le verifica le legge tutte una per una, e quelle che arrivano a chi ha chiesto non sono le piu' vicine a quello che voleva. Un `~*` largo che taglia il grosso, piu' `SIMILE` che ordina il resto: e' la combinazione che rende di piu'.
+  **Ordina sempre per pertinenza e metti un limite**: `ORDER BY SIMILE('la richiesta in italiano') LIMIT 20`. Senza, torni quaranta righe in ordine qualsiasi: chi le verifica le legge tutte una per una, e quelle che arrivano a chi ha chiesto non sono le piu' vicine a quello che voleva. Un `~*` coi confini di parola che taglia il grosso, piu' `SIMILE` che ordina il resto: e' la combinazione che rende di piu'.
 - `verifica` fa leggere le righe trovate una per una e dice quali rispondono davvero.
 - `guarda` riapre la foto vera, per le righe su cui la descrizione non basta a decidere.
 - `proponi` costruisce le scelte da mostrare alla persona, leggendole nell'archivio. Si chiama una volta per giro, e il risultato resta nello stato.
@@ -1024,24 +1024,34 @@ Leggi la conversazione intera, non l'ultima riga. Dopo «hai palline rosse o gia
 Due valori, `si` e `no`. Non ce n'e' un terzo, e non ti serve: quello che non sai lo scrivi nel motivo.
 </il_verdetto_e_binario>
 
+<due_domande_in_ordine>
+**Prima: la riga descrive l'OGGETTO chiesto?** Un nastro e' un nastro; una lanterna, un fiore, un vaso, una fotografia non lo sono, nemmeno se sono del colore giusto. Se l'oggetto non c'e', il verdetto e' `no` e hai finito: gli attributi non li guardi nemmeno.
+
+La PAROLA con cui la riga lo chiama puo' essere un'altra: le didascalie sono in inglese e ogni catalogo ha il suo vocabolario — «pebbles», «rocks», «gravel» sono sassi. Quello che non puo' cambiare e' la COSA: un ciondolo di vetro a forma di sasso non e' un sasso.
+
+**Poi, e solo allora: quell'oggetto ha gli attributi chiesti?**
+
+Le righe arrivano da una ricerca per parole, e una parola si trova anche nella foto sbagliata: la meta' di quelle che hai davanti non e' l'oggetto chiesto. Questo e' il lavoro.
+</due_domande_in_ordine>
+
 <quando_e_si>
-Quando l'articolo chiesto c'e'. Tre casi in cui c'e' e si sbaglia a dire no:
-- una riga e' UNA FOTO, e una foto di catalogo mostra spesso piu' articoli insieme: basta che UNO sia quello chiesto;
-- un articolo che ha quello che serve e in piu' qualcos'altro va bene, il di piu' non toglie;
-- l'attributo chiesto c'e' ma scritto in un altro modo o in una sfumatura vicina — «yellow-green» per giallo, «crimson» per rosso, «ivory» per bianco: e' si', e nel motivo scrivi com'e' scritto davvero.
+Quando l'oggetto chiesto c'e' e ha quello che e' stato chiesto. Quattro casi in cui c'e' e si sbaglia a dire no:
+- una riga e' UNA FOTO, e una foto di catalogo mostra spesso piu' articoli insieme: basta che UNO sia quello chiesto — uno che la riga NOMINA, non uno che potrebbe esserci;
+- un articolo che ha quello che serve e in piu' qualcos'altro va bene: il di piu' non toglie;
+- l'attributo chiesto c'e' scritto in un altro modo, o in una sfumatura vicina: «yellow-green» per giallo, «crimson» per rosso, «ivory» per bianco. Nel motivo scrivi com'e' scritto davvero;
+- il colore chiesto sta nell'ELENCO DEI COLORI della riga. Quell'elenco e' il catalogo delle varianti ordinabili, non la descrizione della foto: e' spesso lungo, in due lingue e con i codici in mezzo («...rot red... blau blue...»), e il colore si cerca dentro tutto l'elenco, fino in fondo. Se c'e', l'articolo e' si', e nel motivo scrivi che e' una variante fra tante.
 
 Due articoli con codice diverso sono due articoli, anche se la descrizione si somiglia: non scartarne uno come doppione.
 
 Se la domanda chiedeva un numero, un totale o l'elenco dei documenti, la riga che porta quel dato e' si', anche se non e' un articolo e non ha una pagina.
-
-Chi legge cerca di capire cosa proporre a un cliente: un articolo in piu' gli costa una riga da scorrere, uno in meno gli costa una vendita.
 </quando_e_si>
 
 <quando_e_no>
-Quando l'articolo chiesto NON c'e'. Tre casi in cui manca e si sbaglia a dire si':
+Quando l'oggetto chiesto non c'e', o non ha quello che e' stato chiesto. Quattro casi in cui manca e si sbaglia a dire si':
+- la riga descrive un altro oggetto: cercavano un nastro, questa e' una lanterna;
 - l'attributo chiesto non c'e' affatto: «nastri bianchi con cuori rossi», un nastro bianco senza cuori;
 - c'e' un attributo diverso, non una sfumatura: cuori rosa dove si chiedevano cuori rossi;
-- gli attributi chiesti stanno su due oggetti diversi nella stessa foto, non sullo stesso: un nastro bianco accanto a un fiocco rosso non e' un nastro bianco con cuori rossi.
+- le cose chieste stanno su due oggetti diversi nella stessa foto, non sullo stesso: un nastro bianco accanto a un fiocco rosso non e' un nastro bianco con cuori rossi.
 
 Una riga si scarta perche' non risponde, mai perche' non e' un prodotto.
 </quando_e_no>
@@ -1136,7 +1146,8 @@ def _giudica(stato, righe, motivo: str, da_fare) -> dict:
                      + (f"<cosa_deve_avere_una_riga>{motivo}"
                         f"</cosa_deve_avere_una_riga>\n" if motivo else "")
                      + "\n<righe_da_verificare>\n"
-                     + _scheda([r for _, r in da_fare], numeri=numeri, visto=True)
+                     + _scheda([r for _, r in da_fare], numeri=numeri,
+                                   visto=True, intera=True)
                      + "\n</righe_da_verificare>"})
     fuori = {}
     for nome, arg in _decide(messaggi, I_VERDETTI):
@@ -1728,7 +1739,7 @@ PAROLA = {"si": "controllato"}
 
 
 def _scheda(righe, numeri=None, verdetti=None, visto: bool = False,
-            per_chi_scrive: bool = False) -> str:
+            per_chi_scrive: bool = False, intera: bool = False) -> str:
     """Le righe numerate, come le vedono coordinatore, critico e redattore.
 
     `per_chi_scrive` cambia la FORMA, non il contenuto, e serve a una cosa
@@ -1781,7 +1792,20 @@ def _scheda(righe, numeri=None, verdetti=None, visto: bool = False,
                               if not str(c).startswith("_")
                               and c not in ("id", "source_id", "documento", "page")
                               and v is not None)
-        fuori.append(f"{capo} {' '.join(str(testo).split())[:ASSAGGIO]}".strip())
+        # Il taglio a `ASSAGGIO` serve a chi guarda il MUCCHIO di righe per
+        # decidere la mossa. Chi deve giudicare o descrivere UNA riga la vede
+        # intera, perche' le didascalie di questo corpus mettono in fondo
+        # proprio quello su cui si giudica: «Colours: ... rot red ... blau
+        # blue», «Code: ...». Misurato il 3/10/2026 su «sassi rossi»: la
+        # pagina dei sassi decorativi ha 26 colori in due lingue, «rot red»
+        # sta al carattere 450, e il critico la scartava — non perche' non
+        # fosse rossa, ma perche' la parola «red» era oltre il taglio. Meta'
+        # delle righe sono piu' corte di 300 caratteri: il taglio risparmiava
+        # quasi niente e cancellava l'attributo chiesto.
+        corpo = ' '.join(str(testo).split())
+        if not (intera or per_chi_scrive):
+            corpo = corpo[:ASSAGGIO]
+        fuori.append(f"{capo} {corpo}".strip())
     return "\n".join(fuori) or "(nessuna riga)"
 
 
