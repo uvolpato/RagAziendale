@@ -321,13 +321,25 @@ def _nodo_analista(stato):
     # veloce e sbagliata, e questo e' il valore che vale anche quando
     # l'analista non decide affatto.
     ambito, manca, impegnativa, rispondibile = "", [], True, True
+    oggetto, attributi, dove = "", [], ""
     for nome, arg in _decide(messaggi, I_ANALISI):
         ambito = str(arg.get("ambito") or "").strip()
         manca = [str(m).strip() for m in (arg.get("manca") or []) if str(m).strip()][:2]
         impegnativa = bool(arg.get("impegnativa", True))
         rispondibile = bool(arg.get("rispondibile", True))
+        # I PEZZI. Li produceva gia' e li buttavamo: la scomposizione tornava
+        # dentro la tool-call e poi restava fuori dallo stato, cosi' il
+        # coordinatore, il critico e la guida se la rifacevano ognuno per
+        # conto suo leggendo la frase.
+        oggetto = str(arg.get("oggetto") or "").strip()
+        attributi = [{"valore": str(a.get("valore") or "").strip(),
+                      "tipo": str(a.get("tipo") or "altro").strip()}
+                     for a in (arg.get("attributi") or [])
+                     if isinstance(a, dict) and str(a.get("valore") or "").strip()]
+        dove = str(arg.get("dove") or "").strip()
     return {"ambito": ambito, "manca": manca, "impegnativa": impegnativa,
             "rispondibile": rispondibile,
+            "oggetto": oggetto, "attributi": attributi, "dove": dove,
             "riviste": stato.get("riviste", 0) + 1,
             "traccia": [_nota("analista", {"manca": manca,
                                            "impegnativa": impegnativa,
@@ -341,14 +353,15 @@ P_COORDINATORE = """<ruolo>
 Conduci la ricerca in un archivio di cataloghi e documenti. Non scrivi la risposta: decidi la prossima mossa e la fai fare a chi sa farla. A ogni giro hai davanti la conversazione intera e lo stato di quello che hai fatto finora.
 </ruolo>
 
-<leggi_la_conversazione>
-La query la scrivi sulla conversazione, non sull'ultima riga. Prima di scriverla, di' a te stesso in una frase cosa vuole la persona adesso, per esteso.
+<usa_i_pezzi_dell_analista>
+Nello stato trovi l'analisi della richiesta gia' pronta, calcolata dall'analista. Non devi ricostruire la storia dei turni precedenti: fidati dei campi estratti.
 
-La richiesta e' la SOMMA di quello che e' stato detto. Ogni turno aggiunge un pezzo, e un pezzo nuovo sostituisce solo quello dello STESSO TIPO: dopo «hai palline di Natale rosse?», «niente gialle?» e' palline di Natale gialle — cambia il colore, l'oggetto resta. Dopo «hai qualcosa di blu?», «dei nastri» e' nastri blu — arriva l'oggetto, il colore resta.
-
-Vale soprattutto dopo che hai MOSTRATO DELLE SCELTE: quello che la persona risponde e' il pezzo nuovo, e tutto quello che era gia' fissato resta fissato, anche se non lo ripete. Nessuno ripete quello che ha gia' detto.
-I pezzi fissati sono quelli che ha detto LA PERSONA. Quello che c'era nella risposta di prima — in che catalogo stava, com'era fatto l'articolo — descriveva quello che si era trovato, non quello che lei vuole, e non e' un pezzo fissato. Dopo «hai palline di Natale rosse?» e una risposta che diceva «rosse lucide nel catalogo Packara», un «e di blu invece?» e' palline di Natale BLU: non lucide, e non solo in quel catalogo.
-</leggi_la_conversazione>
+- `rispondibile`: se e' FALSE, salta immediatamente al blocco <se_la_domanda_non_e_rispondibile>.
+- `dove`: e' la tabella di destinazione indicata dall'analista. Cerca solo li'.
+- `oggetto` e `attributi`: sono la tua bussola per costruire la query, ma rispettando RIGOROSAMENTE le regole di MAPPA_OPERATORI per non svuotare la ricerca:
+  * l'oggetto e i colori vanno nel WHERE (con `~*`);
+  * le finiture, i motivi o le occasioni NON vanno nel WHERE: si passano solo dentro `ORDER BY SIMILE()`, per portare in cima i candidati migliori senza escludere i dati parziali.
+</usa_i_pezzi_dell_analista>
 
 <dove_si_cerca>
 - `immagini`: le foto dei cataloghi. Qui sta il PRODOTTO.
@@ -629,6 +642,24 @@ def _stato_a_parole(stato) -> str:
             "si puo' rispondere: cercando verrebbe fuori un mucchio di cose "
             "tenute insieme da una caratteristica sola, non una risposta "
             "utile.")
+    # I PEZZI, detti in prosa con i dati dentro. Non un dict crudo: una frase
+    # che dice dove stanno i dati veri, perche' il modello ragiona sulla prosa
+    # e poi va a prendere il valore. E detti qui, non lasciati dedurre: la
+    # regola della somma era scritta per intero anche nel prompt del
+    # coordinatore — 1100 caratteri per rifare un lavoro gia' fatto.
+    pezzi = []
+    if stato.get("oggetto"):
+        pezzi.append("l'oggetto cercato e' «%s»" % stato["oggetto"])
+    attributi = [a for a in (stato.get("attributi") or []) if a.get("valore")]
+    if attributi:
+        pezzi.append("gli attributi chiesti sono %s" % ", ".join(
+            "«%s» (%s)" % (a["valore"], a.get("tipo") or "altro") for a in attributi))
+    if stato.get("dove") and stato["dove"] != "nessuno":
+        pezzi.append("la tabella e' `%s`" % stato["dove"])
+    if pezzi:
+        parti.append("Chi ha letto la domanda l'ha anche SCOMPOSTA, mettendo "
+                     "insieme tutti i turni: " + "; ".join(pezzi)
+                     + ". Sono questi i pezzi su cui si cerca.")
     if stato.get("manca"):
         parti.append("Chi ha letto la domanda dice che NON dice: "
                      + "; ".join(stato["manca"]) + ".")
@@ -1973,6 +2004,9 @@ class Stato(TypedDict):
     base: str                 # per firmare i collegamenti durante lo streaming
     utente: str
     resa: bool                # la risposta e' gia' resa (citazioni e fonti)
+    oggetto: str              # il tipo di cosa cercata, dall'analista
+    attributi: list           # [{valore, tipo}], dall'analista
+    dove: str                 # la tabella, dall'analista
     righe: list
     verdetti: dict
     confermate: list
