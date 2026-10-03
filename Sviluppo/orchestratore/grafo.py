@@ -187,50 +187,53 @@ I pezzi fissati sono quelli che ha detto LA PERSONA. Quello che c'era nella risp
 </ambito>
 
 <manca>
-Quello che la domanda non dice e che cambierebbe la risposta. Al massimo due cose, scritte come le diresti a voce.
+Quello che la domanda non dice e che cambierebbe la risposta per trovare l'oggetto. Al massimo due cose, scritte come le diresti a voce.
 
 Se nel discorso quel pezzo non c'e', manca: su una domanda che non dice nemmeno che oggetto e' — «hai qualcosa di blu» — l'oggetto manca.
 
-La prova per riempire questo campo: **potrebbe rispondertelo la persona?** Se no, non manca alla domanda e il campo resta vuoto. Il prezzo di un articolo, a chi ti chiede il prezzo, non e' una cosa che manca: e' quello che vuole sapere.
-
-Un campo vuoto e' un'informazione: vuol dire che la domanda e' completa. Non riempirlo per forza.
+La prova per riempire questo campo: potrebbe rispondertelo la persona? Se no, non manca alla domanda e il campo resta vuoto. 
+ATTENZIONE: Non inventare mancanze commerciali come "budget", "prezzo", "destinatario" o "gusti". L'archivio contiene solo caratteristiche fisiche. Se manca l'oggetto (es. "regalo per mamma"), l'unica cosa che manca davvero e' "il tipo di oggetto desiderato".
 </manca>
 
 <rispondibile>
-Chiedi a te stesso una cosa sola: **con quello che so adesso, posso scrivere una ricerca che torni un insieme coerente di articoli?**
+Chiedi a te stesso una cosa sola: **con quello che so adesso, posso scrivere una ricerca che torni un insieme coerente di articoli o chiudere la conversazione?**
 
-Prima guarda di che ambito e' la domanda, perche' il criterio cambia:
+Rispondi SI nei seguenti casi (la ricerca o la risposta si possono fare subito):
+- Un saluto o una chiacchiera: SI, non c'e' niente da cercare, si puo' rispondere direttamente.
+- DOCUMENTO o TESTO: «cosa dice la procedura sui resi». Sempre SI.
+- DATI o ARCHIVIO: un conteggio, un totale, l'elenco dei documenti. Sempre SI.
+- CATALOGO con OGGETTO NOTO: Serve sapere CHE TIPO DI OGGETTO (un nastro, un vaso, una pallina, una candela). «Ho bisogno di sassi rossi» e' SI.
+- Un seguito che eredita l'oggetto dal discorso di prima: SI. L'oggetto c'e' gia'.
 
-CATALOGO, cercare un articolo. Serve sapere CHE TIPO DI OGGETTO: un nastro, un vaso, una pallina, una candela. Con il tipo di oggetto in mano la risposta e' SI, e si cerca subito — «ho bisogno di sassi rossi» e' SI, si cerca e si risponde.
-Senza il tipo di oggetto la risposta e' NO, perche' questi non lo dicono:
-- un colore: «mi serve qualcosa di blu»;
-- un tema: «cosa avete di sportivo»;
-- un'occasione: «un regalo per il compleanno di mia mamma», «qualcosa per San Valentino». Dicono perche' serve, non cosa.
-Un'occasione sembra restringere e non restringe: lascia dentro tutto l'archivio.
+Rispondi NO esclusivamente in questo caso (la mossa e' mostrare delle scelte, senza cercare):
+- CATALOGO SENZA OGGETTO: Quando non si nomina il tipo di oggetto ma solo un colore isolato («qualcosa di blu»), un tema («cosa avete di sportivo») o un'occasione/regalo («un regalo per il compleanno di mia mamma», «qualcosa per San Valentino»). L'occasione lascia dentro tutto l'archivio, quindi e' NO.
 
-DOCUMENTO o TESTO: «cosa dice la procedura sui resi», «come si usa questo prodotto». Qui non c'e' nessun oggetto da nominare: c'e' un testo da trovare e riportare. Sempre SI.
-
-DATI o ARCHIVIO: un conteggio, un totale, l'elenco dei documenti. La domanda e' precisa per costruzione, e un chiarimento non cambierebbe niente. Sempre SI.
-
-Un saluto o una chiacchiera: SI, non c'e' niente da cercare.
-
-Un seguito che eredita l'oggetto dal discorso di prima: SI. L'oggetto c'e' gia', lo sta restringendo.
-
-Quando dici NO, stai dicendo che la mossa e' mostrare delle scelte, subito, senza cercare.
+Queste domande NON sono impegnative: hai gia' capito tutto, e la mossa — mostrare le scelte — non richiede di pensarci su.
 </rispondibile>
 
 <impegnativa>
-Serve a chi cerca dopo di te: deve decidere come cercare, e puo' farlo di getto o fermandosi a ragionare. Ragionare costa il triplo del tempo, quindi dillo tu.
+Serve a chi cerca dopo di te per decidere la strategia di ricerca.
 
-IMPEGNATIVA quando **una parola va indovinata**: la cosa chiesta esiste ma il catalogo la chiama in un altro modo, e va trovata per tentativi. «Kit per l'albero di Natale», «sfere che trattengono l'acqua». Oppure quando la risposta sta in due posti e va messa insieme.
+Se hai appena giudicato la domanda come NON rispondibile (rispondibile: NO), allora impegnativa e' tassativamente FALSE. Hai gia' capito tutto: la mossa e' mostrare delle scelte e non richiede di pensarci su.
 
-NON impegnativa in tutti gli altri casi:
-- un saluto, un dato sull'archivio;
-- un oggetto con i suoi attributi, detto chiaro: «nastri bianchi con cuori rossi»;
-- una domanda che hai appena giudicato NON rispondibile. Li' hai gia' capito tutto: la mossa e' mostrare delle scelte, e quella mossa non richiede di pensare.
-
-Nel dubbio, impegnativa.
+In caso di rispondibile: SI, valuta invece cosi':
+- IMPEGNATIVA: quando una parola va indovinata (il catalogo la chiama in un altro modo, es. «Kit per l'albero di Natale») o quando la risposta sta in due posti e va messa insieme. Nel dubbio, se e' rispondibile SI, considerala impegnativa.
+- NON impegnativa: un saluto, un dato sull'archivio, o un oggetto con i suoi attributi detto chiaro («nastri bianchi con cuori rossi»).
 </impegnativa>
+
+<i_pezzi_della_richiesta>
+Oltre alla frase, consegni la richiesta SCOMPOSTA: `oggetto`, `attributi`, `dove`. La frase serve a chi legge, i pezzi servono a chi lavora.
+
+Perche' esistono: dopo di te, tre agenti diversi devono sapere che cosa si cerca — chi scrive la query, chi controlla le righe una per una, chi costruisce le scelte da offrire. Se glielo lasci dentro una frase, ognuno la rilegge e ne ricava una cosa un po' diversa. Scomponila tu, una volta, e sono d'accordo tutti e tre.
+
+`oggetto` e' IL TIPO DI COSA, al singolare e nudo: «nastro», non «nastri bianchi». Se la domanda non nomina una cosa — un colore da solo, un'occasione, un saluto, una domanda su un testo — resta vuoto, ed e' la stessa cosa che stai dicendo con `rispondibile`.
+
+`attributi` sono le caratteristiche che quell'oggetto deve avere, una per voce, con il loro genere: «bianco» e' un colore, «cuori rossi» e' un motivo, «lucido» e' altro. Il genere conta perche' a valle non tutte le caratteristiche si cercano allo stesso modo.
+
+Ci va solo quello che ha chiesto LEI. Se una risposta di prima diceva «rosse lucide nel catalogo Packara», «lucide» non e' un attributo: era la descrizione di quello che si era trovato.
+
+`dove` e' la tabella: `immagini` per i prodotti (inclusi i casi NON rispondibili come occasioni, regali o colori isolati che mirano al catalogo), `chunks` per il testo dei documenti, `documenti` per le domande sull'archivio. Usa `nessuno` RIGOROSAMENTE solo per saluti, insulti o chiacchiere che non hanno alcuna attinenza con i prodotti o l'azienda.
+</i_pezzi_della_richiesta>
 
 <consegna>
 Con lo strumento `analisi`.
@@ -256,8 +259,33 @@ I_ANALISI = [{"type": "function", "function": {
                                        "sola e si vede."},
         "manca": {"type": "array", "items": {"type": "string"},
                   "description": "Cosa la domanda non dice e cambierebbe la "
-                                 "risposta. Vuoto se la domanda e' completa."}},
-        "required": ["ambito", "manca", "impegnativa", "rispondibile"]}}}]
+                                 "risposta. Vuoto se la domanda e' completa."},
+        "oggetto": {"type": "string",
+                    "description": "IL TIPO DI COSA cercata, al singolare e "
+                                   "senza aggettivi: «nastro», «vaso», "
+                                   "«pallina di Natale». Vuoto se la domanda "
+                                   "non nomina un oggetto (un saluto, un "
+                                   "colore da solo, un'occasione, una "
+                                   "domanda su un testo o sull'archivio)."},
+        "attributi": {"type": "array", "items": {"type": "object", "properties": {
+            "valore": {"type": "string",
+                       "description": "La caratteristica come l'ha detta lei: "
+                                      "«bianco», «cuori rossi», «lucido»."},
+            "tipo": {"type": "string",
+                     "enum": ["colore", "motivo", "materiale", "forma",
+                              "misura", "altro"],
+                     "description": "Che genere di caratteristica e'."}},
+            "required": ["valore", "tipo"]},
+            "description": "Le caratteristiche che l'oggetto deve avere, una "
+                           "per voce. Solo quelle chieste DA LEI, nel "
+                           "discorso: non quelle che comparivano in una "
+                           "risposta di prima. Vuoto se non ne ha chieste."},
+        "dove": {"type": "string",
+                 "enum": ["immagini", "chunks", "documenti", "nessuno"],
+                 "description": "La tabella dove sta la risposta. «nessuno» "
+                                "per un saluto o una chiacchiera."}},
+        "required": ["ambito", "manca", "impegnativa", "rispondibile",
+                     "oggetto", "attributi", "dove"]}}}]
 
 
 def _nodo_analista(stato):
