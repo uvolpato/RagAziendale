@@ -607,6 +607,28 @@ def _strumenti_del_coordinatore(ultima: bool = False,
     return mosse + chiusura
 
 
+def _pezzi_a_parole(stato, con_tabella: bool = False) -> str:
+    """La richiesta SCOMPOSTA, detta in prosa coi dati dentro.
+
+    Non un dict crudo: una frase che dice dove stanno i dati veri, perche' il
+    modello ragiona sulla prosa e poi va a prendere il valore. Una funzione
+    sola perche' la leggono in due — il coordinatore nello stato e il critico
+    nel suo messaggio — e due versioni della stessa frase sarebbero due
+    versioni della stessa richiesta: e' il difetto da cui veniamo.
+    """
+    pezzi = []
+    if stato.get("oggetto"):
+        pezzi.append("l'oggetto cercato e' «%s»" % stato["oggetto"])
+    attributi = [a for a in (stato.get("attributi") or [])
+                 if isinstance(a, dict) and a.get("valore")]
+    if attributi:
+        pezzi.append("gli attributi chiesti sono %s" % ", ".join(
+            "«%s» (%s)" % (a["valore"], a.get("tipo") or "altro") for a in attributi))
+    if con_tabella and stato.get("dove") and stato["dove"] != "nessuno":
+        pezzi.append("la tabella e' `%s`" % stato["dove"])
+    return "; ".join(pezzi)
+
+
 def _stato_a_parole(stato) -> str:
     """Lo stato come lo leggerebbe una persona. E' quello che il coordinatore
     ha davanti a ogni giro: non un riassunto scelto dal codice, ma tutto.
@@ -642,23 +664,10 @@ def _stato_a_parole(stato) -> str:
             "si puo' rispondere: cercando verrebbe fuori un mucchio di cose "
             "tenute insieme da una caratteristica sola, non una risposta "
             "utile.")
-    # I PEZZI, detti in prosa con i dati dentro. Non un dict crudo: una frase
-    # che dice dove stanno i dati veri, perche' il modello ragiona sulla prosa
-    # e poi va a prendere il valore. E detti qui, non lasciati dedurre: la
-    # regola della somma era scritta per intero anche nel prompt del
-    # coordinatore — 1100 caratteri per rifare un lavoro gia' fatto.
-    pezzi = []
-    if stato.get("oggetto"):
-        pezzi.append("l'oggetto cercato e' «%s»" % stato["oggetto"])
-    attributi = [a for a in (stato.get("attributi") or []) if a.get("valore")]
-    if attributi:
-        pezzi.append("gli attributi chiesti sono %s" % ", ".join(
-            "«%s» (%s)" % (a["valore"], a.get("tipo") or "altro") for a in attributi))
-    if stato.get("dove") and stato["dove"] != "nessuno":
-        pezzi.append("la tabella e' `%s`" % stato["dove"])
+    pezzi = _pezzi_a_parole(stato, con_tabella=True)
     if pezzi:
         parti.append("Chi ha letto la domanda l'ha anche SCOMPOSTA, mettendo "
-                     "insieme tutti i turni: " + "; ".join(pezzi)
+                     "insieme tutti i turni: " + pezzi
                      + ". Sono questi i pezzi su cui si cerca.")
     if stato.get("manca"):
         parti.append("Chi ha letto la domanda dice che NON dice: "
@@ -1135,7 +1144,8 @@ Verifichi. Non cerchi e non scrivi la risposta: ti do la conversazione e delle r
 </ruolo>
 
 <cosa_sta_cercando>
-Leggi la conversazione intera, non l'ultima riga. Dopo «hai palline rosse o gialle?», un «niente gialle?» vuol dire palline di Natale gialle, non qualunque cosa gialla. Quello che la persona cerca e' quello che si capisce dal discorso.
+Nello stato hai l'analisi definitiva della richiesta, passata dall'analista. Non devi reinterpretare la conversazione per estrarre l'intento: fidati dei dati indicati.
+Usa la conversazione solo come contesto di sfondo. La tua guida per la verifica sono i dati espliciti: l'oggetto cercato e l'elenco degli attributi richiesti (con il loro tipo: colore, motivo, materiale, forma, misura).
 </cosa_sta_cercando>
 
 <il_verdetto_e_binario>
@@ -1143,13 +1153,12 @@ Due valori, `si` e `no`. Non ce n'e' un terzo, e non ti serve: quello che non sa
 </il_verdetto_e_binario>
 
 <due_domande_in_ordine>
-**Prima: la riga descrive l'OGGETTO chiesto?** Un nastro e' un nastro; una lanterna, un fiore, un vaso, una fotografia non lo sono, nemmeno se sono del colore giusto. Se l'oggetto non c'e', il verdetto e' `no` e hai finito: gli attributi non li guardi nemmeno.
+Per ogni riga dell'archivio, poniti tassativamente due domande in sequenza:
 
-La PAROLA con cui la riga lo chiama puo' essere un'altra: le didascalie sono in inglese e ogni catalogo ha il suo vocabolario — «pebbles», «rocks», «gravel» sono sassi. Quello che non puo' cambiare e' la COSA: un ciondolo di vetro a forma di sasso non e' un sasso.
+1. **La riga descrive l'OGGETTO richiesto?** Confronta la didascalia con l'oggetto cercato. Un vaso non e' un sasso; una lanterna non e' un nastro. Se l'oggetto non corrisponde, il verdetto e' NO. Smetti di leggere e passa alla riga successiva: non guardare gli attributi.
+   *Nota linguistica*: le didascalie sono in inglese (es. «pebbles», «rocks», «gravel» per sassi). Ma la COSA deve essere quella: un ciondolo a forma di sasso non e' un sasso.
 
-**Poi, e solo allora: quell'oggetto ha gli attributi chiesti?**
-
-Le righe arrivano da una ricerca per parole, e una parola si trova anche nella foto sbagliata: la meta' di quelle che hai davanti non e' l'oggetto chiesto. Questo e' il lavoro.
+2. **Se e solo se l'oggetto e' quello giusto: ha gli ATTRIBUTI chiesti?** Controlla gli attributi nell'elenco (colori, motivi, ecc.). Se l'oggetto e' corretto ma manca un attributo vincolante, o c'e' un attributo diverso (es. cuori rosa invece di rossi), il verdetto e' NO.
 </due_domande_in_ordine>
 
 <quando_e_si>
@@ -1175,16 +1184,13 @@ Una riga si scarta perche' non risponde, mai perche' non e' un prodotto.
 </quando_e_no>
 
 <il_motivo>
-**Al massimo otto parole.** Non una frase, un'etichetta: «cuori rossi su fondo bianco», «cuori rosa», «nessun cuore».
+**Al massimo otto parole.** Genera un'etichetta in italiano naturale, secca e telegrafica. Non scrivere frasi intere e non ripetere l'intera descrizione.
 
-Una cosa il motivo la deve dire sempre: **se un attributo chiesto non e' confermato, nominalo.** Sono stati chiesti cuori blu e la riga dice solo «ribbon with heart motifs»? Il motivo e' «cuori si, blu non detto». Chi scrive la risposta legge quel motivo e non puo' far finta che il blu ci fosse.
-
-Niente spiegazioni, niente «potrebbe essere», niente ripetizione della descrizione: quella chi legge ce l'ha gia' davanti.
+Il motivo deve essere lo specchio logico del tuo verdetto:
+- se il verdetto e' NO perche' l'oggetto e' errato, dichiara il rifiuto e nomina cosa c'e': «non un nastro: un vaso», «non un sasso: una lanterna»;
+- se il verdetto e' NO perche' l'oggetto e' giusto ma manca un attributo o e' diverso, nominalo chiaramente: «blu non confermato», «senza cuori», «cuori rosa anziche' rossi»;
+- se il verdetto e' SI, descrivi sinteticamente cosa c'e' davvero, per informare chi scrive: «bianco con cuori rossi», «sassi rosso-marroni». Se e' una variante dall'elenco colori, dillo: «variante blu disponibile».
 </il_motivo>
-
-<righe_gia_guardate>
-Se una riga porta scritto «guardata: ...», qualcuno ha aperto la foto vera e ha risposto a quella domanda. Quella e' una prova migliore della didascalia: se le due si contraddicono, vale la foto. Leggila per intero — «direi di no», «non si vede bene» e «si, ma sono rosa» dicono tre cose diverse.
-</righe_gia_guardate>
 
 <consegna>
 Con lo strumento `verdetti`, uno per ogni riga che ti ho dato. Non saltarne nessuna.
@@ -1261,6 +1267,13 @@ def _giudica(stato, righe, motivo: str, da_fare) -> dict:
                      f"</ultima_cosa_che_ha_scritto>\n"
                      + (f"<di_cosa_si_parla>{stato['ambito']}</di_cosa_si_parla>\n"
                         if stato.get("ambito") else "")
+                     # I PEZZI. Fin qui il critico riceveva la sola frase
+                     # dell'analista e il `motivo` scritto a mano dal
+                     # coordinatore: la stessa richiesta in tre versioni, e
+                     # lui scegliva a quale credere.
+                     + (("<la_richiesta_scomposta>" + _pezzi_a_parole(stato)
+                         + "</la_richiesta_scomposta>\n")
+                        if _pezzi_a_parole(stato) else "")
                      + (f"<cosa_deve_avere_una_riga>{motivo}"
                         f"</cosa_deve_avere_una_riga>\n" if motivo else "")
                      + "\n<righe_da_verificare>\n"
