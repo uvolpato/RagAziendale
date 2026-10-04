@@ -22,6 +22,7 @@ import queue
 import re
 import threading
 import time
+import uuid
 
 import psycopg
 from psycopg.rows import dict_row
@@ -339,15 +340,32 @@ def _e_titolo_librechat(domanda) -> bool:
     return bool(domanda) and bool(TITOLO_LIBRECHAT.search(domanda))
 
 
-def _titolo_librechat(domanda):
+def _titolo_librechat(domanda, stream=True):
     """Genera il titolo della conversazione, senza ricerca ne' gate.
 
     LibreChat manda gia' l'intera conversazione dentro la domanda; qui la si
     rimanda al modello e si restituisce la risposta. Nessun filtro ACL: non si
     leggono documenti, si riassume solo cio' che l'utente ha gia' scritto e
-    visto nella sua stessa chat."""
+    visto nella sua stessa chat.
+
+    Si risponde nella forma che il client ha chiesto. LibreChat chiede il
+    titolo SENZA streaming e legge choices[0].message: a un flusso SSE
+    rispondeva "Cannot read properties of undefined (reading 'message')" e la
+    chat restava "New Chat" (visto il 04/10/2026)."""
     messaggi = [{"role": "system", "content": SUFFISSO_SISTEMA},
                 {"role": "user", "content": domanda}]
+    if not stream:
+        try:
+            titolo = modello.chiedi(messaggi, max_tokens=64)
+        except Exception as e:
+            return JSONResponse({"error": {"message": str(e), "type": "upstream_error"}},
+                                status_code=502)
+        return JSONResponse({
+            "id": f"chatcmpl-{uuid.uuid4().hex}", "object": "chat.completion",
+            "created": int(time.time()), "model": MODEL_NAME,
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": titolo}}],
+        })
 
     def gen():
         try:
@@ -1128,7 +1146,7 @@ async def chat(request: Request):
     # si riconosce e si risponde direttamente col modello, senza ricerca: e' la
     # stessa conversazione che il frontend manderebbe a qualunque LLM.
     if _e_titolo_librechat(domanda):
-        return _titolo_librechat(domanda)
+        return _titolo_librechat(domanda, corpo.get("stream", False))
 
     # 1-bis. Indicizzazione che ha scaricato il modello: si risponde e basta,
     # senza toccare LiteLLM. Nessuna traccia: non c'e' stato nessun turno.
