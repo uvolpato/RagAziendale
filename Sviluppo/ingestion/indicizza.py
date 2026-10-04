@@ -1588,10 +1588,12 @@ def descrivi_indice(solo=None):
     import descrizioni
     try:
         with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as conn:
-            descrizioni.genera_documenti(conn, solo=solo)
-            descrizioni.genera_pagine(conn, solo=solo, quanti=INDICE_PAGINE)
+            return (descrizioni.genera_documenti(conn, solo=solo)
+                    + descrizioni.genera_pagine(conn, solo=solo,
+                                                quanti=INDICE_PAGINE))
     except Exception as e:
         print(f"indice: non riuscito ({type(e).__name__}: {e})", flush=True)
+    return 0
 
 
 def main():
@@ -1601,7 +1603,7 @@ def main():
     solo = sys.argv[sys.argv.index("--solo") + 1] if "--solo" in sys.argv else None
     while True:
         inizio = time.time()
-        cambi, completati = [], 0
+        cambi, completati, descritti = [], 0, 0
         try:
             esiti, completati = giro(aspetta=una_volta, forza=forza, solo=solo)
             if esiti is None:
@@ -1612,8 +1614,11 @@ def main():
             # chat puo' scrivere le descrizioni che la ricerca a due stadi
             # legge. Prima di questo la tabella `indice` era vuota e nessuno
             # generava niente (4/10/2026).
-            if cambi or completati or una_volta:
-                descrivi_indice(solo)
+            # Ogni giro, non solo quando qualcosa e' cambiato: l'indice ha
+            # migliaia di pagine da descrivere e un tetto per giro, quindi il
+            # lavoro continua anche quando non arrivano documenti nuovi. A
+            # mani vuote costa due SELECT.
+            descritti = descrivi_indice(solo)
             if cambi or completati or una_volta:
                 print(f"giro in {time.time() - inizio:.0f}s: {json.dumps(esiti, ensure_ascii=False)}"
                       + (f"; vettori aggiunti a {completati} pezzi" if completati else ""), flush=True)
@@ -1630,7 +1635,9 @@ def main():
         # non c'e' niente da fare — compresi i giri in cui l'unica cosa
         # successa e' aver rimandato file grossi (la GPU e' occupata: insistere
         # ogni secondo non la libera).
-        if not (cambi or completati):
+        # Se l'indice ha scritto qualcosa, c'e' ancora lavoro: si riparte
+        # subito, come dopo un documento nuovo.
+        if not (cambi or completati or descritti):
             time.sleep(INTERVALLO)
 
 
