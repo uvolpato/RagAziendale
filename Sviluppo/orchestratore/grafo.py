@@ -1614,7 +1614,17 @@ def _revisore(stato, bozza: str, confermate, etichette) -> list:
     messaggi = [{"role": "system", "content": _prompt("revisore", P_REVISORE)}]
     messaggi += stato.get("storia") or [{"role": "user", "content": stato["domanda"]}]
     messaggi.append({"role": "user", "content":
-                     "<righe_che_aveva_davanti>\n"
+                     # COSA ERA STATO CHIESTO. Giudicava «promette» ricavandosi
+                     # da se' la richiesta dalla bozza e dalle righe: l'ultimo
+                     # agente a ri-dedurre quello che l'analista aveva gia'
+                     # deciso. Non passa dal redattore — glielo farebbe
+                     # riscrivere, e sarebbe una terza versione della
+                     # richiesta, come `<cosa_deve_avere_una_riga>` per il
+                     # critico.
+                     (("<cosa_era_stato_chiesto>" + _pezzi_a_parole(stato)
+                       + "</cosa_era_stato_chiesto>\n\n")
+                      if _pezzi_a_parole(stato) else "")
+                     + "<righe_che_aveva_davanti>\n"
                      + _scheda(confermate, verdetti=etichette, visto=True,
                                per_chi_scrive=True)
                      + "\n</righe_che_aveva_davanti>\n\n"
