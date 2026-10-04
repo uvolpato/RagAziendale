@@ -1362,6 +1362,12 @@ P_REDATTORE = """<ruolo>
 Scrivi la risposta per la persona, in italiano. Usi solo gli articoli che ti do: non aggiungere articoli, pagine, codici o prezzi che non sono li' dentro.
 </ruolo>
 
+<cosa_era_stato_chiesto>
+Nello stato hai i dati esatti estratti a monte dall'analista. Usali come termine di paragone per misurare la distanza fra quello che la persona voleva e quello che gli articoli offrono davvero:
+- `oggetto`: il tipo di cosa cercata (es. «nastro»).
+- `attributi`: le caratteristiche chieste (es. «colore: blu», «motivo: cuori»).
+</cosa_era_stato_chiesto>
+
 <di_cosa_puoi_parlare>
 Di quello che la persona puo' vedere: gli articoli, i cataloghi, le pagine. Niente altro.
 
@@ -1369,10 +1375,10 @@ Come ci sei arrivato, per chi legge, non esiste: non ha un nome, non si spiega, 
 </di_cosa_puoi_parlare>
 
 <quando_non_hai_articoli>
-Guarda prima se in fondo ai dati c'e' un testo da consegnare com'e' (vedi sotto: quello comanda). Se non c'e':
+Guarda prima se in fondo ai dati c'e' un testo da consegnare com'e' (vedi sotto: `<da_consegnare_come_e>` comanda). Se non c'e':
 
 - era un SALUTO o una chiacchiera: **rispondi e fermati.** Una parola, due. Qualunque cosa aggiungi dopo sara' una scusa per qualcosa che la persona non ti ha chiesto.
-- si e' cercato davvero: di' in una frase che la cosa cercata non c'e'. Quello che manca e' l'ARTICOLO — un nastro, un vaso — mai qualcosa di nostro.
+- si e' cercato davvero: di' in una frase sola che l'articolo cercato non c'e', NOMINANDOLO con l'oggetto chiesto: «non ho trovato nessun nastro con queste caratteristiche». Quello che manca e' l'ARTICOLO, mai qualcosa di nostro.
 </quando_non_hai_articoli>
 
 <di_quello_che_hai>
@@ -1382,7 +1388,11 @@ Descrivi ogni articolo con le parole di `<descrivi>`, e accanto, in mezza riga, 
 </di_quello_che_hai>
 
 <non_promettere_cio_che_non_hai>
-Non riusare le parole della domanda per intestare quello che hai. Se gli articoli parlano di cuori rossi, la tua frase dice cuori rossi — e poi, se serve, che di blu non ne sono venuti fuori.
+Confronta gli articoli che hai ricevuto con l'oggetto e gli attributi chiesti.
+
+La tua prima frase, o l'intestazione dell'elenco, non deve MAI promettere l'oggetto perfetto se i dati dicono altro. Se la persona ha chiesto un regalo o un oggetto con certi attributi — il colore blu — e gli articoli mostrano caratteristiche diverse o parziali — il colore avorio — la tua introduzione deve essere onesta e letterale su cio' che c'e'.
+
+Esempio: se gli articoli parlano di cuori rossi, la tua frase dice che sono disponibili cuori rossi — e poi dichiari esplicitamente che di blu non ne sono venuti fuori. Non intitolare mai un elenco basandoti sulla richiesta della persona se gli articoli sotto non la coprono interamente.
 
 Promettere nel titolo e smentirsi nell'elenco e' il modo piu' veloce di perdere chi legge, perche' si fida della prima frase.
 </non_promettere_cio_che_non_hai>
@@ -1606,7 +1616,15 @@ def _nodo_redattore(stato):
                      # divieto citato insegna la frase che vieta. Ora si
                      # chiama come la cosa che deve consegnare, cosi' se lo
                      # ricopia non fa danno (2/10/2026, in chat).
-                     "<articoli_trovati>\n"
+                     # COSA ERA STATO CHIESTO. Tutto il suo prompt parlava di
+                     # quello che ha TROVATO: la domanda gli arrivava solo in
+                     # prosa, dentro la conversazione, mentre gli articoli gli
+                     # arrivano strutturati. Non sapeva quale attributo doveva
+                     # essere verificato, e su `aperta-regalo` prometteva.
+                     (("<cosa_era_stato_chiesto>" + _pezzi_a_parole(stato)
+                       + "</cosa_era_stato_chiesto>\n\n")
+                      if _pezzi_a_parole(stato) else "")
+                     + "<articoli_trovati>\n"
                      + _scheda(confermate, verdetti=etichette,
                                visto=True, per_chi_scrive=True)
                      + "\n</articoli_trovati>"
