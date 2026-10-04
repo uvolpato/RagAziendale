@@ -23,13 +23,21 @@ import os
 from psycopg.rows import tuple_row
 
 ISTRUZIONI = (
-    "Ti do le intestazioni delle pagine di un documento aziendale. Scrivi in "
-    "una frase breve (max 30 parole) di cosa parla il documento nel suo "
-    "complesso: quali tipi di prodotti o argomenti contiene.\n"
-    "Se e' un catalogo, elenca le categorie principali di prodotti. Se e' una "
-    "policy o una guida, di' l'argomento.\n"
-    "Non inventare dettagli che le intestazioni non mostrano. Scrivi in "
-    "italiano, solo la frase, niente introduzioni.\n"
+    "Ti do le intestazioni di un documento aziendale. Scrivi in una frase "
+    "breve (max 30 parole) di cosa parla.\n"
+    "QUESTO ARCHIVIO NON E' FATTO SOLO DI CATALOGHI: ci sono cataloghi di "
+    "prodotti, e ci sono procedure, manuali, relazioni, note di progetto, "
+    "specifiche tecniche, regole di lavoro. Guarda le intestazioni e di' che "
+    "cosa e' QUESTO documento: se e' un catalogo elenca le categorie di "
+    "prodotti, se e' un testo di' il suo argomento.\n"
+    "Non immaginare niente che le intestazioni non mostrino, nemmeno il "
+    "GENERE del documento. Se sono poche e non bastano, dillo e riportale — "
+    "«le intestazioni non dicono di cosa parla: x, y» — invece di "
+    "immaginarlo: una descrizione inventata finisce nell'indice e manda a "
+    "cercare nel documento sbagliato. Misurato: da una sola intestazione, "
+    "«Sii sintetico nelle risposte», e' uscito «un catalogo di prodotti "
+    "tecnologici» per un file di regole di progetto.\n"
+    "Scrivi in italiano, solo la frase, niente introduzioni.\n"
     "/NO_THINK"
 )
 
@@ -82,7 +90,7 @@ def _intestazioni(conn, source_id, documento, limite=120):
     Un campione, non tutto: bastano a dire di cosa parla il documento, e un
     catalogo ha centinaia di pagine. La prima riga non vuota di ogni pezzo, un
     pezzo per pagina, senza doppioni."""
-    righe, viste = [], set()
+    righe = []
     with conn.cursor(row_factory=tuple_row) as cur:
         cur.execute(
             """SELECT page, content FROM chunks
@@ -90,9 +98,11 @@ def _intestazioni(conn, source_id, documento, limite=120):
                ORDER BY page, id LIMIT %s""",
             (source_id, documento, limite * 3))
         for page, content in cur.fetchall():
-            if page in viste:
-                continue
-            viste.add(page)
+            # Una riga per PEZZO, non una per pagina. Il campione per pagina
+            # e' tarato sui PDF, dove un pezzo E' una pagina; un .md non ha
+            # pagine — tutto il suo testo sta sulla pagina 0 — e «una per
+            # pagina» diventava UNA IN TUTTO. I doppioni li toglie il
+            # controllo qui sotto, che guarda il TESTO: e' quello che conta.
             prima = next((r.strip() for r in (content or "").splitlines()
                           if r.strip() and not r.strip().startswith("|")), "")
             if prima and prima not in righe:
