@@ -1179,6 +1179,21 @@ prende `riga`, `esito` e `motivo` e il resto passa. Il confronto fra l'oggetto
 dichiarato dal critico e quello dell'analista NON si fa in Python — sarebbe la
 cura del caso di oggi e il difetto di domani intatto.
 
+**L'assenza non e' una prova, se le righe ci sono e non le passi.** Nella chat
+del 4/10 sera, dopo «ne hai anche di viola?», il sistema ha risposto «Ci sono
+dei sassi viola nel campione» con zero righe confermate e `rilievi: []`. Il
+revisore non poteva accusare: `<come_si_accusa>` gli chiede di copiare la riga
+che smentisce, e con zero righe quella prova non esiste per costruzione —
+glielo dicevamo anche a parole, «zero righe citate non e' mai una prova di
+colpa». Dargli il permesso di accusare sull'assenza e' costato un punto
+(`aperta-regalo` 2/3 -> 1/3): nell'imbuto le righe ESISTONO, sono quelle del
+campione da cui la guida costruisce le strade, e `_guida` le buttava via
+restituendo solo il testo. Passandogli il campione, le due risposte a imbuto
+si distinguono dal dato: «ci sono oggetti blu come vasi, decorazioni e sassi»
+con 2 sassi nel campione e' pulita, «ci sono dei sassi viola» con 0 sassi e'
+promette — 3 giri su 3 su entrambe. Banco 29/30 in 264s, il tempo migliore
+della giornata.
+
 ## 9. Una nota di configurazione, non di progetto
 
 Il container in esecuzione ha `SQL_AGENTE=1`. Su disco `.env` e

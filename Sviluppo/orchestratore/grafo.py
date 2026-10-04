@@ -893,6 +893,7 @@ def _nodo_mosse(stato):
     verdetti = dict(stato.get("verdetti") or {})
     traccia, esiti = [], []
     chiarimento = stato.get("chiarimento") or ""
+    campione = list(stato.get("campione") or [])
     mosse = stato.get("mosse") or []
 
     for nome, arg in mosse:
@@ -963,8 +964,10 @@ def _nodo_mosse(stato):
                       "scegli tu una delle strade e la cerchi.")
                 traccia.append(_nota("guida", {"gia_fatto": True}, 0, t0))
                 continue
-            proposta = _guida(stato, str(arg.get("motivo") or ""),
-                              str(arg.get("cerca") or ""))
+            proposta, visto = _guida(stato, str(arg.get("motivo") or ""),
+                                     str(arg.get("cerca") or ""))
+            if visto:
+                campione = [dict(r) for r in visto]
             if proposta:
                 chiarimento = proposta
                 esiti.append("proponi: ventaglio pronto, chiudi con `chiedi`")
@@ -988,6 +991,7 @@ def _nodo_mosse(stato):
             traccia.append(_nota("osservatore", {"foto": len(guardate)}, 0, t0))
 
     return {"righe": righe, "verdetti": verdetti, "mosse": [],
+            "campione": campione,
             "chiarimento": chiarimento,
             "esiti": esiti, "eseguite": eseguite, "respinte": respinte,
             "query_fatte": sorted(viste_sql),
@@ -1090,8 +1094,13 @@ I_PERCORSO = [{"type": "function", "function": {
         "required": ["introduzione", "scelte", "domanda"]}}}]
 
 
-def _guida(stato, motivo: str, cerca: str = "") -> str:
-    """Il ventaglio di strade, costruito sulle righe vere. "" se non riesce.
+def _guida(stato, motivo: str, cerca: str = "") -> tuple:
+    """Il ventaglio di strade e le righe su cui e' costruito.
+
+    Torna ("", []) se non riesce. Il CAMPIONE esce insieme al testo: e'
+    l'unica prova che una risposta a imbuto abbia qualcosa dietro, e chi
+    rilegge la risposta senza di esso vede zero righe e non puo'
+    distinguere una strada vera da una inventata.
 
     Il campione si cercava con `ambito`, che e' la frase dell'analista — e una
     frase che comincia con «la persona sta cercando» somiglia, per un modello
@@ -1112,7 +1121,7 @@ def _guida(stato, motivo: str, cerca: str = "") -> str:
         stato["gruppi"], stato["aziende"], quanti=GUIDA_CAMPIONE,
         colonne="id, documento, page, descrizione")
     if not campione:
-        return ""
+        return "", []
     messaggi = [{"role": "system", "content": _prompt("guida", P_GUIDA)}]
     messaggi += stato.get("storia") or []
     messaggi.append({"role": "user", "content":
@@ -1136,8 +1145,8 @@ def _guida(stato, motivo: str, cerca: str = "") -> str:
         parti = [str(arg.get("introduzione") or "").strip()]
         parti += [f"- {s}" for s in scelte[:5]]
         parti.append(str(arg.get("domanda") or "").strip())
-        return "\n".join(p for p in parti if p)
-    return ""
+        return "\n".join(p for p in parti if p), campione
+    return "", []
 
 
 # ==========================================================================
@@ -1494,12 +1503,16 @@ Rileggi una risposta prima che venga consegnata. Non la riscrivi: dici se c'e' q
 
 <cosa_ti_do>
 La conversazione, la risposta, e le righe che chi l'ha scritta aveva davanti, con il loro numero di riferimento. Le righe sono la verita': quello che non e' li' dentro, chi scrive non lo aveva.
+
+Quando la risposta mostra delle strade invece di articoli, le righe citate non ci sono e al loro posto trovi il CAMPIONE: le righe dell'archivio su cui quelle strade sono state costruite. Valgono come le altre.
 </cosa_ti_do>
 
 <come_si_accusa>
 Cerchi tre cose, una per volta. Per ognuna la risposta onesta e' «no» quasi sempre.
 
 Per dire «si'» ti servono due cose: le parole esatte della risposta che lo mostrano, e la riga che le smentisce, copiata. Se non riesci a copiare quella riga perche' non c'e', la colpa non c'e'.
+
+Quando la risposta non cita righe ma afferma che la cosa chiesta c'e', le righe da guardare sono quelle del CAMPIONE: e' quello che chi ha scritto aveva davanti. Se nel campione quella cosa non c'e', la prova e' questa, e basta copiare la frase che afferma.
 
 La riga che copi deve parlare della stessa cosa di cui parla la risposta. Una riga qualsiasi non e' una prova.
 </come_si_accusa>
@@ -1517,7 +1530,9 @@ L'apertura afferma di aver trovato quello che era stato chiesto, e le righe dico
 
 Se descrive quello che ha per com'e', questa e' no — anche quando quello che ha non e' esattamente cio' che era stato chiesto.
 
-Una risposta che mostra delle scelte invece di proporre articoli non cita niente, e non e' una promessa: e' un orientamento. Zero righe citate non e' mai una prova di colpa.
+Un orientamento che OFFRE delle strade da scegliere — «ci sono vasi, decorazioni e sassi: vuoi cercare fra questi?» — non promette niente, e non e' colpa nemmeno se non cita nessuna riga: sta chiedendo, non consegnando.
+
+Ma un orientamento che AFFERMA CHE LA COSA CHIESTA C'E' e' una promessa come tutte le altre, e si controlla nel campione. Su «hai qualcosa di blu», «ci sono oggetti blu come vasi, decorazioni e sassi» e' pulita: nel campione ci sono. Su «ne hai anche di viola?», «ci sono dei sassi viola nel campione» e' promette: nel campione non c'e' un sasso. Le strade offerte vanno bene in tutti e due i casi, l'affermazione solo nel primo.
 </promette>
 
 <non_verificabile>
@@ -1628,6 +1643,16 @@ def _revisore(stato, bozza: str, confermate, etichette) -> list:
                      + _scheda(confermate, verdetti=etichette, visto=True,
                                per_chi_scrive=True)
                      + "\n</righe_che_aveva_davanti>\n\n"
+                     # IL CAMPIONE. Una risposta a imbuto non cita righe, ma
+                     # le righe ci sono: sono quelle da cui la guida ha
+                     # costruito le strade. Senza, «ci sono confezioni
+                     # regalo» (vero, stanno nel campione) e «ci sono dei
+                     # sassi viola» (falso, nel campione non c'e' un sasso)
+                     # sono indistinguibili — zero righe tutt'e due.
+                     + (("<righe_del_campione>\n"
+                         + _scheda(list(stato["campione"])[:GUIDA_CAMPIONE])
+                         + "\n</righe_del_campione>\n\n")
+                        if not confermate and stato.get("campione") else "")
                      + "<risposta_da_rileggere>\n" + bozza
                      + "\n</risposta_da_rileggere>"})
     for nome, arg in _decide(messaggi, I_REVISIONE):
@@ -2079,6 +2104,7 @@ class Stato(TypedDict):
     righe: list
     verdetti: dict
     confermate: list
+    campione: list            # le righe su cui la guida ha costruito le strade
     etichette: dict           # numero di riga -> si | non verificata
     risposta: str
     passi: int
