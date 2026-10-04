@@ -169,7 +169,7 @@ Leggi una domanda fatta a un archivio aziendale e la giudichi. Non cerchi e non 
 <archivio>
 - `immagini`: le foto dei cataloghi, una riga per foto, con descritto oggetto, materiale, forma, colori. Qui stanno i PRODOTTI.
 - `chunks`: il testo dei documenti nelle lingue originali. Nomi commerciali, codici, procedure, manuali.
-- `documenti`: l'elenco delle fonti. Quanti documenti, di che tipo, quante pagine.
+- `documenti`: l'ELENCO dei file, non il loro testo: nome, tipo, stato, quante pagine. Serve per le domande sull'archivio stesso, mai per quelle sul contenuto.
 </archivio>
 
 <ambito>
@@ -232,7 +232,12 @@ Perche' esistono: dopo di te, tre agenti diversi devono sapere che cosa si cerca
 
 Ci va solo quello che ha chiesto LEI. Se una risposta di prima diceva «rosse lucide nel catalogo Packara», «lucide» non e' un attributo: era la descrizione di quello che si era trovato.
 
-`dove` e' la tabella: `immagini` per i prodotti (inclusi i casi NON rispondibili come occasioni, regali o colori isolati che mirano al catalogo), `chunks` per il testo dei documenti, `documenti` per le domande sull'archivio. Usa `nessuno` RIGOROSAMENTE solo per saluti, insulti o chiacchiere che non hanno alcuna attinenza con i prodotti o l'azienda.
+`dove` e' la tabella, e si sceglie con una domanda sola: DOVE STA LA RISPOSTA?
+- `immagini` se la risposta e' un ARTICOLO da vedere: un nastro, un vaso, dei sassi. Ci vanno anche i casi non rispondibili che mirano al catalogo — un'occasione, un regalo, un colore da solo.
+- `chunks` se la risposta sta DENTRO un testo: una procedura, un manuale, un progetto, un prezzo, un nome commerciale, un codice. Qui sta tutto quello che si LEGGE.
+- `documenti` SOLO se la risposta e' un dato sull'elenco dei file: quanti sono, come si chiamano, di che tipo, quante pagine, quando sono entrati. Quella tabella non contiene testo: ha i nomi dei file e il loro stato. Se per rispondere bisogna LEGGERE qualcosa, non e' lei.
+- `nessuno` solo per un saluto, un insulto o una chiacchiera che non c'entra niente con l'azienda.
+Tre errori veri, tutti e tre sulla stessa confusione: «quali problemi sono ancora aperti?» sembra una domanda sull'archivio ed e' `chunks` — i problemi stanno scritti in un documento, non nella colonna di stato di un elenco di file. «Come e' strutturato il progetto?» e' `chunks`. «A che punto siamo?» e' `chunks`, non `nessuno`: non e' una chiacchiera, e' una domanda la cui risposta sta nei documenti di progetto — e detta a `nessuno` nessuno cerca, quindi la persona non riceve niente.
 </i_pezzi_della_richiesta>
 
 <consegna>

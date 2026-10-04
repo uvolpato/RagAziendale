@@ -43,7 +43,13 @@ ISTRUZIONI_PAGINA = (
     "/NO_THINK"
 )
 
-SECONDI = float(os.environ.get("INDICE_TIMEOUT", "60"))
+# Il TEMPO DI CARICAMENTO, non il tempo di una risposta. Questo giro
+# scarica il modello di chat per far posto a Docling (`scarica_llm`), e
+# qui in coda llama-swap deve ricaricarne 9 GB: la prima chiamata paga
+# il caricamento e a 60 secondi sforava — «TimeoutError: timed out», e
+# la descrizione saltava (4/10/2026). Le successive sono veloci, perche'
+# il modello resta caricato (ttl 0 nel YAML di llama-swap).
+SECONDI = float(os.environ.get("INDICE_TIMEOUT", "300"))
 
 
 def _chiedi(messaggi) -> str:
