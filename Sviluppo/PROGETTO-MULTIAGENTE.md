@@ -1080,6 +1080,55 @@ paragrafo in due voci di elenco, stesse regole e stesso ordine, ha portato
 il banco da 42/45 a 35/45. Quindi «meglio in principio» qui non vale: si
 misura prima e dopo, con il giudice tarato, o non si fa.
 
+## 8-ter. Tre cose misurate il 3-4/10/2026, e un buco nel banco
+
+**La struttura schiacciata in prosa.** Sette difetti diversi, una causa sola:
+la didascalia e' un record (`object:`, `material:`, `colours:`, `code:` —
+completo nel 94% delle 15.143 righe) tenuto in un `text`, e sei agenti la
+ri-analizzano a occhio a ogni turno. Il taglio a 300 caratteri tagliava via
+`Colours:` e il critico scartava i sassi rossi perche' «red» stava al
+carattere 450; l'embedding calcolato su tutto il blob fa somigliare «qualcosa
+di blu» alle foto delle persone. Primo pezzo riparato: l'analista consegna la
+richiesta SCOMPOSTA (`oggetto`, `attributi` col loro tipo, `dove`), lo stato
+la dice in prosa coi dati dentro, e il coordinatore ha perso 1100 caratteri
+di regole che rifacevano quel lavoro.
+
+**Vince l'ordine, non la ripetizione.** Una regola scritta in DUE punti del
+prompt usciva sbagliata 9 volte su 9 (`impegnativa` su domanda non
+rispondibile). Scritta UNA volta, come cancello in testa al blocco e prima
+dell'elenco dei casi, esce giusta 9 su 9. Un campo che dipende da un altro
+deve leggere per primo la sua dipendenza: messa in mezzo alle alternative, la
+dipendenza non vale.
+
+**Tagliare un prompt costa piu' che aggiungerci.** Tolti 561 caratteri da
+`MAPPA_OPERATORI` credendoli spiegazioni ridondanti: il banco e' passato da
+29/30 a 22/30 e 21/30, due giri. Dentro c'erano tre frasi con numeri
+misurati, e una sola — l'esempio concreto `'red' AND 'stone|rock|pebble|
+gravel'` — era la differenza fra otto sassi rossi veri e una risposta che
+presentava del MUSCHIO come un sasso rosso.
+
+**L'ancoraggio del confine di parola in codice: misurato e NON adottato.**
+`~*` cerca lettere anche dentro le altre parole, e il modello scrive male il
+token: `'\mbblue'` e `'\mb\mblue'`, query lecite che non possono
+corrispondere a niente, 2 giri su 2 su «hai nastri blu lucidi». Mettere il
+confine nel compilatore chiude la classe, e sul banco e' neutro (27/30
+contro 29/30, e sul caso che si muoveva la differenza era UNA riga su 44:
+rumore). Ma sui dati costa recall dove il banco non guarda — su `chunks`,
+tedesco: `kugel` 1431 -> 1191 (-17%), `stern` 362 -> 292 (-19%), `ball`
+1534 -> 1409, `band` -9%, `kerze` -4%. Le parole composte con la coda
+(«Weihnachtskugel», «football») sono esattamente come si cerca nei
+documenti. Costo largo, beneficio stretto: non adottato, il difetto resta
+noto. Il diff e' in `/scratchpad/ancoraggio.patch`.
+
+**IL BUCO: il banco non misura la ricerca.** Giudica la RISPOSTA — mente?
+promette? nega? — e non chiede mai «ha trovato le 7 pagine che esistono».
+Il 3/10 due difetti da giorni (il taglio a 300 caratteri e il `~*` senza
+confini) l'hanno attraversato con 27/30; il 4/10 una modifica che costa il
+19% di recall su `chunks` non ha mosso un punto. Serve un banco della
+RICERCA: dieci-quindici domande con le pagine vere lette a mano una volta,
+su entrambe le tabelle, e due numeri — quante trovate, quante giuste.
+Nessun giudice, gira in secondi, si lancia dopo ogni modifica.
+
 ## 9. Una nota di configurazione, non di progetto
 
 Il container in esecuzione ha `SQL_AGENTE=1`. Su disco `.env` e
