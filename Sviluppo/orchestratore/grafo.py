@@ -381,6 +381,7 @@ Un WHERE col solo colore e senza l'oggetto non e' una ricerca piu' larga: e' un'
 <le_tue_mosse>
 - `cerca` esegue una query che scrivi tu. Puoi chiamarla piu' volte nello stesso giro e partono tutte insieme: se ci sono due strade indipendenti, aprile subito entrambe. Una ricerca costa cinquanta millisecondi, un giro in piu' ne costa quattordicimila.
   **Ordina sempre per pertinenza e metti un limite**: `ORDER BY SIMILE('la richiesta in italiano') LIMIT 20`. Senza, torni quaranta righe in ordine qualsiasi: chi le verifica le legge tutte una per una, e quelle che arrivano a chi ha chiesto non sono le piu' vicine a quello che voleva. Un `~*` coi confini di parola che taglia il grosso, piu' `SIMILE` che ordina il resto: e' la combinazione che rende di piu'.
+- `esplora` guarda l'INDICE invece dei dati: di ogni documento c'e' una descrizione di cosa contiene, di ogni pagina un riassunto. Serve quando non sai con che parole l'archivio chiama la cosa, o in quale documento sta — cioe' quasi sempre, su una domanda che riguarda un testo. Costa come una ricerca e ti risparmia le query a vuoto.
 - `verifica` fa leggere le righe trovate una per una e dice quali rispondono davvero.
 - `guarda` riapre la foto vera, per le righe su cui la descrizione non basta a decidere.
 - `proponi` costruisce le scelte da mostrare alla persona, leggendole nell'archivio. Gli dici TU cosa cercare, con le parole con cui la chiamerebbe lei — «oggetti sportivi», «regali per una mamma» — come dentro `SIMILE()`. Si chiama una volta per giro, e il risultato resta nello stato.
@@ -571,6 +572,23 @@ def _strumenti_del_coordinatore(ultima: bool = False,
                         "description": "Una SELECT su una sola tabella. Vedi la mappa dei dati."},
                 "motivo": {"type": "string", "description": "Cosa cerchi, in una riga."}},
                 "required": ["sql"]}}},
+        {"type": "function", "function": {
+            "name": "esplora",
+            "description": ("Guarda l'INDICE prima dei dati: di ogni documento "
+                            "c'e' una descrizione di cosa contiene, e di ogni "
+                            "pagina un riassunto. Ti dice DOVE sta la risposta "
+                            "e con che parole l'archivio chiama le cose, "
+                            "prima che tu scriva una query. Costa come una "
+                            "ricerca e non legge nessuna riga di dati."),
+            "parameters": {"type": "object", "properties": {
+                "cerca": {"type": "string",
+                          "description": "Cosa stai cercando, in ITALIANO e "
+                                         "come l'ha detto la persona: «a che "
+                                         "punto e' il progetto», «la procedura "
+                                         "sui resi», «sassi rossi». Si cerca "
+                                         "per significato, quindi scrivi la "
+                                         "domanda, non una parola indovinata."}},
+                "required": ["cerca"]}}},
         {"type": "function", "function": {
             "name": "proponi",
             "description": ("Quando la domanda si risponde con una SCELTA e non "
@@ -954,6 +972,29 @@ def _nodo_mosse(stato):
                 sum(1 for v in nuovi.values() if v == "si"),
                 sum(1 for v in nuovi.values() if v == "no")))
             traccia.append(_nota("critico", {"verificate": len(nuovi)}, 0, t0))
+        elif nome == "esplora":
+            t0 = time.monotonic()
+            # L'INDICE, prima dei dati. Non restringe niente da solo: fa
+            # leggere al coordinatore di cosa parlano i documenti, cosi' la
+            # query dopo la scrive sapendo, invece di indovinare una parola.
+            from orchestratore import indice as _indice
+            cosa = str(arg.get("cerca") or stato["domanda"]).strip()
+            trovate = _indice.vicine(conn, recupero.embedding(cosa, query=True),
+                                     gruppi)
+            if trovate:
+                esiti.append(
+                    "esplora: l'indice dice dove guardare (le pagine le citi "
+                    "con `page`, i documenti con `documento`)\n"
+                    + "\n".join(
+                        "- %s%s: %s" % (d, "" if p is None else " p.%s" % p,
+                                        " ".join(str(t).split())[:160])
+                        for d, p, t in trovate))
+            else:
+                esiti.append("esplora: l'indice non ha ancora descrizioni per "
+                             "questi documenti — cerca nei dati")
+            traccia.append(_nota("esplora", {"cerca": cosa[:60],
+                                             "trovate": len(trovate)},
+                                 len(trovate), t0))
         elif nome == "proponi":
             t0 = time.monotonic()
             # Il ventaglio c'e' gia': rifarlo sullo stesso stato da' lo stesso

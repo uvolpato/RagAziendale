@@ -106,5 +106,42 @@ def descrizioni_visibili(conn, gruppi):
         return [(r[0], r[1]) for r in cur.fetchall()]
 
 
+def vicine(conn, qvec, gruppi, documenti=4, pagine=8):
+    """Le descrizioni piu' vicine alla domanda: documenti E pagine, col TESTO.
+
+    `pertinenti` e `pagine_pertinenti` tornano i nomi, e servono a restringere
+    una query. Qui serve altro: far LEGGERE al coordinatore di cosa parlano i
+    documenti, perche' il suo problema non e' restringere — e' non sapere come
+    l'archivio chiama le cose, e tirare a indovinare una parola.
+
+    Torna (documento, page, descrizione) con `page` None per il livello
+    documento. Stesso filtro ACL dei fratelli: gruppi, aziende, sorgente
+    attiva."""
+    if qvec is None:
+        return []
+    from .identita import aziende as aziende_di
+    aziende = aziende_di(gruppi)
+    if not gruppi or not aziende:
+        return []
+    fuori = []
+    with conn.cursor(row_factory=tuple_row) as cur:
+        for solo_documenti, quanti in ((True, documenti), (False, pagine)):
+            if not quanti:
+                continue
+            cur.execute(
+                """SELECT i.documento, i.page, i.descrizione
+                   FROM indice i
+                   JOIN sources s ON s.id = i.source_id
+                   WHERE (i.page IS NULL) = %(solo)s
+                     AND s.acl_groups && %(gruppi)s::text[]
+                     AND s.aziende && %(aziende)s::text[]
+                     AND s.stato = 'attiva'
+                   ORDER BY i.descrizione_vec <=> %(qvec)s::vector
+                   LIMIT %(quanti)s""",
+                {"solo": solo_documenti, "gruppi": gruppi, "aziende": aziende,
+                 "qvec": qvec, "quanti": quanti})
+            fuori += [(r[0], r[1], r[2]) for r in cur.fetchall()]
+    return fuori
+
 def _prova():
     print("indice: import ok")
