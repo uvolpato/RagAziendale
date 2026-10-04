@@ -358,9 +358,13 @@ Nello stato trovi l'analisi della richiesta gia' pronta, calcolata dall'analista
 
 - `rispondibile`: se e' FALSE, salta immediatamente al blocco <se_la_domanda_non_e_rispondibile>.
 - `dove`: e' la tabella di destinazione indicata dall'analista. Cerca solo li'.
-- `oggetto` e `attributi`: sono la tua bussola per costruire la query, ma rispettando RIGOROSAMENTE le regole di MAPPA_OPERATORI per non svuotare la ricerca:
-  * l'oggetto e i colori vanno nel WHERE (con `~*`);
-  * le finiture, i motivi o le occasioni NON vanno nel WHERE: si passano solo dentro `ORDER BY SIMILE()`, per portare in cima i candidati migliori senza escludere i dati parziali.
+- `attributi`: i colori vanno nel WHERE, uno per condizione. Le finiture, i motivi e le occasioni NO: quelli si passano solo dentro `ORDER BY SIMILE()`, per portare in cima i candidati migliori senza escludere le didascalie che non li scrivono.
+
+PRIMA DI SCRIVERE LA QUERY, UN CONTROLLO TASSATIVO: nel WHERE c'e' l'OGGETTO?
+
+L'oggetto ti arriva in ITALIANO — «sasso», «nastro», «pallina» — e le didascalie sono in INGLESE. La traduzione la fai tu, ed e' il tuo lavoro piu' importante: se non sei sicuro di quale sia la parola giusta, METTINE DIVERSE dentro un `|` — «sasso» diventa `'stone|rock|pebble|gravel'`, non una sola parola indovinata. Il `|` non costa niente.
+
+Un WHERE col solo colore e senza l'oggetto non e' una ricerca piu' larga: e' un'altra ricerca. Su «sassi rossi» ha riportato un ventaglio di colori, due palle disco, tre Babbi Natale, un raccordo idraulico e una pinza da bucato — venti righe rosse, zero sassi. Il colore senza l'oggetto non cerca niente.
 </usa_i_pezzi_dell_analista>
 
 <dove_si_cerca>
@@ -1274,8 +1278,15 @@ def _giudica(stato, righe, motivo: str, da_fare) -> dict:
                      + (("<la_richiesta_scomposta>" + _pezzi_a_parole(stato)
                          + "</la_richiesta_scomposta>\n")
                         if _pezzi_a_parole(stato) else "")
-                     + (f"<cosa_deve_avere_una_riga>{motivo}"
-                        f"</cosa_deve_avere_una_riga>\n" if motivo else "")
+                     # Qui c'era `<cosa_deve_avere_una_riga>`: il criterio
+                     # che il COORDINATORE scriveva a mano chiamando
+                     # `verifica`. Era la terza versione della richiesta — le
+                     # parole della persona, i pezzi dell'analista, e questa —
+                     # e vinceva sulle altre due: il 4/10/2026 su «ho bisogno
+                     # di sassi rossi» il coordinatore ha scritto «rossi
+                     # confermati», e il critico ha confermato una sfera a
+                     # rete e del muschio perche' erano rossi. Il criterio
+                     # adesso e' uno: i pezzi.
                      + "\n<righe_da_verificare>\n"
                      + _scheda([r for _, r in da_fare], numeri=numeri,
                                    visto=True, intera=True)
@@ -2139,6 +2150,10 @@ def cerca(conn, domanda: str, gruppi: list, storia: list = None,
     return stato.get("confermate") or [], (stato.get("risposta") or "").strip(), {
         "etichette": stato.get("etichette") or {},
         "resa": bool(stato.get("resa")),
+        # La richiesta SCOMPOSTA esce dal turno: la legge il banco, che
+        # altrimenti chiede al giudice di ri-dedurre dalla prosa quello che
+        # l'analista ha gia' deciso — con l'aggravante che lui e' il metro.
+        "chiesto": _pezzi_a_parole(stato),
         "strumenti": stato.get("traccia") or [],
         "ricerca": "ambito=%s | manca=%s | query=%dok/%dko | trovate=%d | confermate=%d | passi=%d" % (
             " ".join((stato.get("ambito") or "-").split())[:110],
