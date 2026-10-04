@@ -1194,6 +1194,112 @@ con 2 sassi nel campione e' pulita, «ci sono dei sassi viola» con 0 sassi e'
 promette — 3 giri su 3 su entrambe. Banco 29/30 in 264s, il tempo migliore
 della giornata.
 
+## 8-quinquies. I documenti non sono cataloghi (4/10/2026, notte)
+
+Due utenti in chat, uno su `acquisti` e uno su `sviluppo`, e il secondo ha
+fatto quattro domande sul progetto. Tre su quattro hanno avuto una domanda
+invece di una risposta — «Hai informazioni aggiuntive sullo stato attuale del
+progetto?» — e una di quelle tre aveva UNA RIGA CONFERMATA dal documento
+giusto in mano. La quarta ha presentato una guida doganale sull'export di
+animali vivi come «un articolo che menziona il progetto RAG aziendale».
+
+### La causa comune: un libretto solo, scritto per i cataloghi
+
+La separazione fra cataloghi e documenti c'era nei DATI (`immagini`,
+`chunks`) e nello STATO (`dove`, che l'analista scrive da giorni). Non c'era
+nelle ISTRUZIONI. Il coordinatore riceveva un libretto unico — l'oggetto nel
+WHERE, la traduzione in inglese, il confine di parola `\m`, i colori, tutto
+misurato sulle didascalie INGLESI delle foto — e lo applicava a un documento
+di progetto in italiano. Da li', misurate:
+
+| domanda | query scritta | righe giuste |
+|---|---|---|
+| mi parli del progetto RAG aziendale? | `content ~* '\mRAG'` | una guida doganale |
+| che modelli usiamo e perche'? | `~* 'model\|modell\|models'` | 0 (e la query era rotta, vedi sotto) |
+| in che fase del progetto siamo | `content ~* '\mphase'` | 0 |
+| quali problemi sono ancora aperti? | `SELECT * FROM documenti WHERE stato ~* 'aperto'` | 0 |
+
+L'ultima e' la piu' istruttiva: la parola «aperto» cercata nella colonna di
+STATO di un elenco di nomi di file. Due cause sovrapposte — il libretto
+sbagliato, e `dove=documenti` scritto dall'analista su una domanda di
+contenuto.
+
+Il libretto adesso ha un cancello in testa e due capitoli: le foto (lessicale
+piu' semantico, inglese, `\m`) e il testo dei documenti (semantico PER PRIMO
+e senza WHERE, italiano, e il `~*` solo per un termine esatto — un codice, un
+prezzo, un nome). **Non lo scegle il codice**: in una cartella ci stanno
+entrambi, e un `if` sull'etichetta dell'analista chiuderebbe il coordinatore
+nelle regole sbagliate senza via d'uscita.
+
+### L'indice esisteva e nessuno lo scriveva
+
+`indice` (migrazione 021) aveva ZERO righe. La tabella c'era, i lettori
+c'erano, e `genera_documenti`/`genera_pagine` stavano
+nell'ORCHESTRATORE senza un solo chiamante in tutto il repository. Quindi la
+ricerca a due stadi — prima QUALI documenti c'entrano, poi il dettaglio
+dentro quelli — non e' mai partita in nessun turno.
+
+Lo scrittore stava nel servizio sbagliato: l'orchestratore e' l'agente che
+risponde. Montargli il pacchetto dentro l'ingestione e' durato cinque
+minuti, il tempo di vedere `EgressNonDichiarato` — la politica di rete di un
+altro servizio. Adesso `ingestion/descrizioni.py` SCRIVE in coda al giro
+(quando Docling ha finito: il modello di chat non ci sta in VRAM insieme a
+lui) e `orchestratore/indice.py` LEGGE.
+
+Il descrittore, appena acceso, ha prodotto spazzatura sui `.md`: `AGENTS.md`
+e' diventato «un catalogo di prodotti tecnologici», `RISULTATI.md` «il
+recupero di dati in caso di interruzioni». Il campione delle intestazioni
+prendeva UNA RIGA PER PAGINA — giusto su un PDF, dove un pezzo e' una pagina
+— e un `.md` non ha pagine: tutto il suo testo sta sulla pagina 0, e «una per
+pagina» diventava una in tutto. Su `AGENTS.md` il descrittore ha ricevuto
+solo «Sii sintetico nelle risposte» e il resto l'ha immaginato. Una riga per
+PEZZO: da 1 a 6 intestazioni, e la descrizione diventa «principi
+metodologici e filosofia del lavoro». Seconda causa, la stessa famiglia del
+libretto unico: anche le sue istruzioni presupponevano un catalogo.
+
+### Il banco della ricerca, e il primo numero
+
+`valutazione/ricerca.py`: dieci domande, cinque sui cataloghi e cinque sui
+documenti, due utenti (le ACL fanno parte della misura), nessun giudice. Si
+contano le righe che vengono dai documenti che possono rispondere, scritti a
+mano una volta.
+
+Con l'indice al 13% (50 documenti, 236 pagine su 1.818):
+
+| | simile | indice | dentro |
+|---|---|---|---|
+| quali problemi sono ancora aperti? | 2/20 | 3/4 | **16/20** |
+| che modelli usiamo e perche'? | 7/20 | 2/4 | 12/20 |
+| hai dei nastri blu? | 13/20 | 11/12 | 16/20 |
+| a che punto siamo? | 8/20 | **0/4** | **0/20** |
+| ho bisogno di sassi rossi | 3/20 | 1/12 | 4/20 |
+| **totale** | **101** | **42** | **117** |
+
+- cercare DENTRO i documenti che l'indice indica batte il SIMILE su tutto
+  l'archivio, con un ottavo dell'indice generato;
+- il PRIMO STADIO e' l'anello debole: se indica il documento sbagliato,
+  cercare dentro quello e' peggio che cercare su tutto (0/20 contro 8/20);
+- «sassi rossi» sta male con tutte e tre: sul catalogo la semantica da sola
+  non basta e il `~*` coi sinonimi inglesi ne porta 8. I due capitoli
+  dividono nel punto giusto.
+
+### Quello che resta, e la lezione
+
+Il 14b la SINTESI con giudizio la fa: dandogli 20 pezzi e la domanda, senza
+flusso, risponde con fase, cosa funziona, cosa e' aperto e cosa manca, in 22
+secondi. Il limite non e' il modello: e' che il flusso e' costruito per
+«trova le righe che combaciano, verificale una per una, scrivile», e un
+criterio riga-per-riga non puo' rispondere a «a che punto siamo». Il critico
+chiede «questa riga e' l'oggetto chiesto con gli attributi chiesti?», che su
+un documento non vuol dire niente — e infatti ha confermato la guida
+doganale.
+
+**La lezione della notte**: quando un sistema sbaglia su una CLASSE di dati,
+guardare dove quella classe e' stata separata e dove no. Qui era separata nei
+dati, nello stato e nei lettori; non nelle istruzioni, non nel descrittore,
+non nel criterio del critico. Il difetto stava in tutti e tre i posti in cui
+la separazione mancava, e in nessuno di quelli in cui c'era.
+
 ## 9. Una nota di configurazione, non di progetto
 
 Il container in esecuzione ha `SQL_AGENTE=1`. Su disco `.env` e
