@@ -1129,6 +1129,56 @@ RICERCA: dieci-quindici domande con le pagine vere lette a mano una volta,
 su entrambe le tabelle, e due numeri — quante trovate, quante giuste.
 Nessun giudice, gira in secondi, si lancia dopo ogni modifica.
 
+## 8-quater. Un campo vale tre prompt (4/10/2026)
+
+Su «ho bisogno di sassi rossi» seguito da «ne hai anche di viola?» il sistema
+ha risposto con un ventaglio di campioni RAL e una bobina di filo sintetico.
+L'analista aveva capito (9 giri su 9: `oggetto='sasso'`, `attributi=[viola]`),
+il coordinatore ha scritto `WHERE ~* '\mviolet|\mpurple'` senza l'oggetto — 1
+giro su 9, la chat ha pescato quello — e il critico, seconda difesa, ha
+confermato due righe su venti.
+
+Il critico applicava il cancello sull'oggetto su 18 righe su 20 e lo scriveva:
+«non un sasso: un vaso», «non un sasso: nastri». Le due che passavano dicevano
+«viola disponibile» e «viola confermato»: l'oggetto non era nominato. Sono le
+righe con `Colours:` lunghissimo — un vaso da terra con quaranta varianti RAL —
+dove la prova sull'attributo e' schiacciante e l'attenzione non torna piu'
+sulla cosa.
+
+Tre modi di chiederlo in PROSA, tutti e tre misurati sullo stesso input
+congelato (20 righe, 3 giri), tutti e tre a zero:
+
+| | falsi positivi su 20 |
+|---|---|
+| prompt attuale | 3, 3, 3 |
+| cancello riscritto a cascata con «e' SEVERAMENTE VIETATO guardare i colori» | 3, 3, 1 — e un falso positivo IN PIU' sui sassi rossi |
+| la regola dell'elenco colori subordinata all'oggetto | 3, 3, 3 |
+| il motivo che deve NOMINARE l'oggetto | 3, 3, 3 |
+
+Poi un CAMPO: `oggetto` nello schema dello strumento `verdetti`, obbligatorio
+e **prima** di `esito`. Zero falsi positivi, 3 giri su 3.
+
+**I campi si scrivono nell'ordine in cui stanno nello schema, quindi l'ordine
+dei campi e' l'ordine del ragionamento.** Dichiarare che cosa si sta guardando
+prima di poter dire se va bene non e' una regola che il modello puo' saltare:
+e' la forma di quello che deve consegnare. Vale la stessa cosa che valeva per
+l'analista — la struttura nel passaggio, non nella prosa — e vale per i blocchi
+di prompt in un altro modo: li' la posizione che conta non e' «ultima» ma
+«attaccata al dato» (il cancello sull'oggetto spostato in fondo al prompt del
+coordinatore: da 6 su 6 a 0 su 6).
+
+Il campo, alla prima versione, costava: «Decorative rocks in various sizes»
+dichiarato «decorazioni» e scartato, cioe' un sasso vero perso. La descrizione
+chiedeva di copiare quello che la didascalia scrive dopo `object:`, e copiare
+due parole non dice quale sia la cosa. Chiedendo il NOME e non il modo in cui
+e' fatta — «di "decorative rocks" la cosa e' "rocks"» — il richiamo e' tornato
+intero: 0 falsi positivi, 6 sassi su 6, 4 nastri su 4. Banco 29/30 in 289s.
+
+Niente di deterministico: il codice non legge il campo nuovo. `_giudica`
+prende `riga`, `esito` e `motivo` e il resto passa. Il confronto fra l'oggetto
+dichiarato dal critico e quello dell'analista NON si fa in Python — sarebbe la
+cura del caso di oggi e il difetto di domani intatto.
+
 ## 9. Una nota di configurazione, non di progetto
 
 Il container in esecuzione ha `SQL_AGENTE=1`. Su disco `.env` e

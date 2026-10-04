@@ -1207,10 +1207,27 @@ I_VERDETTI = [{"type": "function", "function": {
     "parameters": {"type": "object", "properties": {
         "esiti": {"type": "array", "items": {"type": "object", "properties": {
             "riga": {"type": "integer", "description": "Il numero della riga."},
-            "esito": {"type": "string", "enum": ["si", "no"]},
+            # L'oggetto PRIMA dell'esito, e obbligatorio: i campi si scrivono
+            # nell'ordine in cui stanno qui, quindi dichiarare la cosa viene
+            # prima di giudicarla. Chiederlo in prosa non bastava.
+            "oggetto": {"type": "string",
+                        "description": "Che COSA e' questa riga: il NOME "
+                                       "della cosa che la didascalia scrive "
+                                       "dopo `object:`, una parola o due. "
+                                       "Il nome, non il modo in cui e' fatta: "
+                                       "di «decorative rocks in various "
+                                       "sizes» la cosa e' «rocks», di "
+                                       "«glass vase with handle» e' "
+                                       "«vase», di «spool of twisted "
+                                       "string» e' «spool of string». "
+                                       "Non il colore e non il materiale."},
+            "esito": {"type": "string", "enum": ["si", "no"],
+                      "description": "`si` solo se l'oggetto che hai appena "
+                                     "scritto e' quello cercato E ha gli "
+                                     "attributi chiesti."},
             "motivo": {"type": "string",
                        "description": "Al massimo otto parole. Se un attributo chiesto non e' confermato, nominalo."}},
-            "required": ["riga", "esito"]}}},
+            "required": ["riga", "oggetto", "esito"]}}},
         "required": ["esiti"]}}}]
 
 
