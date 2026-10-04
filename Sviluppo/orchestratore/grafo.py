@@ -1135,10 +1135,14 @@ def _guida(stato, motivo: str, cerca: str = "") -> tuple:
         scelte = []
         for voce in (arg.get("scelte") or []):
             if isinstance(voce, dict):
-                testo, quali = str(voce.get("strada") or "").strip(), voce.get("righe")
-                # Una strada senza righe e' una strada inventata: lo strumento
-                # chiedeva da quali righe viene e non e' arrivato niente.
-                if testo and quali:
+                # Una strada senza righe la scartava QUI il codice. Ma il
+                # prompt gliela chiede gia' («ogni scelta porta i numeri
+                # delle righe che SONO quella scelta: almeno uno»), e la
+                # stessa regola scritta due volte, una delle due al posto
+                # dell'agente, e' il difetto che oggi ha fatto perdere un
+                # punto al critico.
+                testo = str(voce.get("strada") or "").strip()
+                if testo:
                     scelte.append(testo)
             elif str(voce).strip():
                 scelte.append(str(voce).strip())
@@ -1652,7 +1656,7 @@ def _revisore(stato, bozza: str, confermate, etichette) -> list:
                      + (("<righe_del_campione>\n"
                          + _scheda(list(stato["campione"])[:GUIDA_CAMPIONE])
                          + "\n</righe_del_campione>\n\n")
-                        if not confermate and stato.get("campione") else "")
+                        if stato.get("campione") else "")
                      + "<risposta_da_rileggere>\n" + bozza
                      + "\n</risposta_da_rileggere>"})
     for nome, arg in _decide(messaggi, I_REVISIONE):
