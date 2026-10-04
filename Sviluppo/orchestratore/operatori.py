@@ -120,9 +120,20 @@ def compila(conn, sql: str) -> tuple[str, list[str]]:
         if not testo:
             problemi.append("SIMILE() vuoto: scrivici cosa cerchi, a parole tue")
             return "0"
+        # Si riprova UNA volta: un embedding costa decine di millisecondi, e
+        # quando l'indicizzazione tiene occupato il server la prima chiamata
+        # cade. Senza il ritentativo la query veniva RESPINTA, e al
+        # coordinatore arrivava «usa ~* per ora» — cioe' gli insegnavamo ad
+        # abbandonare la ricerca semantica per un singhiozzo nostro
+        # (4/10/2026: «palline di Natale rosse» e «sassi rossi» respinte
+        # durante un giro di indicizzazione).
         vettore = recupero.embedding(testo, query=True)
         if vettore is None:
-            problemi.append("il modello di embedding non risponde: usa ~* per ora")
+            vettore = recupero.embedding(testo, query=True)
+        if vettore is None:
+            problemi.append(
+                "il NOSTRO modello di embedding non ha risposto, due volte: "
+                "non e' un difetto della tua query. Rifalla identica.")
             return "0"
         return f"({colonna} <=> {_letterale(vettore)})"
 

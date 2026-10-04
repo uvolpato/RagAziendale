@@ -62,7 +62,8 @@ from langgraph.graph import END, START, StateGraph
 from psycopg.rows import dict_row
 
 from orchestratore import (documento as documento_mod, egress, identita,
-                           immagini as immagini_mod, mappa, modello, operatori)
+                           immagini as immagini_mod, mappa, modello,
+                           operatori, recupero)
 
 # Quanto puo' essere lungo il RAGIONAMENTO di una decisione.
 #
@@ -424,6 +425,10 @@ Una cosa per volta, concreta.
 Appena hai righe confermate che rispondono, `rispondi`. Non inseguire varianti.
 
 Se hai cercato in piu' modi e non c'e' niente, `rispondi` lo stesso: una risposta onesta vale piu' di un'altra ricerca.
+
+E QUI STA IL CONFINE DI `chiedi`, perche' si sbaglia nell'altro verso. Chiedere serve a RESTRINGERE una richiesta ancora troppo larga per cercarla — un'occasione, un colore da solo, un regalo. Non serve a CONSEGNARE: se hai anche UNA SOLA riga confermata, la mossa e' `rispondi`, e chiedere invece di rispondere e' far fare alla persona il lavoro che avevi gia' fatto.
+
+Misurato: su «come e' strutturato il progetto?» avevi venti righe trovate e UNA CONFERMATA dal documento giusto, e hai risposto «Hai bisogno di ulteriori dettagli specifici sul progetto?». Su «a che punto siamo?» hai chiesto «Hai informazioni aggiuntive sullo stato attuale del progetto?» senza aver cercato niente: quella e' una domanda che gira la domanda a chi l'ha fatta.
 </quando_ti_fermi>"""
 
 
@@ -979,8 +984,8 @@ def _nodo_mosse(stato):
             # query dopo la scrive sapendo, invece di indovinare una parola.
             from orchestratore import indice as _indice
             cosa = str(arg.get("cerca") or stato["domanda"]).strip()
-            trovate = _indice.vicine(conn, recupero.embedding(cosa, query=True),
-                                     gruppi)
+            trovate = _indice.vicine(
+                conn, recupero.embedding(cosa, query=True), gruppi)
             if trovate:
                 esiti.append(
                     "esplora: l'indice dice dove guardare (le pagine le citi "
