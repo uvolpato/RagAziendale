@@ -27,7 +27,7 @@ quelle regole.
 import re
 import time
 
-from orchestratore import glossario, recupero, sql_agente
+from orchestratore import recupero, sql_agente
 
 # L'apostrofo dentro la stringa si raddoppia, come in SQL: «l''albero». Senza,
 # `SIMILE('sfere per l'albero')` faceva finire la regex a meta' frase e il
@@ -54,6 +54,41 @@ def _tabella(sql: str) -> str:
     return (m.group(1).lower() if m else "")
 
 
+def _ripara_simile(sql: str) -> str:
+    """Raddoppia gli apostrofi dentro SIMILE(), se il modello non l'ha fatto.
+
+    `_SIMILE` pretende `''`, com'e' giusto in SQL. Ma la domanda e' in
+    italiano e l'apostrofo ci sta una volta su due: il 4/10/2026, su «che
+    modelli usiamo e perche'?», il coordinatore ha scritto
+    `SIMILE('che modelli usiamo e perche'?')` — la regex non ha combaciato,
+    il SIMILE non e' stato sostituito, e Postgres ha risposto «unterminated
+    quoted string». Quel turno non ha cercato niente.
+
+    Ricordare l'escaping SQL non e' un giudizio: e' la stessa ragione per cui
+    i permessi li mette il codice e non il modello. Si cerca la parentesi che
+    chiude la chiamata, si prendono i due apostrofi estremi, e si raddoppia
+    quello che sta in mezzo.
+    """
+    fuori, i = [], 0
+    for m in re.finditer(r"\bSIMILE\s*\(", sql or "", re.I):
+        if m.start() < i:
+            continue
+        apri = sql.find("'", m.end())
+        if apri < 0:
+            continue
+        chiudi = sql.find(")", m.end())
+        while chiudi > 0 and sql.rfind("'", apri + 1, chiudi) < 0:
+            chiudi = sql.find(")", chiudi + 1)
+        ultimo = sql.rfind("'", apri + 1, chiudi) if chiudi > 0 else -1
+        if ultimo <= apri:
+            continue
+        dentro = sql[apri + 1:ultimo].replace("''", "'").replace("'", "''")
+        fuori.append(sql[i:apri + 1] + dentro)
+        i = ultimo
+    fuori.append(sql[i:])
+    return "".join(fuori)
+
+
 def compila(conn, sql: str) -> tuple[str, list[str]]:
     """(sql compilato, problemi). Sostituisce SIMILE() e TERMINI().
 
@@ -61,6 +96,7 @@ def compila(conn, sql: str) -> tuple[str, list[str]]:
     vede come l'avrebbe scritta a mano.
     """
     problemi = []
+    sql = _ripara_simile(sql)
     colonna = VETTORE.get(_tabella(sql), "embedding")
 
     def _termini(m):
@@ -68,7 +104,10 @@ def compila(conn, sql: str) -> tuple[str, list[str]]:
         if not parola:
             problemi.append("TERMINI() vuoto: scrivi la parola, es. TERMINI('nastri')")
             return "''"
-        voci = [parola] + list(glossario.glossario_noti(conn, parola))
+        # Il glossario qui espandeva la parola coi termini imparati dai
+        # dati. Non si usa piu': `TERMINI` e' uscito dalla mappa degli
+        # operatori, e i sinonimi li scrive il modello dentro il `|`.
+        voci = [parola]
         # Un termine con lo spazio dentro un ~* non trova niente (le didascalie
         # sono etichette, le parole non sono attaccate): stessa ragione per cui
         # `sql_agente` respinge le frasi. Qui si scartano invece di respingere
@@ -203,6 +242,12 @@ def _perche(e: Exception) -> str:
 
 
 MAPPA_OPERATORI = (
+    "PRIMA DI SCRIVERE LA QUERY, GUARDA DOVE STAI CERCANDO: in questo archivio ci sono due cose diverse, e si cercano in due modi diversi. Non e' una preferenza, e' misurato.\n"
+    "- le FOTO dei cataloghi (`immagini`): didascalie in INGLESE, scritte da chi guardava la foto, piene di parole precise — object, material, colours. Li' un `~*` sulla parola giusta taglia via il grosso e rende. Capitolo 1.\n"
+    "- il TESTO dei documenti (`chunks`): prosa in ITALIANO — progetti, procedure, manuali, relazioni. Li' il `~*` su un argomento fa danno, e la ricerca che porta le righe giuste e' quella semantica. Capitolo 2.\n"
+    "La stessa cartella puo' contenere tutti e due. Guarda la domanda: se chiede un ARTICOLO sei nel capitolo 1, se chiede cosa DICE un testo sei nel capitolo 2. Se la prima strada torna a vuoto, l'altra e' li'.\n"
+    "\n"
+    "=== CAPITOLO 1 — LE FOTO DEI CATALOGHI ===\n"
     "COME SI CERCA: hai DUE operatori, e la scelta e' tua.\n"
     "1. `~*` cerca le LETTERE, e le cerca anche DENTRO le altre parole: "
     "`~* 'red'` trova «textured» e «covered», `~* 'stone'` trova "
@@ -273,6 +318,17 @@ MAPPA_OPERATORI = (
     "pagina che altrimenti non vedevi.\n"
     "Se non sai nemmeno da che parte cominciare, usa SIMILE da solo, senza "
     "WHERE: e' sempre meglio di una parola indovinata.\n"
+    "\n"
+    "=== CAPITOLO 2 — IL TESTO DEI DOCUMENTI ===\n"
+    "Qui la PRIMA ricerca e' semantica, e si scrive cosi':\n"
+    "     SELECT id, documento, page, content FROM chunks\n"
+    "     ORDER BY SIMILE('la domanda in italiano, come te l''ha fatta') LIMIT 20\n"
+    "Senza WHERE. `SIMILE` cerca il SIGNIFICATO: porta il pezzo che parla di quella cosa anche quando non contiene nessuna delle parole che avresti scelto tu. Misurato il 4/10/2026 su cinque domande vere di progetto: il solo SIMILE ha portato 30 pezzi giusti su 100, le query scritte con un `~*` su una parola indovinata ne hanno portati 13.\n"
+    "Il `~*` qui serve a UNA cosa: un TERMINE ESATTO che deve comparire nel testo — un codice (`SPG3001`), un prezzo, il nome di un file, il nome di una persona o di un'azienda. Quello e' il suo mestiere, e li' e' prezioso.\n"
+    "Non e' il mestiere di un ARGOMENTO. «progetto», «fase», «modelli», «problemi», «struttura», «stato» sono argomenti, e cercarli col `~*` fa due danni insieme: butta via i pezzi che dicono la stessa cosa con altre parole, e tiene i pezzi che contengono la parola per caso. Misurato: su «mi parli del progetto RAG aziendale?» `~* 'RAG'` ha portato una guida doganale sull'export di animali vivi; su «che modelli usiamo e perche'?» `~* 'model|modell|models'` ha portato zero pezzi utili su venti.\n"
+    "I documenti sono in ITALIANO e la domanda arriva in italiano: qui non si traduce niente, e dentro `SIMILE()` ci va la domanda com'e'.\n"
+    "`documenti` NON e' il testo: e' l'ELENCO DEI FILE — nome, stato, quanti pezzi, quante figure. Serve solo per le domande sull'archivio stesso («quanti cataloghi ci sono»). Una domanda sul CONTENUTO si cerca sempre in `chunks`: su «quali problemi sono ancora aperti?» la query era `SELECT * FROM documenti WHERE stato ~* 'aperto'`, cioe' la parola «aperto» cercata nella colonna di stato di un elenco di nomi di file. Zero righe, e nessuna possibilita' di trovarne.\n"
+    "Una domanda che chiede un GIUDIZIO — «a che punto siamo», «come e' strutturato», «cosa manca» — non ha la risposta in una riga: si forma leggendo PIU' pezzi insieme. Non cercare la riga giusta: prendine venti col SIMILE, e passa a verificarle. Una ricerca sola, poi si risponde.\n"
 )
 
 
@@ -330,6 +386,17 @@ def _prova():
         assert not visto, "una tabella sconosciuta non si interroga"
     finally:
         esegui = vero
+    # L'apostrofo italiano dentro SIMILE(): riparato, e la regex lo trova.
+    for sql, dentro in (
+            ("ORDER BY SIMILE(Qche modelli usiamo e percheQ?Q) LIMIT 20",
+             "percheQQ?"),
+            ("ORDER BY SIMILE(Qsfere per lQalberoQ)", "lQQalbero"),
+            ("ORDER BY SIMILE(QlQQalberoQ)", "lQQalbero"),
+            ("ORDER BY SIMILE(Qnastri bluQ)", "nastri blu")):
+        sql, dentro = sql.replace("Q", chr(39)), dentro.replace("Q", chr(39))
+        riparato = _ripara_simile(sql)
+        assert dentro in riparato, (sql, riparato)
+        assert _SIMILE.search(riparato), (sql, riparato)
     print("operatori: ok")
 
 

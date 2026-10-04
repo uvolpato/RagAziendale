@@ -30,6 +30,8 @@ ENV DOCLING_MODELLI=/opt/modelli HF_HUB_OFFLINE=1 PYTHONUNBUFFERED=1 HOME=/tmp
 # su un volume gia' esistente va sistemato a mano una volta sola:
 #   docker run --rm -v assistente_immagini-data:/i alpine chown -R 65534:65534 /i
 RUN mkdir -p /immagini && chown nobody:nogroup /immagini
-COPY indicizza.py .
+# `descrizioni.py` scrive l'indice (D21) in coda al giro: sta qui e non
+# nell'orchestratore, perche' questo servizio scrive e quello legge.
+COPY indicizza.py descrizioni.py ./
 USER nobody
 CMD ["python", "indicizza.py"]

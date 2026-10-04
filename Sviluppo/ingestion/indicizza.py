@@ -46,6 +46,10 @@ import httpx
 import psycopg
 
 RADICE = pathlib.Path(os.environ.get("CARTELLE", "/cartelle"))
+# Quante PAGINE descrivere per giro. Sono 1.901 in archivio e ognuna e'
+# una chiamata al modello: un tetto per giro tiene l'indicizzazione
+# reattiva e lascia che l'indice si riempia nei giri successivi.
+INDICE_PAGINE = int(os.environ.get("INDICE_PAGINE", "200"))
 INTERVALLO = int(os.environ.get("INTERVALLO", "300"))
 LOTTO_VETTORI = 16
 DOCLING = {".pdf", ".docx", ".pptx", ".html", ".htm", ".md", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
@@ -520,13 +524,12 @@ def _markdown_per_pagina(documento, blocco):
     nel testo, senza scarti.
     """
     fuori = {}
-    pagine = range(blocco[0], blocco[1] + 1) if blocco else sorted(
-        {p.prov[0].page_no for p in documento.pictures if p.prov} or {1})
     per_pagina = {}
+    # I formati SENZA pagine (md, docx, html) arrivano da Docling senza `prov`:
+    # tutto il loro testo sta sulla pagina 0, «documento senza pagine». Prima
+    # si scartava, e un .md o un .docx entrava «vuoto» (visto il 04/10/2026).
     for item in documento.texts:
-        pag = item.prov[0].page_no if item.prov else None
-        if pag is None:
-            continue
+        pag = item.prov[0].page_no if item.prov else 0
         lab, testo = item.label.value, item.text
         if lab == "section_header":
             per_pagina.setdefault(pag, []).append(f"## {testo}")
@@ -539,9 +542,10 @@ def _markdown_per_pagina(documento, blocco):
             # didascalia e' testo come il resto, non un segnaposto da buttare.
             per_pagina.setdefault(pag, []).append(testo)
     for tab in documento.tables:
-        pag = tab.prov[0].page_no if tab.prov else None
-        if pag is not None:
-            per_pagina.setdefault(pag, []).append(tab.export_to_markdown())
+        pag = tab.prov[0].page_no if tab.prov else 0
+        per_pagina.setdefault(pag, []).append(tab.export_to_markdown())
+    pagine = range(blocco[0], blocco[1] + 1) if blocco else sorted(
+        set(per_pagina) | {p.prov[0].page_no for p in documento.pictures if p.prov} or {1})
     for n in pagine:
         fuori[n] = "\n\n".join(per_pagina.get(n, []))
     return fuori
@@ -555,7 +559,7 @@ def _pezzi_da_markdown_docling(markdown, dentro):
     for pagina in sorted(markdown):
         md = markdown[pagina]
         _salva_markdown(dentro, "docling", pagina, md)
-        pezzi += _pezzi_da_markdown(md, pagina)
+        pezzi += _pezzi_da_markdown(md, pagina or None)     # 0 = senza pagine
     return pezzi
 
 
@@ -1310,11 +1314,11 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
             with conn.transaction():
                 conn.execute("DELETE FROM chunks WHERE source_id = %s AND documento = %s", (fid, rel))
                 conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi, tipo, indagine)
-                                VALUES (%s,%s,%s,%s,%s,'errore',%s,0,%s,%s::jsonb)
+                                VALUES (%s,%s,%s,%s,%s,'errore',%s,0,COALESCE(%s, 'documento'),%s::jsonb)
                                 ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
                                   dimensione = EXCLUDED.dimensione, modificato_il = EXCLUDED.modificato_il,
                                   stato = 'errore', errore = EXCLUDED.errore, pezzi = 0,
-                                  tipo = COALESCE(EXCLUDED.tipo, documenti.tipo),
+                                  tipo = COALESCE(EXCLUDED.indagine->>'tipo', documenti.tipo),
                                   indagine = COALESCE(EXCLUDED.indagine, documenti.indagine),
                                   in_lettura = NULL, indicizzato_il = now()""",
                              (fid, rel, impronta, st.st_size, quando, f"{type(e).__name__}: {e}"[:500],
@@ -1343,11 +1347,11 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
                               vettore_sql(vett[i]) if vett else None, chi))
             _registra_immagini(conn, fid, rel, immagini)
             conn.execute("""INSERT INTO documenti (source_id, documento, impronta, dimensione, modificato_il, stato, errore, pezzi, tipo, indagine)
-                            VALUES (%s,%s,%s,%s,%s,%s,NULL,%s,%s,%s::jsonb)
+                            VALUES (%s,%s,%s,%s,%s,%s,NULL,%s,COALESCE(%s, 'documento'),%s::jsonb)
                             ON CONFLICT (source_id, documento) DO UPDATE SET impronta = EXCLUDED.impronta,
                               dimensione = EXCLUDED.dimensione, modificato_il = EXCLUDED.modificato_il,
                               stato = EXCLUDED.stato, errore = NULL, pezzi = EXCLUDED.pezzi,
-                              tipo = COALESCE(EXCLUDED.tipo, documenti.tipo),
+                              tipo = COALESCE(EXCLUDED.indagine->>'tipo', documenti.tipo),
                               indagine = COALESCE(EXCLUDED.indagine, documenti.indagine),
                               in_lettura = NULL, indicizzato_il = now()""",
                            (fid, rel, impronta, st.st_size, quando, "indicizzato" if pezzi else "vuoto",
@@ -1386,6 +1390,59 @@ def indicizza_fonte(conn, fonte, lettore, stato_vettori, solo=None, forza=False)
         if chiave not in attuali:
             chiudi(conn, chiave)
     return conteggi
+
+
+def descrivi_mancanti(conn):
+    """Figure gia' indicizzate rimaste SENZA descrizione: il VLM aveva risposto
+    il solo verdetto («Verdetto: informazione»). Senza testo non hanno vettore
+    ne' pezzo cercabile, e il giro dopo non le recuperava: completa_vettori
+    salta le descrizioni vuote. Qui si richiama il VLM per quelle figure e
+    basta, con lo stesso prompt e lo stesso titolo di pagina della lettura
+    normale; il resto del documento non si rilegge (4 figure Gasper, visto il
+    04/10/2026). Il vettore lo mette completa_vettori, subito dopo.
+
+    Se il VLM non risponde ci si ferma alla prima: si riprova al giro dopo.
+    Una figura per cui torna di nuovo vuota resta com'e' e si ritenta."""
+    if VLM_DESCRIZIONI != "api" or not DESCRIVI_FIGURE:
+        return 0
+    figure = conn.execute(
+        """SELECT i.id, i.source_id, i.documento, i.page, i.percorso, s.percorso
+             FROM immagini i JOIN sources s ON s.id = i.source_id
+            WHERE coalesce(i.descrizione, '') = '' AND s.provenienza = 'cartella'
+            ORDER BY i.id""").fetchall()
+    if not figure:
+        return 0
+    url, testa, logico = _litellm_visione()
+    fatte = 0
+    for id_, fid, documento, pagina, percorso, percorso_fonte in figure:
+        dentro = _cartella_sorgenti(percorso_fonte, documento)
+        md = RADICE / dentro / "markdown-docling" / f"{pagina or 0:04d}.md"
+        titolo = (_titolo_da_markdown(md.read_text(encoding="utf-8")) if md.is_file() else None) or ""
+        try:
+            grezza = _descrivi_una(percorso, titolo, url, testa, logico)
+        except Exception as e:
+            print(f"  figure da descrivere: VLM non risponde ({type(e).__name__}: {e})", flush=True)
+            break
+        descr, verdetto = _estrae_verdetto(grezza)
+        if not descr:
+            continue
+        with conn.transaction():
+            conn.execute("UPDATE immagini SET descrizione = %s, verdetto = %s, embedding = NULL"
+                         " WHERE id = %s", (descr, verdetto, id_))
+            # Il pezzo di testo della figura, come lo scrive la lettura normale.
+            for testo, p in _pezzi_dalle_figure([(percorso, pagina, descr, verdetto)],
+                                                {pagina or 0: titolo}):
+                conn.execute("""INSERT INTO chunks (source_id, documento, page, content, content_hash, embedding, lettore)
+                                VALUES (%s, %s, %s, %s, %s, NULL, 'docling')
+                                ON CONFLICT (source_id, documento, page, content_hash) DO NOTHING""",
+                             (fid, documento, p, testo, hashlib.sha256(testo.encode()).hexdigest()))
+        # Anche la cache su disco: una rilettura non rifa' la chiamata.
+        salvate = _descrizioni_salvate(dentro)
+        salvate[pathlib.PurePath(percorso).name] = grezza
+        _salva_descrizioni(dentro, salvate)
+        fatte += 1
+    print(f"  figure da descrivere: {fatte} descritte su {len(figure)}", flush=True)
+    return fatte
 
 
 def completa_vettori(conn, stato_vettori):
@@ -1468,133 +1525,6 @@ def conta_lessemi(conn, esiti=None):
         print(f"  frequenze delle parole non aggiornate ({type(e).__name__}: {e})", flush=True)
 
 
-# ------------------------------------------------------------------ glossario
-# Il glossario multilingue di dominio (orchestratore/glossario.py) si costruisce
-# QUI, dal corpus, durante il giro: e' dato derivato come `lessemi`. Il modello
-# legge i nomi trilingue dei cataloghi e ne estrae voce -> termini; capisce da
-# se' cos'e' l'oggetto e cos'e' un aggettivo o un colore, senza liste hardcoded.
-ISTRUZIONI_GLOSSARIO = (
-    "Sei un esperto di cataloghi di decorazioni e giardinaggio. Ti passo i nomi "
-    "dei prodotti nelle lingue italiano/tedesco/inglese, separati da «|» (ogni "
-    "riga e' lo stesso prodotto nelle tre lingue).\n"
-    "Estrai il glossario dei termini multilingue. Per ogni OGGETTO o MATERIALE "
-    "scrivi una riga con la PAROLA SEMPLICE che lo indica (il nome della cosa, "
-    "non l'aggettivo che la descrive: «rocks», non «deco rocks»; «pebbles», non "
-    "«river pebbles»), seguita dai suoi termini/traduzioni nelle altre lingue, "
-    "anch'essi parole semplici.\n"
-    "NON includere i colori, e NON gli aggettivi o i qualificatori che "
-    "descrivono stile o materiale dell'oggetto: tieni solo il NOME della cosa.\n"
-    "Formato: oggetto: termine1, termine2, ...\n"
-    "Esempio: rocks: pietre, pierres, dekosteine\n"
-    "Niente numeri, niente nomi di prodotto completi, niente spiegazioni.\n"
-    "/NO_THINK"
-)
-
-MAX_GLOSSARIO = int(os.environ.get("GLOSSARIO_MAX", "6"))
-
-
-def _righe_glossario(conn):
-    """Le righe «|» dei chunk: i nomi trilingue dei prodotti. Uniche e ordinate."""
-    righe = set()
-    with conn.cursor() as cur:
-        cur.execute("SELECT content FROM chunks")
-        for (t,) in cur:
-            for x in (t or "").splitlines():
-                x = x.strip()
-                if 10 <= len(x) <= 120 and x.count("|") >= 1:
-                    righe.add(x)
-    return sorted(righe)
-
-
-def _lotti_glossario(righe, soglia=8000):
-    lotti, corrente, n = [], [], 0
-    for r in righe:
-        corrente.append(r)
-        n += len(r)
-        if n >= soglia:
-            lotti.append(corrente)
-            corrente, n = [], 0
-    if corrente:
-        lotti.append(corrente)
-    return lotti
-
-
-def _chiedi_glossario(righe):
-    """Il glossario dal modello di chat, via llama-swap diretto."""
-    host = os.environ.get("MODELLI_HOST", "host.docker.internal:1235")
-    modello = os.environ.get("MODELLO_CHAT", "qwen3.6-35b-a3b-gsq-hybrid")
-    corpo = {"model": modello, "temperature": 0, "max_tokens": 4000,
-             "reasoning_effort": "none",
-             "messages": [{"role": "system", "content": ISTRUZIONI_GLOSSARIO},
-                          {"role": "user", "content": "\n".join(righe)}]}
-    r = httpx.post(f"http://{host}/v1/chat/completions", json=corpo, timeout=300)
-    r.raise_for_status()
-    return (r.json()["choices"][0]["message"].get("content") or "").strip()
-
-
-def _parsa_glossario(testo):
-    out = {}
-    for riga in testo.splitlines():
-        riga = riga.strip().strip("`").strip()
-        if not riga or riga.startswith(("#", "```")):
-            continue
-        sep = next((s for s in (": ", ":", "=", " -> ") if s in riga), None)
-        if not sep:
-            continue
-        voce, _, valori = riga.partition(sep)
-        voce = voce.strip().lower()
-        if not voce:
-            continue
-        vals = {v.strip().lower() for v in valori.split(",") if v.strip()}
-        if vals:
-            out.setdefault(voce, set()).update(vals)
-    return out
-
-
-def _persisti_glossario(conn, glossario):
-    """Scrive il glossario in tabella, bidirezionale (ogni voce porta le altre)
-    e in UNIONE coi termini gia' presenti: non sovrascrive la memoria del modello
-    («sassi» resta), aggiunge quella del corpus («pietre» -> «rocks»)."""
-    gruppi = {}
-    for voce, termini in glossario.items():
-        tutte = {voce} | set(termini)
-        for v in tutte:
-            gruppi.setdefault(v, set()).update(tutte - {v})
-    with conn.transaction():
-        for voce, termini in gruppi.items():
-            riga = conn.execute("SELECT termini FROM glossario WHERE voce = %s",
-                                (voce,)).fetchone()
-            esistenti = set(riga[0]) if riga else set()
-            tutti = list(termini | esistenti)[:MAX_GLOSSARIO]
-            conn.execute(
-                """INSERT INTO glossario (voce, termini) VALUES (%s, %s)
-                   ON CONFLICT (voce) DO UPDATE SET termini = EXCLUDED.termini,
-                     aggiornato_il = now()""",
-                (voce, tutti),
-            )
-
-
-def estrai_glossario(conn):
-    """Costruisce il glossario dal CORPUS con il modello. Idempotente: si ricala
-    a ogni giro con cambi. Se il modello non risponde (GPU occupata, chat
-    scaricata per far posto a Docling), degrada in silenzio e il glossario resta
-    quello di prima."""
-    righe = _righe_glossario(conn)
-    if not righe:
-        return 0
-    glossario = {}
-    for lotto in _lotti_glossario(righe):
-        try:
-            testo = _chiedi_glossario(lotto)
-        except Exception:
-            continue
-        for voce, vals in _parsa_glossario(testo).items():
-            glossario.setdefault(voce, set()).update(vals)
-    if glossario:
-        _persisti_glossario(conn, glossario)
-    return len(glossario)
-
-
 def giro(aspetta=False, forza=False, solo=None):
     """Un giro su tutte le cartelle. Uno solo alla volta (servizio e giri a
     mano insieme leggerebbero due volte gli stessi file): il servizio salta il
@@ -1619,24 +1549,49 @@ def giro(aspetta=False, forza=False, solo=None):
         conn.execute("UPDATE documenti SET in_lettura = NULL, pagine_fatte = 0, pagine_totali = NULL,"
                      " figure_fatte = 0, figure_totali = NULL"
                      " WHERE in_lettura IS NOT NULL")
+        # Prima il vecchio, poi il nuovo: cio' che e' gia' nell'indice si rimette
+        # in ordine (figure senza descrizione, pezzi e figure senza vettore)
+        # PRIMA di leggere materiale nuovo. Altrimenti un giro lungo di file
+        # nuovi rimanda le riparazioni di ore, e l'archivio resta bucato.
+        descritte = descrivi_mancanti(conn)
+        completati = completa_vettori(conn, stato_vettori) + descritte
         fonti = [f for f in conn.execute(
             """SELECT id, percorso, aziende FROM sources
                 WHERE provenienza = 'cartella' AND stato IN ('attiva', 'attesa') ORDER BY id""").fetchall()
                  # Le fonti di esempio hanno percorsi \\server\...: non sono cartelle montate qui.
                  if PERCORSO_VALIDO.match(f[1]) and ".." not in f[1]]
         esiti = [indicizza_fonte(conn, f, lettore, stato_vettori, solo, forza) for f in fonti]
-        completati = completa_vettori(conn, stato_vettori)
+        # Quelli nuovi entrati senza vettore (host giu' a meta' giro).
+        completati += completa_vettori(conn, stato_vettori)
         conta_lessemi(conn, esiti)
-        if any(e.get("nuovi") or e.get("cambiati") or e.get("tolti") for e in esiti):
-            try:
-                n = estrai_glossario(conn)
-                print(f"  glossario: {n} voci estratte dal corpus", flush=True)
-            except Exception as e:
-                # Un glossario vecchio cerca un po' peggio; non perde il giro.
-                print(f"  glossario non aggiornato ({type(e).__name__}: {e})", flush=True)
     del lettore
     gc.collect()
     return esiti, completati
+
+
+def descrivi_indice(solo=None):
+    """Le descrizioni di documenti e pagine, in coda al giro.
+
+    Si chiama QUI e non durante: le scrive il modello di chat, e Docling non
+    ci sta in VRAM insieme a lui. A giro finito la GPU e' libera.
+
+    Incrementale per costruzione: le due funzioni saltano quello che c'e'
+    gia' (`NOT EXISTS` sulla tabella `indice`), quindi si puo' fermare e
+    riprendere, e un giro che non ha cambiato niente non costa niente.
+
+    Non alza mai: una descrizione che manca rende la ricerca a due stadi piu'
+    povera, non rompe l'indicizzazione — che e' il lavoro vero di questo
+    processo.
+    """
+    # Import ritardato: `descrizioni` chiama `vettori` di qui, e importarlo
+    # in testa chiuderebbe il cerchio.
+    import descrizioni
+    try:
+        with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as conn:
+            descrizioni.genera_documenti(conn, solo=solo)
+            descrizioni.genera_pagine(conn, solo=solo, quanti=INDICE_PAGINE)
+    except Exception as e:
+        print(f"indice: non riuscito ({type(e).__name__}: {e})", flush=True)
 
 
 def main():
@@ -1653,6 +1608,12 @@ def main():
                 print("un altro giro e' in corso: si salta questo", flush=True)
                 esiti = []
             cambi = [e for e in esiti if any(e.get(k) for k in ("nuovi", "cambiati", "tolti", "errori", "errore"))]
+            # In CODA: Docling ha finito, la GPU e' libera, e il modello di
+            # chat puo' scrivere le descrizioni che la ricerca a due stadi
+            # legge. Prima di questo la tabella `indice` era vuota e nessuno
+            # generava niente (4/10/2026).
+            if cambi or completati or una_volta:
+                descrivi_indice(solo)
             if cambi or completati or una_volta:
                 print(f"giro in {time.time() - inizio:.0f}s: {json.dumps(esiti, ensure_ascii=False)}"
                       + (f"; vettori aggiunti a {completati} pezzi" if completati else ""), flush=True)
@@ -1984,7 +1945,10 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
     da_descrivere = []
     for i, (percorso, pagina, vecchia, _vd) in enumerate(immagini):
         nome = pathlib.PurePath(percorso).name
-        if nome in salvate:
+        # Una risposta in cache senza descrizione (solo «Verdetto: ...») non e'
+        # un risultato: si rifa'. Riusarla lasciava la figura per sempre senza
+        # testo e senza vettore (4 figure Gasper, visto il 04/10/2026).
+        if nome in salvate and _estrae_verdetto(salvate[nome])[0]:
             riusate += 1
             fatte += 1
             if progresso:
@@ -2006,8 +1970,9 @@ def _descrivi_col_titolo(immagini, titoli, dentro=None, progresso=None):
             nome = pathlib.PurePath(percorso).name
             try:
                 descr = fut.result()
-                salvate[nome] = descr or vecchia
                 pulita, verdetto = _estrae_verdetto(descr or vecchia)
+                if pulita:            # una risposta vuota non si salva: si ritenta
+                    salvate[nome] = descr or vecchia
                 fuori[i] = (percorso, pagina, pulita, verdetto)
             except Exception as e:
                 falliti += 1
