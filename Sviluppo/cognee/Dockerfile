@@ -1,0 +1,48 @@
+# Cognee: la PROVA del grafo di conoscenza (D13), su una cartella per volta.
+#
+# Immagine separata, non dentro `ingestion` e non dentro l'orchestratore: e'
+# una prova, deve potersi buttare. Se il grafo entra in produzione, il posto
+# giusto e' `ingestion` (scrive) piu' un lettore nell'orchestratore (legge),
+# come abbiamo fatto per l'indice il 4/10/2026.
+#
+# NIENTE VERSO FUORI. La documentazione di Cognee dice che «configuring only
+# one [provider] will cause the other to fall back to OpenAI»: una variabile
+# sbagliata e i documenti aziendali partono verso un servizio esterno. Non ci
+# si fida della configurazione: il proxy punta nel vuoto e solo i nostri host
+# sono esclusi, quindi una chiamata esterna non puo' riuscire nemmeno per
+# errore. E' la stessa regola del resto del progetto — fallire CHIUSO.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Kuzu (il grafo) e LanceDB (i vettori) sono incorporati: nessun servizio in
+# piu' da sorvegliare, che era una delle obiezioni scritte in DECISIONI-APERTE.
+RUN pip install --no-cache-dir "cognee==1.6.2"
+
+# IL RIGHELLO, dentro l'immagine. Cognee conta i token PRIMA di spedire,
+# per non superare il limite d'ingresso di bge-m3 e per fare i lotti: il
+# conto lo fa dal suo lato, e per farlo gli serve un tokenizer. Senza,
+# esce verso huggingface.co (bloccato dal proxy qui sotto: 23 secondi di
+# tentativi a vuoto a ogni avvio) e poi ripiega su una stima — che su un
+# pezzo lungo fa spedire piu' di quanto il server accetti, l'errore
+# «input (522 tokens) is too large» che a settembre ha lasciato 376 pezzi
+# senza vettore.
+#
+# Si scarica QUI, dove la rete e' lecita perche' si sta costruendo. A
+# valle il proxy e' chiuso e HF_HUB_OFFLINE dice di usare solo cio' che
+# c'e' gia'.
+ENV HF_HOME=/opt/hf
+COPY righello.py /tmp/righello.py
+RUN python /tmp/righello.py && du -sh /opt/hf
+
+COPY prova.py .
+
+# Il proxy nel vuoto: qualunque host non escluso riceve un rifiuto immediato.
+ENV HUGGINGFACE_TOKENIZER=BAAI/bge-m3 \
+    HF_HUB_OFFLINE=1 \
+    HTTP_PROXY=http://127.0.0.1:1 \
+    HTTPS_PROXY=http://127.0.0.1:1 \
+    NO_PROXY=host.docker.internal,postgres,localhost,127.0.0.1 \
+    no_proxy=host.docker.internal,postgres,localhost,127.0.0.1
+
+ENTRYPOINT ["python", "prova.py"]
