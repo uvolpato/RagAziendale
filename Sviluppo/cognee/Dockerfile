@@ -41,7 +41,12 @@ ENV HF_HOME=/opt/hf
 COPY righello.py /tmp/righello.py
 RUN python /tmp/righello.py && du -sh /opt/hf
 
-COPY prova.py t114.py permessi.py ./
+COPY prova.py t114.py permessi.py contesto.py confronto.py servizio.py ./
+# La vista del grafo: `grafo_api.py` serve i nodi e gli archi del Kuzu vero in
+# sola lettura, `grafo.html` li disegna e si aggiorna da solo. Copiare l'HTML
+# serve perche' FastAPI lo restituisce con FileResponse, cosi' si puo'
+# modificare la pagina senza riavviare il server.
+COPY grafo_api.py grafo_live.py grafo.html ./
 
 # Il proxy nel vuoto: qualunque host non escluso riceve un rifiuto immediato.
 ENV HUGGINGFACE_TOKENIZER=BAAI/bge-m3 \

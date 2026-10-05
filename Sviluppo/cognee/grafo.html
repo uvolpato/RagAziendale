@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Grafo Cognee — vivo</title>
+<style>
+  :root { color-scheme: dark }
+  body { margin:0; background:#11151c; color:#dfe6f0;
+         font:14px/1.5 system-ui, sans-serif }
+  #bar { display:flex; gap:18px; align-items:center; padding:10px 16px;
+         border-bottom:1px solid #263041; position:sticky; top:0;
+         background:#11151c; z-index:2; flex-wrap:wrap }
+  b { font-weight:600 }
+  .ok { color:#5fd08a } .ko { color:#ff8a7a } .spa { color:#8fa0b8 }
+  canvas { display:block }
+  #menu { position:absolute; background:#1a2130; border:1px solid #33405a;
+          border-radius:6px; padding:6px; max-height:60vh; overflow:auto;
+          font-size:13px; display:none }
+  .riga { padding:2px 6px; border-radius:4px; cursor:pointer; white-space:nowrap }
+  .riga:hover { background:#2b3a4f }
+  .legenda { font-size:12px; color:#8fa0b8 }
+</style>
+
+<div id="bar">
+  <b>Grafo Cognee, vivo</b>
+  <span id="conteggi" class="spa">carico…</span>
+  <span id="orologio" class="spa"></span>
+  <span id="stato" class="spa">connessione…</span>
+  <span class="legenda">clic su un nodo per i suoi archi · rotella = zoom ·
+    trascina = sposta</span>
+</div>
+<canvas id="c"></canvas>
+<div id="menu"></div>
+
+<script>
+// Il disegno e' a mano, senza librerie: un canvas, una forza di repulsione e
+// nient'altro. Su questi numeri (nodi dell'ordine di 10^3) va in due secondi e
+// non aggiunge una dipendenza da installare e tenere aggiornata.
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const SOGLIA = 10;                 // riprova sotto i 10 secondi
+let nodi = [], archi = [], vista = {x:0, y:0, z:1}, scelta = null, volo = false;
+
+const TIPI = {};                   // colore per tipo, assegnato alla prima volta
+const COLORI = ['#6ea8fe','#5fd08a','#e6b45f','#c98bf0','#f08a8a',
+                '#5fd8d0','#d0d05f','#8a9ff0','#f0a5d0','#a5f08a'];
+function colore(t) {
+  if (!TIPI[t]) TIPI[t] = COLORI[Object.keys(TIPI).length % COLORI.length];
+  return TIPI[t];
+}
+
+function ridimensiona() {
+  cv.width = innerWidth; cv.height = innerHeight - cv.offsetTop;
+  if (nodi.length) posiziona();
+}
+addEventListener('resize', ridimensiona);
+
+// Le posizioni nascono dagli HASH degli id: due aggiornamenti disegnano lo
+// stesso grafo nello stesso posto, cosi' la vista non salta mentre l'ingestione
+// aggiunge nodi. E' il trucco che rende guardabile una vista che si ricarica.
+function h(id) {
+  let x = 2166136261;
+  for (let i = 0; i < id.length; i++) { x ^= id.charCodeAt(i);
+    x = Math.imul(x, 16777619); }
+  return x >>> 0;
+}
+function posiziona() {
+  const R = Math.min(cv.width, cv.height) * 0.4;
+  nodi.forEach((n, i) => {
+    const a = (h(n.id) % 360) * Math.PI / 180;
+    const r = R * (0.25 + ((h(n.id) >>> 9) % 1000) / 1400);
+    n.x = cv.width/2 + Math.cos(a) * r;
+    n.y = cv.height/2 + Math.sin(a) * r;
+  });
+}
+
+function adiacenti(id) {
+  const s = new Set();
+  for (const e of archi) {
+    if (e.s === id) s.add(e.t);
+    if (e.t === id) s.add(e.s);
+  }
+  return s;
+}
+
+function disegna() {
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  const per = new Map(nodi.map(n => [n.id, n]));
+  ctx.lineWidth = 1;
+
+  for (const e of archi) {
+    const a = per.get(e.s), b = per.get(e.t);
+    if (!a || !b) continue;
+    const acceso = scelta && (e.s === scelta || e.t === scelta);
+    ctx.strokeStyle = scelta
+      ? (acceso ? '#7fd0ff' : '#1e2635') : '#232d3d';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  for (const n of nodi) {
+    const r = 3 + Math.min(9, Math.sqrt(n.grado || 0) * 2.2);
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7);
+    ctx.fillStyle = scelta && n.id !== scelta && !adiacenti(scelta).has(n.id)
+      ? '#26303f' : colore(n.tipo);
+    ctx.fill();
+  }
+  for (const n of nodi) {
+    if (n.id === scelta || (n.grado || 0) >= 6) {
+      ctx.fillStyle = n.id === scelta ? '#fff' : '#9fb0c8';
+      ctx.font = (n.id === scelta ? '600 12px' : '11px') + ' system-ui';
+      ctx.fillText((n.nome || n.id).slice(0, 34), n.x + r + 4, n.y + 4);
+    }
+  }
+}
+
+function vola() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.save();
+  ctx.translate(vista.x, cv.offsetTop + 44 + vista.y); ctx.scale(vista.z, vista.z);
+  disegna(); ctx.restore();
+  if (volo) requestAnimationFrame(vola);
+}
+function ricomincia() { volo = false; disegna(); }
+
+addEventListener('wheel', e => {
+  e.preventDefault();
+  vista.z = Math.max(0.15, Math.min(6, vista.z * (e.deltaY < 0 ? 1.12 : 0.89)));
+  vola();
+}, {passive:false});
+
+let trascina = null;
+cv.addEventListener('mousedown', e => { trascina = {x:e.clientX, y:e.clientY,
+                                                       vx:vista.x, vy:vista.y}; });
+addEventListener('mousemove', e => {
+  if (!trascina) return;
+  vista.x = trascina.vx + e.clientX - trascina.x;
+  vista.y = trascina.vy + e.clientY - trascina.y;
+  vola();
+});
+addEventListener('mouseup', () => { trascina = null; });
+
+cv.addEventListener('click', e => {
+  const x = (e.clientX - vista.x) / vista.z, y = (e.clientY - vista.y) / vista.z;
+  let vicino = null, dist = 22 / vista.z;
+  for (const n of nodi) {
+    const d = Math.hypot(n.x - x, n.y - y);
+    if (d < dist) { vicino = n; dist = d; }
+  }
+  scelta = vicino ? (scelta === vicino.id ? null : vicino.id) : null;
+  disegna();
+  if (vicino) menu(vicino, e.clientX, e.clientY);
+  else document.getElementById('menu').style.display = 'none';
+});
+
+function menu(n, x, y) {
+  const m = document.getElementById('menu');
+  const vicini = adiacenti(n.id);
+  m.innerHTML = '';
+  const t = document.createElement('div');
+  t.className = 'riga'; t.style.color = colore(n.tipo);
+  t.textContent = n.tipo + ' — ' + (n.nome || n.id);
+  m.appendChild(t);
+  const stacco = document.createElement('div');
+  stacco.className = 'riga'; stacco.style.color = '#8fa0b8';
+  stacco.textContent = 'grado ' + (n.grado || 0) + ' · ' + vicini.size + ' vicini';
+  m.appendChild(stacco);
+  for (const id of vicini) {
+    const v = nodi.find(x => x.id === id);
+    if (!v) continue;
+    const r = document.createElement('div');
+    r.className = 'riga';
+    r.textContent = (v.nome || id).slice(0, 44);
+    r.onclick = () => { scelta = v.id; disegna(); menu(v, x, y); };
+    m.appendChild(r);
+  }
+  m.style.left = Math.min(x + 12, innerWidth - 260) + 'px';
+  m.style.top = Math.min(y + 12, innerHeight - 240) + 'px';
+  m.style.display = 'block';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#menu')) document.getElementById('menu').style.display = 'none';
+});
+
+const $=id => document.getElementById(id);
+function attendi() {
+  fetch('/api/grafo', {cache:'no-store'})
+    .then(r => r.json())
+    .then(g => {
+      if (g.errore) { $('stato').className = 'ko';
+        $('stato').textContent = 'Kuzu: ' + g.errore; }
+      else { $('stato').className = 'ok'; $('stato').textContent = 'connesso'; }
+      const prima = nodi.length;
+      nodi = g.nodi || []; archi = g.archi || [];
+      $('conteggi').textContent = nodi.length + ' nodi, ' + archi.length + ' archi';
+      $('orologio').textContent = 'ultima lettura ' + g.quando;
+      if (!prima) posiziona();
+      disegna();
+    })
+    .catch(() => { $('stato').className = 'ko';
+                   $('stato').textContent = 'server non raggiungibile'; })
+    .finally(() => setTimeout(attendi, SOGLIA * 1000));
+}
+ridimensiona();
+attendi();
+</script>

@@ -51,6 +51,14 @@ def configura():
     # — e' la via che l'errore stesso indica.
     import litellm
     litellm.drop_params = True
+    # Il TEMPO DI ELABORAZIONE. Cognee non ha una manopola di timeout per le
+    # chiamate al modello: le passa a litellm e basta (verificato: in
+    # `infrastructure/llm/` non c'e' nessun `request_timeout`). Con il rate
+    # limit a 2 ogni 30s le chiamate si accodano, e una generazione lunga su
+    # contesto grande con due slot occupati puo' metterci minuti: il default di
+    # litellm taglia la chiamata e la fa finire come fallimento, spendendo
+    # comunque la GPU. 20 minuti e' abbondante per una descrizione.
+    litellm.request_timeout = 1200
 
     host = os.environ.get("MODELLI_HOST", "host.docker.internal:1235")
     base = host if "://" in host else "http://" + host
@@ -111,7 +119,21 @@ def configura():
         "vector_dataset_database_handler": "pgvector",
     })
     # Il grafo resta Kuzu: incorporato, un file, nessun servizio in piu'.
-    cognee.config.set_graph_db_config({"graph_database_provider": "kuzu"})
+    # Il grafo resta Kuzu/ladybug: incorporato, un file, nessun servizio in
+    # piu'. Ma SENZA SOTTOPROCESSO: Cognee apre il database in un processo
+    # separato per operazione, e quei processi si contendono il lucchetto del
+    # file fra una chiamata e l'altra — il 5/10/2026 l'ingestione dei 36
+    # documenti e' morta al decimo con «Could not set lock on file», dopo che
+    # i primi nove erano passati. Tenendolo nel processo la contesa sparisce.
+    #
+    # Resta vero che un file a scrittore singolo non si legge mentre si
+    # scrive: con l'indicizzazione in corso il grafo e' cieco. Quello si
+    # risolve solo con un motore concorrente (neo4j), che e' il «servizio in
+    # piu' da sorvegliare» che DECISIONI-APERTE mette fra i costi.
+    cognee.config.set_graph_db_config({
+        "graph_database_provider": "kuzu",
+        "graph_database_subprocess_enabled": False,
+    })
     dati = os.environ.get("COGNEE_DATI", "/dati")
     # Le cartelle si creano QUI: su un volume nuovo non esistono, e sqlite non
     # crea il suo file dentro una directory che manca — «unable to open

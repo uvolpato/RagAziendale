@@ -66,7 +66,38 @@ def risponde(esito) -> bool:
     return not any(v in t for v in vuote)
 
 
-async def principale(quanti, solo_prova=False):
+async def digeriti(servizio, dataset_id):
+    """I documenti che Cognee ha GIA' portato nel grafo, per nome.
+
+    Serve a non rifare il lavoro: un giro intero costa ~2h di GPU, e senza
+    questo controllo ogni riavvio ripagava i file del giro precedente. La
+    domanda la risponde `data.pipeline_status`, che Cognee aggiorna da solo:
+    un file e' finito quando `cognify_pipeline` per QUEL dataset dice
+    `DATA_ITEM_PROCESSING_COMPLETED`. I file falliti non lo hanno, e quindi
+    vengono rifatti — che e' il punto.
+
+    Non e' pero' una garanzia: il 05/10/2026 un file (SINTESI-SESSIONE-27-09)
+    risultava completato pur avendo segnalato l'errore, perche' il fallimento
+    e' avvenuto dopo, nella fase di sintesi. Percio' `--rifai` esiste: se un
+    file e' segnato come fatto e non lo e', si rifa quello e basta.
+    """
+    # `get_async_session` e non `get_relational_engine`: l'adapter non espone
+    # `begin()`, e la sessione e' quella che Cognee usa davvero.
+    from cognee.infrastructure.databases.relational import get_async_session
+    from sqlalchemy import text as sql
+    async with get_async_session() as c:
+        righe = (await c.execute(sql(
+            "select name, pipeline_status from data where dataset_id = :d"),
+            {"d": dataset_id})).fetchall()
+    finiti = set()
+    for nome, stato in righe:
+        segno = (stato or {}).get("cognify_pipeline", {}).get(str(dataset_id))
+        if segno == "DATA_ITEM_PROCESSING_COMPLETED":
+            finiti.add(nome)
+    return finiti
+
+
+async def principale(quanti, solo_prova=False, tutti=False, rifai=False):
     cognee = configura()
     await prepara(cognee)
     from cognee.modules.data.methods import create_authorized_dataset
@@ -84,6 +115,68 @@ async def principale(quanti, solo_prova=False):
             return await create_user(posta, "prova", is_verified=True)
         except Exception:
             return await get_user_by_email(posta)
+
+    if tutti:
+        # L'INGESTIONE DEL RESTO, sugli oggetti che la prova ha gia' creato.
+        import time
+        from cognee.modules.users.permissions.methods import (
+            get_readable_datasets as _leggibili)
+        for azienda, gruppo, cartella in AREE:
+            if gruppo != "sviluppo":
+                continue          # oggi solo i documenti, non i cataloghi
+            servizio = await get_user_by_email(
+                "ingestione-%s@assistente.locale" % gruppo)
+            dati = {d.name: d for d in await _leggibili(servizio.id)}
+            d = dati[cartella]
+            files = sorted(p for p in CARTELLE[cartella].rglob("*.md")
+                           if p.is_file())
+            print("%s: %d file in tutto" % (gruppo, len(files)), flush=True)
+            # I file gia' nel grafo si saltano: senza, ogni riavvio ripagava
+            # da capo i documenti del giro precedente (~30 min di GPU buttati).
+            pronti = set() if rifai else await digeriti(servizio, d.id)
+            if pronti:
+                print("   %d gia' nel grafo, li salto" % len(pronti), flush=True)
+            da_fare = [f for f in files if f.stem not in pronti]
+            for n, f in enumerate(files, 1):
+                if f.stem in pronti:
+                    print("  %2d/%d %-52s   gia' fatto"
+                          % (n, len(files), f.name[:52]), flush=True)
+            if not da_fare:
+                print("   niente da fare", flush=True)
+                continue
+
+            # UN SOLO cognify per tutti i file, non uno per file.
+            # `cognify` accetta solo `datasets`: richiamarlo dentro il ciclo
+            # faceva rigeografizzare TUTTO il dataset ogni volta, quindi al
+            # file 10 si rilavoravano anche i 9 precedenti — lavoro che cresce
+            # col quadrato dei file, e con esso il numero di chiamate in
+            # coda contro i 2 slot di llama-swap. Da li' i 429.
+            # `incremental_loading` (default True) fa saltare da solo quanto e'
+            # gia' nel grafo, quindi il giro riparte solo sui falliti.
+            #
+            # `chunks_per_batch=2`: i chunk di un documento vengono estratti in
+            # parallelo, e senza questo numero si mettono in coda tutti insieme.
+            # Due, per i due slot reali.
+            # `raise_on_error=False`: un file che fallisce non deve impedire
+            # agli altri 35 di essere digeriti.
+            print("   aggiungo %d file e faccio un solo cognify" % len(da_fare),
+                  flush=True)
+            t0 = time.monotonic()
+            await cognee.add([str(f) for f in da_fare], dataset_id=d.id,
+                             user=servizio)
+            await cognee.cognify(datasets=[d.id], user=servizio,
+                                 chunks_per_batch=2, data_per_batch=1,
+                                 incremental_loading=True, raise_on_error=False)
+            print("   giro finito in %.0fs" % (time.monotonic() - t0),
+                  flush=True)
+            fatti = await digeriti(servizio, d.id)
+            mancanti = [f.name for f in da_fare if f.stem not in fatti]
+            if mancanti:
+                print("   NON RIUSCITI (%d): %s"
+                      % (len(mancanti), ", ".join(mancanti)), flush=True)
+            else:
+                print("   tutti i file sono nel grafo", flush=True)
+        return
 
     stato = {}
     if solo_prova:
@@ -213,5 +306,9 @@ if __name__ == "__main__":
     p.add_argument("--quanti", type=int, default=2)
     p.add_argument("--solo-prova", action="store_true",
                    help="solo le quattro verifiche, sui dati gia' costruiti")
+    p.add_argument("--tutti", action="store_true",
+                   help="ingerisce tutta la cartella, riusando il setup")
+    p.add_argument("--rifai", action="store_true",
+                   help="rifai anche i file che sono gia' nel grafo")
     a = p.parse_args()
-    asyncio.run(principale(a.quanti, a.solo_prova))
+    asyncio.run(principale(a.quanti, a.solo_prova, a.tutti, a.rifai))
