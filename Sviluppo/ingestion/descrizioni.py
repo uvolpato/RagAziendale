@@ -19,8 +19,14 @@ gia' estratto. Per questo girano in CODA al giro, quando Docling ha finito e
 la GPU e' libera: il modello di chat non ci sta in VRAM insieme a lui.
 """
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 from psycopg.rows import tuple_row
+
+# Quante pagine descrivere INSIEME. Gli slot del modello di chat sono due
+# (`--parallel 2`), e sono gli stessi che serve la chat: con entrambi occupati
+# dall'indice un turno di chat aspetta. 1 lascia respiro, 2 va il doppio.
+PARALLELO = int(os.environ.get("INDICE_PARALLELO", "2"))
 
 ISTRUZIONI = (
     "Ti do le intestazioni di un documento aziendale. Scrivi in una frase "
@@ -211,26 +217,42 @@ def genera_pagine(conn, solo=None, quanti=None) -> int:
     resta = len(pendenti)
     if quanti:
         pendenti = pendenti[:quanti]
-    fatti = 0
+
+    # Il TESTO si legge qui, prima dei thread: la connessione e' una e psycopg
+    # non la vuole condivisa. Sono letture locali, costano niente.
+    lavoro = []
     for source_id, documento, page in pendenti:
         testo = _testo_pagina(conn, source_id, documento, page)
-        if not testo:
-            continue
+        if testo:
+            lavoro.append((source_id, documento, page, testo))
+
+    def descrivi(una):
+        """Solo modello ed embedding: niente database dentro il thread."""
+        source_id, documento, page, testo = una
         try:
             descrizione = _chiedi([{"role": "system", "content": ISTRUZIONI_PAGINA},
                                    {"role": "user", "content": testo}])
         except Exception as e:
             print(f"  riassunto non riuscito per {documento} p.{page}: "
                   f"{type(e).__name__}: {e}", flush=True)
-            continue
-        vettore = _vettore(descrizione) if descrizione else None
+            return None
+        if not descrizione:
+            return None
+        vettore = _vettore(descrizione)
         if not vettore:
-            continue
-        _scrivi(conn, source_id, documento, page, descrizione, vettore)
-        conn.commit()
-        fatti += 1
-        if fatti % 20 == 0:
-            print(f"  ... {fatti} riassunti pagina", flush=True)
+            return None
+        return (source_id, documento, page, descrizione, vettore)
+
+    fatti = 0
+    with ThreadPoolExecutor(max_workers=max(1, PARALLELO)) as pool:
+        for esito in pool.map(descrivi, lavoro):
+            if not esito:
+                continue
+            _scrivi(conn, *esito)
+            conn.commit()
+            fatti += 1
+            if fatti % 20 == 0:
+                print(f"  ... {fatti} riassunti pagina", flush=True)
     if pendenti:
         print(f"indice pagine: {fatti} scritti, {resta - fatti} da fare",
               flush=True)
