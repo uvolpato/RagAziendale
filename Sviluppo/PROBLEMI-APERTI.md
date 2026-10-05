@@ -473,6 +473,56 @@ qualunque valutazione sulla qualita' delle risposte.
 
 ---
 
+## 6-ter. I controlli di coerenza sul livello compilato (da fare)
+
+Il 5/10/2026, provando Cognee su due documenti di `sviluppo`, alla domanda
+«a che punto siamo?» e' arrivata questa risposta:
+
+> «L'integrazione di LiteLLM nel pannello e' in fase **analisi**
+> (18/09/2026). Attualmente e' disponibile un collegamento alla UI di LiteLLM
+> tramite SSO per gli amministratori...»
+
+E' fedele al documento e **sbagliata sul progetto**: LiteLLM e' stato tolto il
+24/09/2026, sei giorni dopo quella nota, e sta scritto due volte nel nostro
+`docker-compose.yml`. Nessun difetto di Cognee: l'archivio contiene la storia,
+e il recupero — il nostro indice come un grafo — non distingue «questo e' lo
+stato» da «questo era lo stato a settembre».
+
+La stessa notte, il descrittore dell'indice ha chiamato `AGENTS.md` — le
+regole di questo progetto — «un catalogo di prodotti tecnologici, tra cui
+dispositivi elettronici, software e soluzioni cloud». Quella causa e' stata
+riparata (il campione delle intestazioni era tarato sui PDF), ma la classe
+resta: **il livello compilato puo' dire cose false, e nessuno lo rilegge.**
+
+### Perche' da noi serve piu' che a un wiki personale
+
+Il metodo del wiki mantenuto da un LLM (Karpathy, inizio 2026) prevede
+proprio dei controlli di coerenza sul materiale compilato. Da lui sono
+igiene: il lettore e' l'autore, e si accorge se una pagina e' sbagliata. Da
+noi sono una DIFESA: chi legge una risposta non ha modo di verificare il
+riassunto da cui viene, e un riassunto sbagliato diventa una risposta
+sbagliata data a qualcuno che si fida.
+
+### Cosa andrebbe controllato
+
+1. **Il riassunto contro il documento.** Il riassunto dice cose che nel testo
+   non ci sono? E' il caso `AGENTS.md`, e si prova rileggendo il documento
+   insieme al suo riassunto.
+2. **Il tempo.** Un documento datato che descrive uno stato («in fase
+   analisi, 18/09») contro documenti piu' recenti che lo smentiscono. Serve
+   la data, e nei nostri documenti c'e' solo dentro il testo.
+3. **Le contraddizioni fra documenti.** Due note di progetto che dicono il
+   contrario: oggi vincono entrambe, a seconda di quale il recupero porta su.
+
+### E la difesa che non costa un controllo
+
+Qualunque controllo trovera' solo una parte delle incoerenze. La difesa che
+regge sempre e' nella RISPOSTA: chi scrive deve dire **da quando** e' quello
+che dice — «secondo una nota del 18/09/2026...» — cosi' chi legge sa che sta
+leggendo una fotografia datata, e non lo stato di oggi. E' una modifica al
+redattore, non al recupero, e vale anche per i documenti che non abbiamo
+ancora riletto.
+
 ## 7. Debito operativo (non è ricerca, è manutenzione)
 
 ### 7.1 Un'interruzione del server dei modelli marca i documenti come rotti

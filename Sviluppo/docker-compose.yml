@@ -546,6 +546,13 @@ services:
       EMBEDDING_MODELLO: ${EMBEDDING_MODELLO-text-embedding-bge-m3-embeddings}
       RADICE_CARTELLE: /cartelle
       COGNEE_DATI: /dati
+      # Il nostro Postgres: un magazzino in meno da sorvegliare. Database
+      # separato, cosi' le tabelle di Cognee non si mescolano a `rag`.
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      COGNEE_DB: cognee
       # Il modello E gli embedding, tutti e due locali. La documentazione:
       # «configuring only one will cause the other to fall back to OpenAI».
       LLM_PROVIDER: custom
@@ -565,6 +572,7 @@ services:
       # interruttore di questo progetto che fallisce aperto, e sta qui scritto
       # perche' chi legge il compose lo veda.
       ENABLE_BACKEND_ACCESS_CONTROL: "true"
+    depends_on: [postgres]
     volumes:
       - ${CARTELLE_PATH:-./cartelle}:/cartelle:ro
       - cognee-dati:/dati

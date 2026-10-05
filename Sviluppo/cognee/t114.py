@@ -47,7 +47,7 @@ async def principale():
         get_readable_datasets, give_permission_on_dataset)
 
     padrone = await get_default_user()
-    nomi = {d.name: d for d in await get_readable_datasets(padrone)}
+    nomi = {d.name: d for d in await get_readable_datasets(padrone.id)}
     print("dataset esistenti: %s" % ", ".join(sorted(nomi)) or "(nessuno)")
 
     utenti = {}
@@ -103,7 +103,7 @@ async def principale():
 
     print("\n4. che dataset vede ognuno")
     for area, u in utenti.items():
-        visti = [d.name for d in await get_readable_datasets(u)]
+        visti = [d.name for d in await get_readable_datasets(u.id)]
         print("   %-10s vede: %s" % (area, ", ".join(sorted(visti)) or "(niente)"),
               flush=True)
 

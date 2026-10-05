@@ -17,7 +17,13 @@ WORKDIR /app
 
 # Kuzu (il grafo) e LanceDB (i vettori) sono incorporati: nessun servizio in
 # piu' da sorvegliare, che era una delle obiezioni scritte in DECISIONI-APERTE.
-RUN pip install --no-cache-dir "cognee==1.6.2"
+# `[postgres]` perche' il relazionale e i vettori stanno sul NOSTRO
+# Postgres (con pgvector), non su sqlite e LanceDB dentro un volume: un
+# magazzino in meno da sorvegliare e da salvare. Porta `asyncpg`.
+# `-binary` e non `[postgres]`: il secondo compila asyncpg, e in
+# un'immagine slim non c'e' il compilatore — «Getting requirements to
+# build wheel did not run successfully».
+RUN pip install --no-cache-dir "cognee[postgres-binary]==1.6.2"
 
 # IL RIGHELLO, dentro l'immagine. Cognee conta i token PRIMA di spedire,
 # per non superare il limite d'ingresso di bge-m3 e per fare i lotti: il
@@ -35,7 +41,7 @@ ENV HF_HOME=/opt/hf
 COPY righello.py /tmp/righello.py
 RUN python /tmp/righello.py && du -sh /opt/hf
 
-COPY prova.py .
+COPY prova.py t114.py permessi.py ./
 
 # Il proxy nel vuoto: qualunque host non escluso riceve un rifiuto immediato.
 ENV HUGGINGFACE_TOKENIZER=BAAI/bge-m3 \

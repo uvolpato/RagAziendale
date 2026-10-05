@@ -87,13 +87,51 @@ def configura():
         # non esiste) se non glielo si dice qui.
         "huggingface_tokenizer": "BAAI/bge-m3",
     })
-    cognee.config.set_vector_db_config({"vector_db_provider": "lancedb"})
+    # Il nostro Postgres, che c'e' gia' ed e' sorvegliato — non sqlite e
+    # LanceDB dentro un volume. Database separato: le tabelle di Cognee non si
+    # mescolano a `rag`, e si buttano senza toccare niente.
+    pg = {
+        "db_host": os.environ.get("PGHOST", "postgres"),
+        "db_port": os.environ.get("PGPORT", "5432"),
+        "db_name": os.environ.get("COGNEE_DB", "cognee"),
+        "db_username": os.environ.get("PGUSER", "postgres"),
+        "db_password": os.environ["PGPASSWORD"],
+    }
+    cognee.config.set_relational_db_config(dict(pg, db_provider="postgres"))
+    cognee.config.set_vector_db_config({
+        "vector_db_provider": "pgvector",
+        "vector_db_host": pg["db_host"], "vector_db_port": pg["db_port"],
+        "vector_db_name": pg["db_name"], "vector_db_username": pg["db_username"],
+        "vector_db_password": pg["db_password"],
+        # Il GESTORE dataset->database, che restava su lancedb mentre il
+        # provider era pgvector: con l'isolamento acceso Cognee si RIFIUTA di
+        # partire se i due non combaciano — «Cannot add support for
+        # multi-user access control mode» — invece di spegnere i permessi in
+        # silenzio. Fallisce chiuso, ed e' il comportamento giusto.
+        "vector_dataset_database_handler": "pgvector",
+    })
+    # Il grafo resta Kuzu: incorporato, un file, nessun servizio in piu'.
     cognee.config.set_graph_db_config({"graph_database_provider": "kuzu"})
-    cognee.config.set_relational_db_config({"db_provider": "sqlite"})
     dati = os.environ.get("COGNEE_DATI", "/dati")
+    # Le cartelle si creano QUI: su un volume nuovo non esistono, e sqlite non
+    # crea il suo file dentro una directory che manca — «unable to open
+    # database file», che sembra un problema di permessi e non lo e'.
+    for dove in (dati + "/documenti", dati + "/sistema"):
+        os.makedirs(dove, exist_ok=True)
     cognee.config.data_root_directory(dati + "/documenti")
     cognee.config.system_root_directory(dati + "/sistema")
     return cognee
+
+
+async def prepara(cognee):
+    """Le tabelle di Cognee, su Postgres.
+
+    Con sqlite nascevano alla prima scrittura; su Postgres no, e la
+    prima chiamata muore con «relation \"principals\" does not
+    exist». Si chiama una volta, e' idempotente."""
+    from cognee.infrastructure.databases.relational import (
+        create_db_and_tables)
+    await create_db_and_tables()
 
 
 def documenti(nome, quanti):
