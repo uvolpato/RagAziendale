@@ -514,6 +514,32 @@ sbagliata data a qualcuno che si fida.
 3. **Le contraddizioni fra documenti.** Due note di progetto che dicono il
    contrario: oggi vincono entrambe, a seconda di quale il recupero porta su.
 
+### Il lint dell'impianto, che e' un'altra cosa e costa niente
+
+I tre controlli qui sopra richiedono un passaggio di modello: capire che «in
+analisi» del 18/09 e «abbandonata» del 02/10 parlano della stessa cosa non si
+fa in SQL. Vanno di notte, come il banco, coi candidati scelti dal codice e il
+giudizio dato da un agente.
+
+Ma sotto quelli ce n'e' un secondo tipo, che e' **codice e dura secondi**: la
+copertura fra i magazzini. Misurata il 5/10/2026, dice gia' tre cose.
+
+1. **`chunks` e `indice` sono allineati**: 50 documenti e 50, divergenza zero
+   nei due versi. Questa parte e' sana e il lint la tiene sana.
+2. **Il grafo perde la provenienza.** 97 righe su 76 nomi, e il nome e' il
+   *basename*: `README` sette volte, `AGENTS` cinque. `raw_data_location` e'
+   una copia con hash, e **il percorso originale non c'e' da nessuna parte**.
+   Un'affermazione presa da `branding/README.md` e' indistinguibile da una di
+   `Sviluppo/README.md` — e la regola del cartografo era che
+   un'affermazione senza fonte e' una voce, non una riga. Si ripara
+   all'`add`, scrivendo il percorso in `external_metadata`; il lint pretende
+   che ogni file nel grafo ne abbia uno.
+3. **Documenti nell'archivio senza nodi nel grafo.** I 26 saltati la mattina
+   del 5/10/2026 — un container dimenticato teneva il lock di Kuzu — sono
+   esattamente questo caso, e niente l'ha detto. A monte serve la disciplina
+   dello scrittore unico: l'ingestione deve RIFIUTARSI di partire se un altro
+   scrittore e' vivo, invece di perdere documenti in silenzio.
+
 ### E la difesa che non costa un controllo
 
 Qualunque controllo trovera' solo una parte delle incoerenze. La difesa che
