@@ -267,7 +267,7 @@ def giudica(caso, conversazione, risposta, citate, campione):
                     f"RIGHE CHE HA CITATO:\n{_righe_a_testo(citate)}\n\n"
                     f"CAMPIONE DELL'ARCHIVIO su questo tema (cosa c'e' "
                     f"davvero):\n{_righe_a_testo(campione)}"}]
-    for _ in range(2):
+    for tentativo in range(2):
         # Il giudice RAGIONA. Gli si chiede un controllo a piu' passi —
         # trova la frase nella risposta, poi la riga che la smentisce, poi
         # valuta se parlano della stessa cosa — e glielo si chiedeva di
@@ -280,8 +280,11 @@ def giudica(caso, conversazione, risposta, citate, campione):
             m = modello.messaggio(messaggi, max_tokens=2500, tools=I_VERDETTO,
                                   tool_choice="required", ragiona=True)
         except Exception as e:
-            print("   (il giudice e' esploso: %s: %s)"
-                  % (type(e).__name__, str(e)[:90]))
+            print("   (il giudice e' esploso: %s: %s%s)"
+                  % (type(e).__name__, str(e)[:90],
+                     ", riprovo" if tentativo == 0 else ""))
+            if tentativo == 0:
+                continue
             return None
         m.pop("reasoning_content", None)
         for tc in m.get("tool_calls") or []:
@@ -376,6 +379,7 @@ def main():
         campione = operatori.vicinato(conn, CAMPIONE_DA, caso["domanda"],
                                       GRUPPI, aziende, quanti=10)
         ok_n, tempi, motivi, giri, coord, ngiri = 0, [], [], [], [], []
+        giudicati = 0
         for _ in range(volte):
             g = un_giro(conn, caso, campione)
             giri.append(g)
@@ -387,19 +391,24 @@ def main():
             ngiri.append(g["giri"])
             v = g["verdetto"]
             if v is None:
-                motivi.append("il giudice non ha deciso")
+                # Non entra nel denominatore: un guasto del server non e' una
+                # risposta sbagliata, e contarlo cosi' toglie punti a caso.
+                motivi.append("GIRO PERSO: il giudice non ha deciso")
                 continue
+            giudicati += 1
             colpe = [(e, prova_vera(v.get(c + "_prova")))
                      for c, e in COLPE if prova_vera(v.get(c + "_prova"))]
             ok_n += not colpe
             motivi += ["%s: %s" % (e, d[:60]) for e, d in colpe]
-        print("%-16s %d/%-5d %6.0fs  %4.0fs (%.1f)  %s"
-              % (caso["nome"], ok_n, volte,
+        print("%-16s %d/%-5s %6.0fs  %4.0fs (%.1f)  %s"
+              % (caso["nome"], ok_n,
+                 ("%d" % giudicati if giudicati == volte
+                  else "%d*" % giudicati),
                  statistics.median(tempi) if tempi else 0,
                  statistics.median(coord) if coord else 0,
                  statistics.median(ngiri) if ngiri else 0,
                  "; ".join(dict.fromkeys(motivi))[:40]))
-        totali.append((caso["nome"], ok_n, volte,
+        totali.append((caso["nome"], ok_n, giudicati,
                        statistics.median(tempi) if tempi else 0))
         esiti[caso["nome"]] = giri
     print("-" * 92)
