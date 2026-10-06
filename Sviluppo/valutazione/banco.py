@@ -239,6 +239,12 @@ I_VERDETTO = [{"type": "function", "function": {
 # revisore, che oltre a vederlo lo puo' far correggere.
 COLPE = (("nega", "nega avendo"), ("promette", "promette senza avere"))
 
+# Da quale tabella si pesca il CAMPIONE dell'archivio. I cataloghi
+# stanno nelle didascalie delle foto, i documenti nel testo: un giudice
+# che per giudicare una risposta di progetto guarda un campione di
+# didascalie inglesi non ha la prova che gli serve.
+CAMPIONE_DA = "immagini"
+
 
 def _righe_a_testo(righe, quante=10):
     return "\n".join(
@@ -348,7 +354,13 @@ def un_giro(conn, caso, campione):
 def main():
     volte = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     solo = sys.argv[2] if len(sys.argv) > 2 else None
-    casi = [c for c in BATTERIA if not solo or c["nome"] == solo]
+    # Uno, o alcuni separati da virgola: iterare su un difetto non deve
+    # costare sei minuti di casi che funzionano. Il banco INTERO resta
+    # il cancello, perche' una correzione che aggiusta il caso rotto puo'
+    # rompere quello sano — misurato il 5/10/2026, togliere una frase per
+    # principio ha riportato un difetto a tre giri su tre.
+    scelti = [x.strip() for x in solo.split(",")] if solo else []
+    casi = [c for c in BATTERIA if not scelti or c["nome"] in scelti]
     conn = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
     aziende = identita.aziende(GRUPPI)
     print("IL BANCO — %d domande x %d giri, giudice: un agente\n"
@@ -361,7 +373,7 @@ def main():
         # Cosa l'archivio HA davvero su questo tema: e' la prova che permette
         # al giudice di dire «hai negato una cosa che c'e'». Si prende una
         # volta per caso, non a ogni giro.
-        campione = operatori.vicinato(conn, "immagini", caso["domanda"],
+        campione = operatori.vicinato(conn, CAMPIONE_DA, caso["domanda"],
                                       GRUPPI, aziende, quanti=10)
         ok_n, tempi, motivi, giri, coord, ngiri = 0, [], [], [], [], []
         for _ in range(volte):
