@@ -142,6 +142,21 @@ def compila(conn, sql: str) -> tuple[str, list[str]]:
     return sql, problemi
 
 
+def mappa_operatori(dove: str = "") -> str:
+    """Il capitolo che serve a QUESTA domanda, non tutti e due.
+
+    `dove` lo decide l'analista. Senza, o con un valore che non conosciamo,
+    tornano entrambi: meglio un prompt lungo che un prompt sbagliato.
+    """
+    testa, segno, resto = MAPPA_OPERATORI.partition("=== CAPITOLO 1")
+    uno, segno2, due = resto.partition("=== CAPITOLO 2")
+    if dove == "immagini":
+        return testa + segno + uno
+    if dove in ("chunks", "documenti"):
+        return testa + segno2 + due
+    return MAPPA_OPERATORI
+
+
 def usa_operatori(sql: str) -> bool:
     return bool(_SIMILE.search(sql or "") or _TERMINI.search(sql or ""))
 
@@ -339,7 +354,7 @@ MAPPA_OPERATORI = (
     "Non e' il mestiere di un ARGOMENTO. «progetto», «fase», «modelli», «problemi», «struttura», «stato» sono argomenti, e cercarli col `~*` fa due danni insieme: butta via i pezzi che dicono la stessa cosa con altre parole, e tiene i pezzi che contengono la parola per caso. Misurato: su «mi parli del progetto RAG aziendale?» `~* 'RAG'` ha portato una guida doganale sull'export di animali vivi; su «che modelli usiamo e perche'?» `~* 'model|modell|models'` ha portato zero pezzi utili su venti.\n"
     "I documenti sono in ITALIANO e la domanda arriva in italiano: qui non si traduce niente, e dentro `SIMILE()` ci va la domanda com'e'.\n"
     "`documenti` NON e' il testo: e' l'ELENCO DEI FILE — nome, stato, quanti pezzi, quante figure. Serve solo per le domande sull'archivio stesso («quanti cataloghi ci sono»). Una domanda sul CONTENUTO si cerca sempre in `chunks`: su «quali problemi sono ancora aperti?» la query era `SELECT * FROM documenti WHERE stato ~* 'aperto'`, cioe' la parola «aperto» cercata nella colonna di stato di un elenco di nomi di file. Zero righe, e nessuna possibilita' di trovarne.\n"
-    "Una domanda che chiede un GIUDIZIO — «a che punto siamo», «come e' strutturato», «cosa manca» — non ha la risposta in una riga: si forma leggendo PIU' pezzi insieme. Non cercare la riga giusta: prendine venti col SIMILE, e passa a verificarle. Una ricerca sola, poi si risponde.\n"
+    "Una domanda che chiede un GIUDIZIO — «a che punto siamo», «come e' strutturato», «cosa manca», «com'e' andata una decisione» — non ha la risposta in una riga, e nemmeno in venti frammenti sparsi: sta scritta in un DOCUMENTO, e un documento si APRE. `esplora` ti dice in quale sta, `leggi` te lo da' da leggere dall'inizio, e quello che leggi lo citi come citi una riga. Venti pezzi presi col SIMILE erano il modo migliore quando non c'era una mossa per aprire un documento: adesso c'e'.\n"    "Il SIMILE su `chunks` resta prezioso per TROVARE dove sta una cosa quando l'indice non basta — non per ricostruire una risposta da venti pezzi che non sai nemmeno se vengono dallo stesso documento.\n"
 )
 
 
