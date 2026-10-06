@@ -50,6 +50,7 @@ GRAFO_PROMPT_<NOME> dall'ambiente.
 """
 import base64
 import concurrent.futures as futures
+import contextvars
 import json
 import operator
 import os
@@ -100,6 +101,35 @@ OSSERVATORE = os.environ.get("GRAFO_OSSERVATORE", "") == "1"
 MAX_FOTO = int(os.environ.get("GRAFO_MAX_FOTO", "4"))
 MODELLO_VLM = os.environ.get("MODELLO_VLM", "qwen/qwen3-vl-4b")
 LATO_VLM = int(os.environ.get("GRAFO_LATO_VLM", "768"))
+
+
+# LE RISORSE DEL TURNO, fuori dallo stato.
+#
+# Nello stato ci stanno i DATI — e solo quelli, perche' lo stato si scrive su
+# disco a ogni transizione quando c'e' un checkpointer. Una connessione e una
+# funzione non si scrivono: il 6/10/2026 il primo tentativo di aggiungere un
+# checkpointer e' morto con «Type is not msgpack serializable: Connection».
+#
+# `cerca()` le imposta, i nodi le leggono. Un ContextVar e non un globale
+# perche' due turni possono girare insieme nello stesso processo.
+_CONNESSIONE = contextvars.ContextVar("connessione")
+_SU_PEZZO = contextvars.ContextVar("su_pezzo", default=None)
+
+
+def _conn():
+    """La connessione di QUESTO turno."""
+    try:
+        return _CONNESSIONE.get()
+    except LookupError:
+        raise RuntimeError(
+            "la connessione del turno non e' impostata: la mette `cerca()` "
+            "prima di invocare il grafo. Se questo nodo gira in un thread "
+            "suo, aprila dal `dsn` che sta nello stato.")
+
+
+def _su_pezzo():
+    """Chi aspetta la risposta, se la sta guardando scrivere."""
+    return _SU_PEZZO.get()
 
 
 def _prompt(nome: str, predefinito: str) -> str:
@@ -821,7 +851,7 @@ def _pensiero_a_chi_guarda(stato):
     Non si inventa niente e non si riassume: esce il pensiero vero. Se la
     chiamata non e' in streaming (prove, valutazioni) non esce niente.
     """
-    su_pezzo = stato.get("su_pezzo")
+    su_pezzo = _su_pezzo()
     if not callable(su_pezzo):
         return None
     return lambda testo: su_pezzo(("pensiero", testo))
@@ -839,7 +869,7 @@ def _mostra(stato, testo: str) -> None:
     se' quando ha scelto la mossa. Chi legge vede le sue parole, non le
     nostre, e nello stesso blocco pieghevole dove finisce il ragionamento.
     """
-    su_pezzo = stato.get("su_pezzo")
+    su_pezzo = _su_pezzo()
     if callable(su_pezzo) and testo:
         su_pezzo(("pensiero", testo.rstrip() + "\n"))
 
@@ -861,7 +891,7 @@ def _nodo_coordinatore(stato):
     # chi lavora e chi chiude. Vedi `doc/LETTURA-E-MAPPA.md`.
     messaggi = [
         {"role": "system", "content": _prompt("coordinatore", P_COORDINATORE)},
-        {"role": "system", "content": mappa.mappa_dati(stato["conn"])
+        {"role": "system", "content": mappa.mappa_dati(_conn())
          + "\n" + operatori.mappa_operatori(stato.get("dove") or "")},
     ]
     messaggi += stato.get("storia") or [{"role": "user",
@@ -1057,7 +1087,7 @@ def _rif_di(righe: list) -> dict:
 
 def _nodo_mosse(stato):
     """Esegue le mosse del giro. Quelle dello stesso giro partono INSIEME."""
-    conn, gruppi = stato["conn"], stato["gruppi"]
+    conn, gruppi = _conn(), stato["gruppi"]
     righe = list(stato.get("righe") or [])
     verdetti = dict(stato.get("verdetti") or {})
     traccia, esiti = [], []
@@ -1330,7 +1360,7 @@ def _guida(stato, motivo: str, cerca: str = "") -> tuple:
     scrive `SIMILE('nastri blu')`, e la prende lui, non questo codice.
     """
     campione = operatori.vicinato(
-        stato["conn"], "immagini",
+        _conn(), "immagini",
         cerca.strip() or stato.get("ambito") or stato["domanda"],
         stato["gruppi"], stato["aziende"], quanti=GUIDA_CAMPIONE,
         colonne="id, documento, page, descrizione")
@@ -1966,9 +1996,9 @@ def _nodo_redattore(stato):
 
     # La consegna. I «[[3]]» vanno risolti qui, altrimenti si vedrebbero i
     # segnaposti; le fonti vanno in coda, dove gia' stanno.
-    su_pezzo = stato.get("su_pezzo")
+    su_pezzo = _su_pezzo()
     if callable(su_pezzo):
-        con_fonti = _con_fonti(stato["conn"], confermate, list(stato["gruppi"]))
+        con_fonti = _con_fonti(_conn(), confermate, list(stato["gruppi"]))
         sostituisci, coda = collegatore(con_fonti, stato.get("base") or "",
                                         stato.get("utente") or "")
         passa, resi = _a_pezzi(sostituisci), []
@@ -2303,7 +2333,6 @@ def _nota(nome, dettagli, righe, t0) -> dict:
 class Stato(TypedDict):
     domanda: str
     storia: list
-    conn: Any
     dsn: str
     gruppi: list
     aziende: list
@@ -2318,7 +2347,6 @@ class Stato(TypedDict):
     mosse: list               # le chiamate scelte dal coordinatore in questo giro
     esiti: list               # com'e' andata, in parole
     chiarimento: str          # la domanda che il coordinatore fa alla persona
-    su_pezzo: Any             # se c'e', il redattore scrive in streaming
     base: str                 # per firmare i collegamenti durante lo streaming
     utente: str
     resa: bool                # la risposta e' gia' resa (citazioni e fonti)
@@ -2409,21 +2437,30 @@ def cerca(conn, domanda: str, gruppi: list, storia: list = None,
     if not (ultimo and ultimo.get("role") == "user"
             and (ultimo.get("content") or "").strip() == domanda.strip()):
         conversazione.append({"role": "user", "content": domanda})
-    stato = _compilato.invoke({
-        "domanda": domanda,
-        "storia": conversazione,
-        "conn": conn, "dsn": os.environ["DATABASE_URL"],
-        "gruppi": gruppi, "aziende": identita.aziende(gruppi),
-        "query_fatte": [], "eseguite": 0, "respinte": 0,
-        "riviste": 0, "impegnativa": True, "rispondibile": True,
-        "ambito": "", "manca": [],
-        "mosse": [], "esiti": [], "chiarimento": "",
-        "su_pezzo": su_pezzo, "base": base, "utente": utente, "resa": False,
-        "righe": [], "verdetti": {},
-        "confermate": [], "etichette": {}, "risposta": "", "passi": 0,
-        "traccia": [],
-    }, {"recursion_limit": MAX_PASSI * 3 + 10})
-    verdetti = stato.get("verdetti") or {}
+    # Le risorse del turno: fuori dallo stato, perche' lo stato deve poter
+    # essere scritto su disco. I `reset` in fondo servono perche' lo stesso
+    # processo serve piu' richieste.
+    segno_conn = _CONNESSIONE.set(conn)
+    segno_pezzo = _SU_PEZZO.set(su_pezzo)
+    try:
+        stato = _compilato.invoke({
+            "domanda": domanda,
+            "storia": conversazione,
+            "dsn": os.environ["DATABASE_URL"],
+            "gruppi": gruppi, "aziende": identita.aziende(gruppi),
+            "query_fatte": [], "eseguite": 0, "respinte": 0,
+            "riviste": 0, "impegnativa": True, "rispondibile": True,
+            "ambito": "", "manca": [],
+            "mosse": [], "esiti": [], "chiarimento": "",
+            "base": base, "utente": utente, "resa": False,
+            "righe": [], "verdetti": {},
+            "confermate": [], "etichette": {}, "risposta": "", "passi": 0,
+            "traccia": [],
+        }, {"recursion_limit": MAX_PASSI * 3 + 10})
+        verdetti = stato.get("verdetti") or {}
+    finally:
+        _CONNESSIONE.reset(segno_conn)
+        _SU_PEZZO.reset(segno_pezzo)
     return stato.get("confermate") or [], (stato.get("risposta") or "").strip(), {
         "etichette": stato.get("etichette") or {},
         "resa": bool(stato.get("resa")),
