@@ -63,7 +63,7 @@ from psycopg.rows import dict_row
 
 from orchestratore import (documento as documento_mod, egress, identita,
                            immagini as immagini_mod, mappa, modello,
-                           operatori, recupero)
+                           operatori, recupero, sql_agente)
 
 # Quanto puo' essere lungo il RAGIONAMENTO di una decisione.
 #
@@ -85,6 +85,10 @@ GUIDA_CAMPIONE = int(os.environ.get("GRAFO_GUIDA_CAMPIONE", "25"))  # righe alla
 MAX_PASSI = int(os.environ.get("GRAFO_MAX_PASSI", "5"))      # giri del coordinatore
 MAX_RIGHE = int(os.environ.get("GRAFO_MAX_RIGHE", "60"))     # righe tenute in stato
 ASSAGGIO = int(os.environ.get("GRAFO_ASSAGGIO", "300"))      # caratteri per riga
+# Quanto si legge in una volta. Non e' il tetto di `cerca` (6000
+# caratteri per quaranta didascalie): qui si apre un testo, e un testo
+# va letto per intero o si sa di averne letto un pezzo.
+LETTURA = int(os.environ.get("GRAFO_LETTURA", "12000"))      # caratteri per lettura
 PARALLELE = int(os.environ.get("GRAFO_PARALLELE", "4"))      # mosse insieme
 # L'osservatore e' SPENTO di default, e non per prudenza: in llama-swap.yaml
 # `qwen3-14b` sta nel gruppo «confronto» (exclusive) e il VLM nel gruppo
@@ -377,12 +381,14 @@ Un WHERE col solo colore e senza l'oggetto non e' una ricerca piu' larga: e' un'
 - `immagini`: le foto dei cataloghi. Qui sta il PRODOTTO.
 - `chunks`: il testo dei documenti, nelle lingue originali. Nomi commerciali, codici, prezzi, procedure.
 - `documenti`: l'elenco delle fonti, per le domande sull'archivio stesso.
+- `indice`: la mappa dell'archivio — una descrizione per documento e un riassunto per pagina. Dice DOVE sta una cosa; non e' il prodotto ne' il testo. Ci si arriva con la mossa `esplora`.
 </dove_si_cerca>
 
 <le_tue_mosse>
 - `cerca` esegue una query che scrivi tu. Puoi chiamarla piu' volte nello stesso giro e partono tutte insieme: se ci sono due strade indipendenti, aprile subito entrambe. Una ricerca costa cinquanta millisecondi, un giro in piu' ne costa quattordicimila.
   **Ordina sempre per pertinenza e metti un limite**: `ORDER BY SIMILE('la richiesta in italiano') LIMIT 20`. Senza, torni quaranta righe in ordine qualsiasi: chi le verifica le legge tutte una per una, e quelle che arrivano a chi ha chiesto non sono le piu' vicine a quello che voleva. Un `~*` coi confini di parola che taglia il grosso, piu' `SIMILE` che ordina il resto: e' la combinazione che rende di piu'.
-- `esplora` guarda l'INDICE invece dei dati: di ogni documento c'e' una descrizione di cosa contiene, di ogni pagina un riassunto. Serve quando non sai con che parole l'archivio chiama la cosa, o in quale documento sta — cioe' quasi sempre, su una domanda che riguarda un testo. Costa come una ricerca e ti risparmia le query a vuoto.
+- `esplora` guarda l'INDICE invece dei dati: di ogni documento c'e' una descrizione di cosa contiene, di ogni pagina un riassunto. Serve quando non sai con che parole l'archivio chiama la cosa, o in quale documento sta — cioe' quasi sempre, su una domanda che riguarda un testo. Non torna righe e non risponde a niente: torna DOVE guardare, e dopo si cerca sempre. Costa come una ricerca e ti risparmia le query a vuoto.
+- `leggi` APRE un documento e te lo da' da leggere, dalla pagina che dici. E' l'altra meta' di `esplora`: quello dice dove sta la cosa, questo te la fa leggere. Su una domanda che riguarda un testo — a che punto e' un progetto, cosa prevede una procedura — e' la mossa che risponde, perche' quello che cerchi non e' una riga: e' scritto da qualche parte, e va letto. Le pagine lette diventano righe come le altre, e si citano come le altre.
 - `verifica` fa leggere le righe trovate una per una e dice quali rispondono davvero.
 - `guarda` riapre la foto vera, per le righe su cui la descrizione non basta a decidere.
 - `proponi` costruisce le scelte da mostrare alla persona, leggendole nell'archivio. Gli dici TU cosa cercare, con le parole con cui la chiamerebbe lei — «oggetti sportivi», «regali per una mamma» — come dentro `SIMILE()`. Si chiama una volta per giro, e il risultato resta nello stato.
@@ -581,9 +587,11 @@ def _strumenti_del_coordinatore(ultima: bool = False,
             "name": "esplora",
             "description": ("Guarda l'INDICE prima dei dati: di ogni documento "
                             "c'e' una descrizione di cosa contiene, e di ogni "
-                            "pagina un riassunto. Ti dice DOVE sta la risposta "
-                            "e con che parole l'archivio chiama le cose, "
-                            "prima che tu scriva una query. Costa come una "
+                            "pagina un riassunto. Ti dice DOVE sta la "
+                            "risposta, non la risposta: niente di "
+                            "quello che torna e' una riga da citare. Dice in quali "
+                            "documenti sta, e con che parole l'archivio "
+                            "chiama le cose, prima che tu scriva la query. Costa come una "
                             "ricerca e non legge nessuna riga di dati."),
             "parameters": {"type": "object", "properties": {
                 "cerca": {"type": "string",
@@ -594,6 +602,28 @@ def _strumenti_del_coordinatore(ultima: bool = False,
                                          "per significato, quindi scrivi la "
                                          "domanda, non una parola indovinata."}},
                 "required": ["cerca"]}}},
+        {"type": "function", "function": {
+            "name": "leggi",
+            "description": ("APRE un documento e te lo legge, dalla pagina "
+                            "che dici in avanti. Non e' una ricerca: non "
+                            "cerchi una parola, prendi il testo. Serve "
+                            "quando la risposta non e' una riga ma qualcosa "
+                            "che sta scritto in un documento — a che punto "
+                            "e' un progetto, cosa dice una procedura, com'e' "
+                            "andata una decisione. Il nome te l'ha dato "
+                            "`esplora`. Se il documento e' lungo te ne da' "
+                            "un pezzo e ti dice come chiedere il seguito."),
+            "parameters": {"type": "object", "properties": {
+                "documento": {"type": "string",
+                              "description": "Il nome del documento, come lo "
+                                             "scrive l'indice. Anche solo un "
+                                             "pezzo che lo distingua."},
+                "da": {"type": "integer",
+                       "description": "Solo per CONTINUARE una lettura: il "
+                                      "numero che la lettura precedente ti "
+                                      "ha dato. La prima volta non si mette, "
+                                      "e si parte dall'inizio."}},
+                "required": ["documento"]}}},
         {"type": "function", "function": {
             "name": "proponi",
             "description": ("Quando la domanda si risponde con una SCELTA e non "
@@ -815,11 +845,26 @@ def _mostra(stato, testo: str) -> None:
 
 def _nodo_coordinatore(stato):
     t0 = time.monotonic()
+    # UN CAPITOLO SOLO, scelto su `dove` — la decisione dell'analista, che
+    # nelle prove del 5/10/2026 l'ha azzeccata sei volte su sei. Dargli
+    # entrambi i capitoli significa dargli quaranta righe su `~*` e sui
+    # plurali delle didascalie inglesi anche quando la domanda e' «a che
+    # punto siamo»: misurato, con tutto il prompt il 14b non ha scelto
+    # `leggi` nemmeno una volta, con un prompt neutro sei volte su otto.
+    #
+    # E' una decisione di CODICE, e non dovrebbe esserci. Toglierla vuol
+    # dire far girare i due capitoli come due rami indipendenti, ognuno coi
+    # suoi giri, con una sola giunzione davanti al redattore: provata la
+    # versione corta — due letture nello stesso giro — costa 21/30 contro
+    # 26/30, perche' in un loop condiviso la giunzione deve scegliere fra
+    # chi lavora e chi chiude. Vedi `doc/LETTURA-E-MAPPA.md`.
     messaggi = [
         {"role": "system", "content": _prompt("coordinatore", P_COORDINATORE)},
-        {"role": "system", "content": mappa.mappa_dati() + "\n" + operatori.MAPPA_OPERATORI},
+        {"role": "system", "content": mappa.mappa_dati(stato["conn"])
+         + "\n" + operatori.mappa_operatori(stato.get("dove") or "")},
     ]
-    messaggi += stato.get("storia") or [{"role": "user", "content": stato["domanda"]}]
+    messaggi += stato.get("storia") or [{"role": "user",
+                                         "content": stato["domanda"]}]
     messaggi.append({"role": "user", "content":
                      "<stato>\n" + _stato_a_parole(stato) + "\n</stato>"})
     ultima = stato.get("passi", 0) >= MAX_PASSI - 1
@@ -836,7 +881,8 @@ def _nodo_coordinatore(stato):
     scelte = _decide(messaggi,
                      _strumenti_del_coordinatore(
                          ultima,
-                         stato.get("respinte", 0) > 0 and stato.get("eseguite", 0) == 0,
+                         stato.get("respinte", 0) > 0
+                         and stato.get("eseguite", 0) == 0,
                          stato.get("eseguite", 0) == 0,
                          not stato.get("rispondibile", True),
                          bool(stato.get("chiarimento"))),
@@ -902,16 +948,89 @@ def _mossa_cerca(dsn, gruppi, aziende, arg, domanda: str, gia_viste=()):
         vicino = operatori.vicinato(conn, operatori._tabella(sql), domanda,
                                     gruppi, aziende,
                                     colonne=operatori.colonne_chieste(sql))
-    testo = ("0 righe. La query e' lecita e i permessi sono gia' applicati: "
-             "con QUESTE parole qui dentro non c'e' niente.")
+    testo = ("La TUA query non ha preso niente: 0 righe. E' lecita e i "
+             "permessi sono gia' applicati, quindi con QUESTE parole qui "
+             "dentro non c'e' niente.")
     if vicino:
-        testo += ("\nMa guarda come l'archivio scrive la cosa piu' vicina a "
-                  "quello che cerchi — sono le sue parole, non le tue:\n"
+        testo += ("\nMa la tua query non e' l'archivio. Queste sono le righe "
+                  "che l'archivio ha di piu' vicino a quello che cerchi, per "
+                  "SIGNIFICATO — stesso filtro dei permessi, scritte con le "
+                  "sue parole e non con le tue:\n"
                   + _scheda(vicino)
-                  + "\nNon sono risultati e non si citano: sono il vocabolario. "
-                    "Se fra queste righe c'e' il termine che ti serviva, "
-                    "riscrivi la query con quello.")
-    return [], testo, "vuota"
+                  + "\nSono entrate fra le righe, e nessuno le ha ancora "
+                    "giudicate: non le ha scelte nessuna WHERE. Se rispondono, "
+                    "falle controllare con `verifica` prima di consegnarle. Se "
+                    "ti dicono solo come l'archivio chiama la cosa, prendi il "
+                    "termine e riscrivi la query.")
+    # Il vicinato ENTRA fra le righe. Vedi lo scritto in testa a
+    # `scratchpad/vicinato-righe.py`: finche' era solo vocabolario, il
+    # coordinatore leggeva la risposta e non aveva modo di darla.
+    return list(vicino), testo, "vuota"
+
+
+def _mossa_leggi(conn, arg, gruppi, aziende) -> tuple[list, str]:
+    """Apre un documento e ne legge i pezzi in ordine di pagina.
+
+    L'ACL e' quella di sempre, `sql_agente._applica_acl`: la sicurezza sta
+    in un posto solo e questa mossa non ne scrive una sua. Il nome del
+    documento entra con ILIKE e non con `~*` — e' un nome scritto da chi
+    legge l'indice, non una regex, e una parentesi aperta non deve far
+    fallire una lettura.
+
+    Se il documento e' piu' lungo del tetto, si dice DOVE ci si e' fermati:
+    la pagina seguente e' la maniglia per richiamare la mossa, come il
+    percorso che le ricerche degli altri restituiscono.
+    """
+    nome = str(arg.get("documento") or "").strip()
+    if not nome:
+        return [], "manca il nome del documento: quello che ti ha dato `esplora`"
+    try:
+        da = int(arg.get("da")) if arg.get("da") not in (None, "") else None
+    except (TypeError, ValueError):
+        da = None
+    sql = ("SELECT id, documento, page, content FROM chunks "
+           "WHERE documento ILIKE %s" + (" AND id >= %s" if da else "")
+           + " ORDER BY documento, page, id")
+    sql = sql_agente._applica_acl(sql, gruppi, aziende)
+    par = [aziende, gruppi, "%" + nome + "%"] + ([da] if da else [])
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SET LOCAL statement_timeout = %d"
+                        % int(sql_agente.SECONDI * 1000))
+            cur.execute(sql, par)
+            trovate = cur.fetchall()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return [], "il documento non si e' aperto, riprova col nome esatto"
+    if not trovate:
+        return [], (("hai gia' letto fin qui: da quel punto in poi non c'e' "
+                     "altro") if da else
+                    ("nessun documento si chiama cosi' fra quelli che puoi "
+                     "vedere: guarda come lo scrive l'indice"))
+    quali = sorted({r["documento"] for r in trovate})
+    fuori, quanti = [], 0
+    for r in trovate:
+        testo = r.get("content") or ""
+        if quanti + len(testo) > LETTURA and fuori:
+            break
+        fuori.append(r)
+        quanti += len(testo)
+    resto = len(trovate) - len(fuori)
+    testo = "hai letto %d pezzi di %s" % (
+        len(fuori), quali[0] if len(quali) == 1 else "%d documenti" % len(quali))
+    if len(quali) > 1:
+        testo += " (il nome ne prende piu' di uno: %s — se ne vuoi uno solo, "\
+                 "scrivilo piu' preciso)" % ", ".join(quali[:4])
+    if resto:
+        testo += (". Il documento continua: altri %d pezzi. Per il seguito "
+                  "richiama `leggi` sullo stesso documento con da=%d"
+                  % (resto, trovate[len(fuori)]["id"]))
+    else:
+        testo += ". E' tutto, il documento finisce qui."
+    return fuori, testo
 
 
 def _nodo_mosse(stato):
@@ -988,8 +1107,12 @@ def _nodo_mosse(stato):
                 conn, recupero.embedding(cosa, query=True), gruppi)
             if trovate:
                 esiti.append(
-                    "esplora: l'indice dice dove guardare (le pagine le citi "
-                    "con `page`, i documenti con `documento`)\n"
+                    "esplora: questa e' una MAPPA, non sono righe. Niente "
+                    "di quello che leggi qui e' citabile e niente di "
+                    "quello che leggi qui e' una risposta: dice in "
+                    "quali documenti e a quali pagine sta la cosa, "
+                    "perche' la query dopo la scrivi sapendo. Il passo "
+                    "che viene adesso e' `cerca`.\n"
                     + "\n".join(
                         "- %s%s: %s" % (d, "" if p is None else " p.%s" % p,
                                         " ".join(str(t).split())[:160])
@@ -1000,6 +1123,23 @@ def _nodo_mosse(stato):
             traccia.append(_nota("esplora", {"cerca": cosa[:60],
                                              "trovate": len(trovate)},
                                  len(trovate), t0))
+        elif nome == "leggi":
+            t0 = time.monotonic()
+            # LA LETTURA. Le pagine lette entrano fra le righe con il loro
+            # `documento` e la loro `page`: da li' in poi sono righe come
+            # quelle di una ricerca, e chi scrive le cita come cita tutto il
+            # resto. Era l'anello che mancava — `esplora` dava la mappa e
+            # sotto non c'era niente da aprire.
+            nuove, testo = _mossa_leggi(conn, arg, gruppi, stato["aziende"])
+            viste = {r.get("id") for r in righe if r.get("id") is not None}
+            for r in nuove:
+                if r.get("id") not in viste:
+                    viste.add(r.get("id"))
+                    righe.append(dict(r))
+            righe = righe[:MAX_RIGHE]
+            esiti.append("leggi: " + testo)
+            traccia.append(_nota("leggi", {"documento": str(
+                arg.get("documento") or "")[:60]}, nuove, t0))
         elif nome == "proponi":
             t0 = time.monotonic()
             # Il ventaglio c'e' gia': rifarlo sullo stesso stato da' lo stesso
