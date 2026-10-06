@@ -94,7 +94,11 @@ def main():
             else:
                 os.environ["GRAFO_PROMPT_%s" % nodo.upper()] = alternativo
                 print("prompt alternativo: %d caratteri" % len(alternativo))
-            dopo = compilato.invoke(None, punto.config)
+            # Si FORCA il checkpoint invece di riprendere in posto: cosi'
+            # la storia del primo giro resta leggibile, e si possono provare
+            # due prompt diversi dallo stesso punto.
+            fork = compilato.update_state(punto.config, {"passi": 0})
+            dopo = compilato.invoke(None, fork)
             print()
             print((dopo.get("risposta") or "").strip()[:600])
             print("\npercorso:", " > ".join(
