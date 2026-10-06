@@ -130,7 +130,7 @@ Ogni punto ha l'attesa scritta. **Una modifica per volta, col banco in mezzo.**
 Il 5/10 ne ho infilate cinque insieme e ho perso sei punti sui cataloghi senza
 sapere quale li avesse presi: recuperarli è costato tre misure da 45 minuti.
 
-### 1. L'`id` al critico (sblocca tutto il resto)
+### 1. L'`id` al critico — FATTO il 6/10/2026 (`41d8578`)
 
 Oggi le righe sono identificate dalla **posizione nella lista**: il critico
 risponde `riga: 3`, il codice scrive `righe[n-1]["_motivo"]`, i verdetti sono
@@ -147,20 +147,47 @@ indicizzano per `id`; la numerazione `[[n]]` si assegna SOLO quando si scrive
 Attenzione alle righe senza `id` (un `SELECT count(*)` non ne ha): servono una
 chiave surrogata.
 
-*Atteso: il banco non si muove. Se si muove, è un bug, non un miglioramento.*
+Riparato con un `_rif` stabile assegnato quando la riga entra nello stato.
+Il redattore continua a vedere `1..N` — quella numerazione è di
+presentazione e `rendi()` la usa per i collegamenti: mettendoci i `_rif`
+ogni citazione manderebbe chi legge alla pagina di un altro prodotto. C'è un
+assert in `_prova()` che lo tiene fermo.
 
-### 2. Il checkpointer
+Banco intero dopo: 24/30, come la corsa precedente — un refactor che non si
+vede, che è quello che deve fare.
+
+### 2. Il checkpointer — FATTO il 6/10/2026, e la sorpresa che c'era sotto
 
 **Non è igiene, è la cosa che rende il lavoro possibile.** Con i checkpoint si
 rigioca un turno dal nodo del coordinatore con un prompt diverso, in secondi,
 invece di rifare 30 turni in 45 minuti. Dopo questo punto ogni misura
 successiva costa una frazione.
 
-LangGraph salva lo stato a ogni transizione (Postgres o SQLite) e permette di
-riprendere e rigiocare. Serve un `thread_id` per conversazione e cambia come
-`grafo.cerca()` invoca il grafo compilato.
+Il primo tentativo è morto con `TypeError: Type is not msgpack serializable:
+Connection`: lo stato conteneva una connessione al database e la funzione di
+callback dello streaming, e un checkpointer scrive lo stato a ogni
+transizione. **Quello stesso ostacolo teneva fermi tre punti**, non uno — il
+checkpointer, `interrupt()` e `Send` chiedono tutti la stessa cosa: che lo
+stato si possa scrivere.
 
-*Atteso: nessun effetto sulla qualità. Verificare che il banco non si muova.*
+Riparato in `f03dbcf`: le risorse del turno viaggiano in un `ContextVar`
+impostato da `cerca()` e si leggono con `_conn()` e `_su_pezzo()`. Nello stato
+resta il `dsn` — una stringa — per quando i rami gireranno in thread separati.
+
+Il checkpointer **non è acceso in produzione**: `InMemorySaver` in un processo
+lungo cresce senza limiti e il saver su Postgres non è installato
+(`langgraph-checkpoint-postgres`). Lo accende chi ne ha bisogno. Per ora lo usa
+`valutazione/rigioca.py` (`875583d`), che rigioca un turno da un nodo con un
+prompt diverso in venti secondi invece di rifare il banco:
+
+```bash
+docker compose cp valutazione/rigioca.py orchestratore:/tmp/rigioca.py
+docker compose exec -T orchestratore python /tmp/rigioca.py coordinatore "la domanda" [file-col-prompt]
+```
+
+Non è un metro: un turno rigiocato è un campione, e rigiocandone due identici
+la risposta è arrivata quasi uguale ma non uguale. Serve a LEGGERE cosa cambia,
+non a decidere.
 
 ### 3. Lo stato al coordinatore con dei CAMPI
 
