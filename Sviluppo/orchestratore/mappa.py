@@ -15,8 +15,28 @@ vedra davvero, e la lingua emerge dai dati («object:», «Material:»,
 Non e' una regola che decide al posto del modello: e' l'indice di un
 catalogo. Il modello legge, capisce e scrive la query, come farebbe io.
 """
+from psycopg.rows import tuple_row
 
-def mappa_dati(termini_rari: str = "") -> str:
+
+def conta(conn) -> dict:
+    """I numeri delle tabelle, letti adesso.
+
+    Costa due millisecondi e vale un prompt che non mente: l'indicizzazione
+    gira di notte e una mappa scritta a mano e' vecchia la mattina dopo.
+    """
+    with conn.cursor(row_factory=tuple_row) as cur:
+        cur.execute("""SELECT (SELECT count(*) FROM immagini),
+                              (SELECT count(*) FROM chunks),
+                              (SELECT count(*) FROM documenti),
+                              (SELECT count(*) FROM indice WHERE page IS NULL),
+                              (SELECT count(*) FROM indice
+                                WHERE page IS NOT NULL)""")
+        foto, pezzi, fonti, doc, pag = cur.fetchone()
+    return {"foto": foto, "pezzi": pezzi, "fonti": fonti,
+            "indice_documenti": doc, "indice_pagine": pag}
+
+
+def mappa_dati(conn) -> str:
     """La mappa dei dati, da mettere nel prompt dell'agente.
 
     VOLUTAMENTE CORTA. La prima versione elencava a mano i sinonimi di
@@ -28,9 +48,29 @@ def mappa_dati(termini_rari: str = "") -> str:
     non sono deducibili da uno sguardo e quindi stanno qui: dove stanno i dati,
     che forma hanno, che lingua hanno, e cosa significa «zero righe».
     """
-    return (
+    n = conta(conn)
+    # L'INDICE SI DESCRIVE PER QUELLO CHE E'. Finche' era vuoto la mappa
+    # diceva «non cercare qui», e quella frase e' sopravvissuta al giorno in
+    # cui si e' riempito. Adesso la decide il conteggio, non la memoria.
+    if n["indice_documenti"] or n["indice_pagine"]:
+        indice = (
+            "4. indice — la MAPPA dell'archivio: di ogni documento una "
+            "descrizione di cosa contiene, di ogni pagina un riassunto. "
+            "%d documenti e %d pagine. Colonne: source_id, documento, page, "
+            "descrizione. Dice DOVE sta una cosa e con che parole l'archivio "
+            "la chiama, prima che tu scriva la query: non sono righe di "
+            "prodotto e non sono il testo del documento.\n"
+            % (n["indice_documenti"], n["indice_pagine"]))
+    else:
+        indice = ("4. indice — la mappa dell'archivio, al momento VUOTA: su "
+                  "questa non cercare, usa le altre tre.\n")
+    # I conteggi stanno in una f-string a parte, e il resto resta un
+    # letterale: il `%` degli esempi («non usare LIKE con '%'») e la
+    # formattazione non si toccano.
+    dove = (
         "DOVE STANNO I DATI\n"
-        "1. immagini — 15143 foto di catalogo: QUI c'e' il PRODOTTO (un nastro, "
+        f"1. immagini — {n['foto']} foto di catalogo: QUI c'e' il PRODOTTO "
+        "(un nastro, "
         "un vaso, una pietra). Colonne: id, source_id, documento, page, "
         "descrizione. Tutto quello che vedi della foto e' dentro `descrizione`, "
         "un unico campo di testo: non esistono colonne `object`, `material`, "
@@ -40,15 +80,16 @@ def mappa_dati(termini_rari: str = "") -> str:
         "   Altro campione VERO, stessa tabella:\n"
         "     Object: clip with football motif | Material: plastic | "
         "Shape/size: rectangular body, 1.5 cm x 1.5 cm; rounded football head\n"
-        "2. chunks — 17582 pezzi di testo: QUI c'e' la DESCRIZIONE, la policy, "
+        f"2. chunks — {n['pezzi']} pezzi di testo: QUI c'e' la DESCRIZIONE, "
+        "la policy, "
         "il manuale, il nome di prodotto, il codice, il prezzo. Colonne: id, "
         "source_id, documento, page, content. `content` e' il testo originale, "
         "nelle sue lingue, senza etichette.\n"
-        "3. documenti — le 14 fonti: nome file, tipo, stato, pezzi, "
+        f"3. documenti — le {n['fonti']} fonti: nome file, tipo, stato, pezzi, "
         "figure_totali. Serve per le domande sui documenti stessi.\n"
-        "4. indice — l'indice dei cataloghi (che cosa c'e' in ogni pagina). "
-        "Colonne: documento, page, testo. Al momento e' VUOTA, quindi su questo "
-        "non cercare: usa le altre tre.\n"
+        + indice)
+    return (
+        dove +
         "\n"
         "UNA tabella sola per query: i permessi si applicano a una tabella alla "
         "volta. Se ti servono due fonti, fai due chiamate.\n"
@@ -97,7 +138,8 @@ def mappa_dati(termini_rari: str = "") -> str:
         "motivo) e' una condizione a parte unita con AND.\n"
         "\n"
         "QUANDO TORNA ZERO RIGHE — O POCHISSIME\n"
-        "Qui dentro ci sono 15.000 foto e 17.000 pezzi di testo. Se una cosa "
+        f"Qui dentro ci sono {n['foto']} foto e {n['pezzi']} pezzi di testo. "
+        "Se una cosa "
         "comune te ne da' una o due, la risposta non e' «non c'e'»: e' «la mia "
         "query e' troppo stretta». Una riga sola e' un sospetto, non un "
         "risultato, e dire alla persona che non c'e' niente sarebbe falso.\n"
@@ -113,6 +155,4 @@ def mappa_dati(termini_rari: str = "") -> str:
         "«non c'e'» dopo un tentativo solo. Una risposta onesta vale piu' di "
         "una pagina inventata — e «non l'ho trovato» detto per pigrizia e' "
         "anch'esso una cosa non vera.\n"
-        + (f"\nParole che il glossario ha gia' imparato su questi dati:\n{termini_rari}"
-           if termini_rari else "")
     )

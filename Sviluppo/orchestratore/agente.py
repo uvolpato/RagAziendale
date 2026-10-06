@@ -30,7 +30,7 @@ from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from orchestratore import (egress, glossario, identita, mappa, modello,
+from orchestratore import (egress, identita, mappa, modello,
                            recupero, sql_agente, vincoli as v)
 
 ROTTA = os.environ.get("LLM_RAGIONAMENTO", "ragionamento")
@@ -57,8 +57,6 @@ VUOTO = (
 AGENTE_RAGIONA = os.environ.get("AGENTE_RAGIONA", "") == "1"
 MAX_TOKEN = int(os.environ.get("AGENTE_MAX_TOKEN",
                                "8192" if AGENTE_RAGIONA else "2048"))
-# 1 = non espandere i termini col glossario del corpus (solo quelli del modello).
-SENZA_GLOSSARIO = os.environ.get("SENZA_GLOSSARIO", "") == "1"
 # 1 = il guardrail forza la ricerca anche quando non c'e' un oggetto ma c'e' un
 # colore («color crema»): i termini del colore diventano l'oggetto da cercare.
 GUARDIA_SENZA_OGGETTO = os.environ.get("GUARDIA_SENZA_OGGETTO", "") == "1"
@@ -761,7 +759,8 @@ def cerca(conn, domanda: str, gruppi: list, limite: int = 8, storia: list = None
     # 30/09/2026: era inserita anche a flag spento, quindi il funzionante era
     # gia' stato toccato).
     if SQL_AGENTE:
-        messaggi.insert(1, {"role": "system", "content": mappa.mappa_dati()})
+        messaggi.insert(1, {"role": "system",
+                            "content": mappa.mappa_dati(conn)})
     stato = _compilato.invoke({
         "domanda": domanda,
         "intent": "",
