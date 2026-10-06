@@ -52,7 +52,7 @@ def stato_iniziale(domanda, storia):
     }
 
 
-def dal_nodo(compilato, cfg, nodo):
+def dal_nodo(compilato, cfg, nodo, quale=1):
     """Il checkpoint da cui `nodo` sta per partire, il PRIMO che lo fa.
 
     La storia torna dal più recente al più vecchio, quindi il primo che ha
@@ -60,7 +60,8 @@ def dal_nodo(compilato, cfg, nodo):
     che gira più volte, si prende il giro iniziale — l'ultimo della lista.
     """
     buoni = [s for s in compilato.get_state_history(cfg) if nodo in (s.next or ())]
-    return buoni[-1] if buoni else None
+    buoni.reverse()          # dal primo giro all'ultimo
+    return buoni[quale - 1] if len(buoni) >= quale else None
 
 
 def main():
@@ -68,6 +69,13 @@ def main():
         sys.exit(__doc__.strip().splitlines()[0]
                  + "\n  rigioca.py <nodo> <domanda> [prompt alternativo]")
     nodo, domanda = sys.argv[1], sys.argv[2]
+    # `coordinatore#3` = il terzo giro di quel nodo. Serve per provare una
+    # modifica che ha effetto solo quando qualcosa e' gia' successo — un
+    # contatore di mosse al primo giro e' vuoto per definizione.
+    quale = 1
+    if "#" in nodo:
+        nodo, _, n_ = nodo.partition("#")
+        quale = int(n_)
     alternativo = sys.argv[3] if len(sys.argv) > 3 else ""
     if alternativo and os.path.exists(alternativo):
         alternativo = open(alternativo, encoding="utf-8").read()
@@ -84,7 +92,7 @@ def main():
             print("\npercorso:", " > ".join(
                 n.get("strumento", "?") for n in primo.get("traccia") or []))
 
-            punto = dal_nodo(compilato, cfg, nodo)
+            punto = dal_nodo(compilato, cfg, nodo, quale)
             if punto is None:
                 sys.exit("\nil nodo %r non compare nel percorso" % nodo)
             print("\n=== si riparte da `%s` ===" % nodo)

@@ -756,6 +756,12 @@ def _stato_a_parole(stato) -> str:
             "si puo' rispondere: cercando verrebbe fuori un mucchio di cose "
             "tenute insieme da una caratteristica sola, non una risposta "
             "utile.")
+    fatte = stato.get("mosse_fatte") or {}
+    if fatte:
+        parti.append(
+            "Mosse che hai GIA' fatto in questo turno: "
+            + ", ".join("%s x%d" % (n, q) for n, q in sorted(fatte.items()))
+            + ".")
     pezzi = _pezzi_a_parole(stato, con_tabella=True)
     if pezzi:
         parti.append("Chi ha letto la domanda l'ha anche SCOMPOSTA, mettendo "
@@ -1099,6 +1105,11 @@ def _nodo_mosse(stato):
         motivo = str(arg.get("motivo") or "").strip()
         _mostra(stato, "**%s** — %s" % (nome, motivo) if motivo else "**%s**" % nome)
 
+    # Le mosse di QUESTO giro si sommano a quelle dei giri prima: e' il
+    # fatto che al coordinatore mancava.
+    fatte = dict(stato.get("mosse_fatte") or {})
+    for nome, _ in mosse:
+        fatte[nome] = fatte.get(nome, 0) + 1
     eseguite, respinte = stato.get("eseguite", 0), stato.get("respinte", 0)
     viste_sql = set(stato.get("query_fatte") or [])
     ricerche = [(i, a) for i, (n, a) in enumerate(mosse) if n == "cerca"]
@@ -1235,6 +1246,7 @@ def _nodo_mosse(stato):
             traccia.append(_nota("osservatore", {"foto": len(guardate)}, 0, t0))
 
     return {"righe": _numera(righe), "verdetti": verdetti, "mosse": [],
+            "mosse_fatte": fatte,
             "campione": campione,
             "chiarimento": chiarimento,
             "esiti": esiti, "eseguite": eseguite, "respinte": respinte,
@@ -2337,6 +2349,7 @@ class Stato(TypedDict):
     gruppi: list
     aziende: list
     query_fatte: list         # le SELECT gia' eseguite in questo turno
+    mosse_fatte: dict         # quante volte ogni mossa, in questo turno
     eseguite: int             # query andate davvero al database
     respinte: int             # query bocciate prima di partire (NON sono ricerche)
     riviste: int              # quante volte l'analista ha rigiudicato in questo turno
@@ -2448,7 +2461,7 @@ def cerca(conn, domanda: str, gruppi: list, storia: list = None,
             "storia": conversazione,
             "dsn": os.environ["DATABASE_URL"],
             "gruppi": gruppi, "aziende": identita.aziende(gruppi),
-            "query_fatte": [], "eseguite": 0, "respinte": 0,
+            "query_fatte": [], "mosse_fatte": {}, "eseguite": 0, "respinte": 0,
             "riviste": 0, "impegnativa": True, "rispondibile": True,
             "ambito": "", "manca": [],
             "mosse": [], "esiti": [], "chiarimento": "",
