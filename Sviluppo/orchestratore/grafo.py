@@ -753,7 +753,8 @@ def _stato_a_parole(stato) -> str:
             f"Righe trovate: {len(righe)}. Controllate: {len(verdetti)} "
             f"(buone {len(confermate)}, "
             f"scartate {sum(1 for v in verdetti.values() if v == 'no')}).")
-        da_verificare = [n for n in range(1, len(righe) + 1) if n not in verdetti]
+        da_verificare = [r["_rif"] for r in righe
+                         if r.get("_rif") and r["_rif"] not in verdetti]
         if da_verificare:
             # Il fatto, detto per quello che comporta. Non e' un divieto: e'
             # dire cosa esce se si risponde adesso.
@@ -1033,6 +1034,27 @@ def _mossa_leggi(conn, arg, gruppi, aziende) -> tuple[list, str]:
     return fuori, testo
 
 
+def _numera(righe: list) -> list:
+    """Da' un `_rif` alle righe che non ne hanno ancora uno.
+
+    Idempotente: una riga che il suo riferimento ce l'ha se lo tiene, anche
+    se davanti a lei ne arrivano altre o se quelle in coda vengono tagliate.
+    I buchi nella numerazione sono normali — e' un identificatore, non un
+    conteggio.
+    """
+    prossimo = max((r.get("_rif") or 0) for r in righe) + 1 if righe else 1
+    for r in righe:
+        if not r.get("_rif"):
+            r["_rif"] = prossimo
+            prossimo += 1
+    return righe
+
+
+def _rif_di(righe: list) -> dict:
+    """{riferimento: riga}, per arrivare a una riga senza contarla."""
+    return {r["_rif"]: r for r in righe if r.get("_rif")}
+
+
 def _nodo_mosse(stato):
     """Esegue le mosse del giro. Quelle dello stesso giro partono INSIEME."""
     conn, gruppi = stato["conn"], stato["gruppi"]
@@ -1088,6 +1110,7 @@ def _nodo_mosse(stato):
         righe = righe[:MAX_RIGHE]
 
     for nome, arg in mosse:
+        _numera(righe)
         if nome == "verifica":
             t0 = time.monotonic()
             nuovi = _critico(stato, righe, str(arg.get("motivo") or ""))
@@ -1181,7 +1204,7 @@ def _nodo_mosse(stato):
             esiti.append("guarda: %d foto guardate, ora da riverificare" % len(guardate))
             traccia.append(_nota("osservatore", {"foto": len(guardate)}, 0, t0))
 
-    return {"righe": righe, "verdetti": verdetti, "mosse": [],
+    return {"righe": _numera(righe), "verdetti": verdetti, "mosse": [],
             "campione": campione,
             "chiarimento": chiarimento,
             "esiti": esiti, "eseguite": eseguite, "respinte": respinte,
@@ -1446,7 +1469,8 @@ def _critico(stato, righe, motivo: str) -> dict:
     articoli»), quindi spezzarle non gli toglie niente.
     """
     gia = stato.get("verdetti") or {}
-    da_fare = [(i + 1, r) for i, r in enumerate(righe) if (i + 1) not in gia]
+    da_fare = [(r["_rif"], r) for r in righe
+               if r.get("_rif") and r["_rif"] not in gia]
     if not da_fare:
         return {}
     # Si spezza in gruppi SOLO se il server del modello serve davvero piu'
@@ -1520,9 +1544,10 @@ def _giudica(stato, righe, motivo: str, da_fare) -> dict:
             except (TypeError, ValueError):
                 continue
             esito = str(e.get("esito", "")).lower()
-            if n in numeri and esito in ("si", "no"):
+            riga = _rif_di(righe).get(n)
+            if n in numeri and riga is not None and esito in ("si", "no"):
                 fuori[n] = esito
-                righe[n - 1]["_motivo"] = str(e.get("motivo") or "")[:200]
+                riga["_motivo"] = str(e.get("motivo") or "")[:200]
     return fuori
 
 
@@ -1577,12 +1602,13 @@ def _osservatore(conn, righe, numeri, domanda: str) -> list:
     """
     guardate = []
     for n in numeri:
-        if not (1 <= n <= len(righe)) or righe[n - 1].get("id") is None:
+        riga = _rif_di(righe).get(n)
+        if riga is None or riga.get("id") is None:
             continue
-        risposta = _guarda(conn, righe[n - 1]["id"], domanda)
+        risposta = _guarda(conn, riga["id"], domanda)
         if not risposta:
             continue
-        righe[n - 1]["_visto"] = f"«{domanda}» -> {risposta}"
+        riga["_visto"] = f"«{domanda}» -> {risposta}"
         guardate.append(n)
     return guardate
 
@@ -1685,11 +1711,14 @@ def _da_consegnare(righe, verdetti):
     una scelta del codice: e' obbedire a un agente che ha giudicato. Tutto il
     resto passa con l'etichetta che ha, e come dirlo lo decide il redattore.
     """
-    etichette = {n: verdetti.get(n, "non verificata")
-                 for n in range(1, len(righe) + 1)}
-    tenute = [n for n in sorted(etichette) if etichette[n] != "no"]
-    return ([righe[n - 1] for n in tenute],
-            {i + 1: etichette[n] for i, n in enumerate(tenute)})
+    # L'etichetta si cerca col riferimento della riga; la numerazione che
+    # esce e' 1..N nell'ordine in cui le righe stanno, perche' e' quella che
+    # `rendi()` usa per trasformare `[[n]]` in un collegamento.
+    tenute = [r for r in righe
+              if verdetti.get(r.get("_rif"), "non verificata") != "no"]
+    return (tenute,
+            {i + 1: verdetti.get(r.get("_rif"), "non verificata")
+             for i, r in enumerate(tenute)})
 
 
 P_REVISORE = """<ruolo>
@@ -2181,7 +2210,7 @@ def _scheda(righe, numeri=None, verdetti=None, visto: bool = False,
         return _schede_xml(righe, numeri, verdetti, visto)
     fuori = []
     for i, r in enumerate(righe):
-        n = numeri[i] if numeri else i + 1
+        n = numeri[i] if numeri else (r.get("_rif") or i + 1)
         capo = f"[[{n}]]" if per_chi_scrive else f"{n}."
         if verdetti and n in verdetti:
             capo += (" (%s)" % PAROLA.get(verdetti[n], "non controllato")
@@ -2623,6 +2652,23 @@ def _prova():
     ultimo = _stato_a_parole({"domanda": "d", "righe": [], "verdetti": {},
                               "passi": MAX_PASSI - 1})
     assert "ULTIMA MOSSA" in ultimo
+    # IL RIFERIMENTO NON SI MUOVE. E' la proprieta' per cui esiste: una riga
+    # che arriva davanti alle altre non cambia il numero di nessuno, e il
+    # verdetto resta attaccato alla riga che il critico ha giudicato.
+    righe = _numera([{"id": 7, "descrizione": "a"}, {"id": 8, "descrizione": "b"}])
+    assert [r["_rif"] for r in righe] == [1, 2]
+    righe.insert(0, {"id": 9, "descrizione": "c"})
+    _numera(righe)
+    assert [r["_rif"] for r in righe] == [3, 1, 2], righe
+    assert _rif_di(righe)[1]["id"] == 7
+    # Il verdetto segue il riferimento, non il posto.
+    tenute, etichette = _da_consegnare(righe, {1: "si", 2: "no"})
+    assert [r["id"] for r in tenute] == [9, 7], tenute
+    # ...e a chi scrive arrivano 1..N, perche' `rendi()` conta le righe che
+    # gli ha dato: con i riferimenti ogni citazione andrebbe altrove.
+    assert etichette == {1: "non verificata", 2: "si"}, etichette
+    assert "[[1]]" in _scheda(tenute, per_chi_scrive=True)
+    assert "3." in _scheda(righe)        # nello stato si vede il riferimento
     print("grafo: ok")
 
 

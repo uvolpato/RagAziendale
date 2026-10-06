@@ -31,6 +31,35 @@ confrontano numeri ottenuti con giudici diversi: il giudice dei documenti è
 stato irrigidito il 6/10 (vedi §5) e i numeri prima di quel cambio non sono
 comparabili.
 
+## 1-bis. ATTENZIONE: il banco intero e il sottoinsieme non misurano la stessa cosa
+
+Scoperto il 6/10/2026 e non ancora spiegato. Lo stesso caso, stesso codice,
+stessa ora:
+
+| come | `pappagallo` |
+|---|---|
+| da solo, 3 giri | **0/3** |
+| con 3 casi prima, 3 giri | 1-2/3 |
+| dentro il banco intero (9 casi prima), 3 giri | **3/3**, due volte |
+| da solo, 7 giri | 1/7, due volte |
+
+L'esito peggiora quanto meno la batteria è lunga, in modo monotono col numero
+di turni che hanno girato prima. Il meccanismo non è noto: candidati sono la
+cache dei prompt sul server dei modelli, lo stato del giudice (nel banco
+intero è già stato chiamato ventisette volte) o un effetto d'ordine nel banco.
+
+**Conseguenza operativa, da rispettare finché non è spiegato: contano solo le
+corse del BANCO INTERO.** Il sottoinsieme (`banco.py 3 nome,nome`) serve a
+LEGGERE le risposte e le prove del giudice, non a dare un punteggio. Il
+6/10 ho applicato e poi tolto tre modifiche basandomi su numeri da
+sottoinsieme, e una delle conclusioni che ne ho tratto («questa modifica ha
+rotto `pappagallo`») era falsa: quel caso era già così da solo.
+
+**Prima cosa da fare su questo**: capire il meccanismo. Se è la cache dei
+prompt, il banco va eseguito con la cache disattivata o con un ordine
+mescolato; se è il giudice, va isolato. Un metro che dipende da quanti casi
+l'hanno precedutro non misura il sistema: misura anche sé stesso.
+
 **Il tempo vero di una misura: una coppia di banchi è 45-50 minuti.** Il
 «tempo mediano complessivo» che il banco stampa è la somma delle mediane per
 caso, cioè UN giro per caso: non è il tempo d'orologio. Per tre giri su dieci
