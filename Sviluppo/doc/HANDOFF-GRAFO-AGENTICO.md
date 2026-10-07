@@ -124,6 +124,50 @@ l'ho fatto: decidilo con lui, e se committi, separa le sue modifiche dalle mie.
 
 ---
 
+## 2-bis. A che punto e' la sequenza (7/10/2026)
+
+| | stato | effetto misurato |
+|---|---|---|
+| 1. id al critico | **fatto** `41d8578` | neutro, come atteso |
+| 2. checkpointer | **fatto** `f03dbcf` `875583d` | sbloccava anche 10 e 11 |
+| 3. stato con campi | **fatto** `8f2298a` | +1/+1 |
+| 4. canale `righe` | **fatto** `07a9cd3` | neutro |
+| 5. `esplora` produce righe | **scartato** | cataloghi -3, documenti 0 |
+| 6. la data sui testi | **scartato** | documenti **-6** |
+| 7. le parole dell'archivio | **fatto** `fa03622` | **+3 / +1**, i massimi |
+| 8. json al redattore | **scartato** | neutro: la sintassi non e' la leva |
+| 9. RetryPolicy | **fatto** `bcd8bcc` | non misurabile dal banco |
+| 10. `interrupt` su `chiedi` | da fare | |
+| 11. `Send` + sottografi | da fare | |
+
+Massimi misurati: **cataloghi 27/30**, **documenti 12/18** (base di partenza
+24/30 e 5/18).
+
+### I tre scartati, perche' il risultato negativo vale quanto l'altro
+
+- **`esplora` produce righe** (punto 5): le descrizioni dell'indice consegnate
+  come righe fanno promettere — sui cataloghi `aperta-regalo` 3/3 -> 1/3 e
+  `pappagallo` 2/3 -> 1/3. Una descrizione di pagina non e' un prodotto, e
+  dargli lo stesso stato costa. Il materiale consegnabile non basta: conta
+  anche di che TIPO e'.
+- **La data nelle affermazioni** (punto 6): valeva +3 il 5/10 su una base da
+  5/18; sulla base da 11/18 costa **6 punti** e non ottiene nemmeno il suo
+  scopo (due casi falliscono ancora per «spaccia per attuale» e due nuovi per
+  «rimanda invece di rispondere»). Una regola che paga su un sistema che
+  risponde male puo' costare su uno che risponde bene.
+- **Json al redattore** (punto 8): neutro in entrambe le direzioni. Risponde
+  alla domanda «e' piu' performante l'xml?»: no, e nemmeno il contrario. Il
+  principio e' il NOME del campo — `scrivi_questo`, `descrivi`, `di_anche`
+  sono ordini — e vale identico nelle due sintassi.
+
+### La forma che funziona, in tre casi su tre
+
+Tutto quello che ha pagato e' **una decisione gia' presa, portata avanti come
+campo**: il `_rif` (chi e' questa riga), `mosse_fatte` (cosa ho gia' fatto),
+`parole` (come l'archivio chiama la cosa). Tutto quello che e' costato e'
+**una istruzione in piu'** a un agente: la chiosa sul contatore, la regola
+sulle date, il consiglio nel vicinato.
+
 ## 3. La sequenza da fare, in ordine
 
 Ogni punto ha l'attesa scritta. **Una modifica per volta, col banco in mezzo.**
