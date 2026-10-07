@@ -60,6 +60,7 @@ from typing import Annotated, Any, TypedDict
 
 import psycopg
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import RetryPolicy
 from psycopg.rows import dict_row
 
 from orchestratore import (documento as documento_mod, egress, identita,
@@ -2467,11 +2468,30 @@ def _prossimo(stato) -> str:
         else "mosse"
 
 
+# UN GUASTO DEL SERVER NON E' UNA RISPOSTA. Il 6-7/10/2026 il server dei
+# modelli ha risposto 500 tre volte in una giornata: nel banco un giro perso
+# si conta a parte, ma nel flusso faceva fallire il turno e a chi aveva
+# chiesto non arrivava niente. Si ritenta il nodo.
+#
+# Solo i guasti di TRASPORTO: un errore nostro deve esplodere subito e forte,
+# non tre volte piu' tardi.
+def _da_ritentare(e: BaseException) -> bool:
+    nome = type(e).__name__
+    if "Timeout" in nome or "Connect" in nome or "RemoteProtocol" in nome:
+        return True
+    # httpx scrive «Server error '500 ...'» per i 5xx e «Client error» per
+    # i 4xx: un 400 e' una richiesta sbagliata nostra e non si ritenta.
+    return nome == "HTTPStatusError" and "Server error" in str(e)
+
+
+RIPROVA = RetryPolicy(max_attempts=3, initial_interval=0.5,
+                      backoff_factor=2.0, retry_on=_da_ritentare)
+
 _grafo = StateGraph(Stato)
-_grafo.add_node("analista", _nodo_analista)
-_grafo.add_node("coordinatore", _nodo_coordinatore)
-_grafo.add_node("mosse", _nodo_mosse)
-_grafo.add_node("redattore", _nodo_redattore)
+_grafo.add_node("analista", _nodo_analista, retry_policy=RIPROVA)
+_grafo.add_node("coordinatore", _nodo_coordinatore, retry_policy=RIPROVA)
+_grafo.add_node("mosse", _nodo_mosse, retry_policy=RIPROVA)
+_grafo.add_node("redattore", _nodo_redattore, retry_policy=RIPROVA)
 # L'analista gira una volta e basta, e NON e' un pezzo di catena: non ha un
 # bivio, non instrada, aggiunge due righe allo stato. Un nodo senza rami non
 # decide niente — e' un altro paio d'occhi, non un vigile.
