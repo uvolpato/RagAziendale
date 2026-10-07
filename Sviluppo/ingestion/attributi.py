@@ -58,10 +58,26 @@ sys.path.insert(0, "/app")
 
 from orchestratore import modello  # noqa: E402
 
-# Gli stessi slot del modello di chat. Due, e sono quelli che serve anche la
-# chat: con entrambi occupati un turno aspetta. Questo gira quando la GPU e'
-# libera, come le descrizioni dell'indice.
-PARALLELO = int(os.environ.get("ATTRIBUTI_PARALLELO", "2"))
+# QUANTE INSIEME: quante il server ne serve davvero, chieste a lui.
+#
+# Non un numero fisso, perche' questo lavoro ha bisogno di un contesto
+# RIDICOLO rispetto alla chat — una didascalia da 1.500 caratteri, un prompt
+# corto, 700 token di risposta: ~2.000 in tutto, contro i ~16.200 che vuole
+# il coordinatore con quaranta righe nello stato. Il 7/10/2026 tre slot hanno
+# rotto la chat (contesto per conversazione da 32.768 a 21.845, i casi sui
+# testi troncati in silenzio, documenti da 13/18 a 9/18): per l'estrazione
+# invece otto slot da 8.192 bastano quattro volte, e la cache KV non cambia
+# perche' dipende dal contesto TOTALE, non dal numero di slot.
+#
+# Quindi la procedura per farlo in fretta, quando la chat non serve a
+# nessuno: si alza `--parallel` sulla voce `qwen3-14b` in
+# `modelli/llama-swap.yaml`, si lancia, e si rimette a 2. Una voce separata
+# NON va bene: il 14b sta in un gruppo esclusivo, e una seconda istanza si
+# scambierebbe con la chat scaricando e ricaricando 9 GB a ogni domanda.
+#
+# Sei ore a due slot, una e mezza-due a otto (non otto volte: la GPU e' una e
+# gli stream si dividono il calcolo).
+PARALLELO = int(os.environ.get("ATTRIBUTI_PARALLELO", "0")) or modello.slot()
 
 TABELLA = """
 CREATE TABLE IF NOT EXISTS attributi (

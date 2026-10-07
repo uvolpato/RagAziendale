@@ -253,6 +253,16 @@ models:
       # non si vede (succedeva il 21/09/2026). In produzione, con piu' VRAM,
       # si alzano ctx-size E parallel INSIEME — l'orchestratore chiede al
       # server quanti slot ci sono (modello.slot) e si adegua da solo.
+      #
+      # ECCEZIONE, per i lavori di INDICIZZAZIONE. Il conto qui sopra e'
+      # fatto sulla CHAT, che ha bisogno di contesti lunghi. Un lavoro come
+      # `ingestion/attributi.py` ne usa ~2.000 per chiamata: li' otto slot da
+      # 8.192 bastano quattro volte, e la cache KV non cambia perche' dipende
+      # dal contesto TOTALE. Quindi, quando la chat non serve a nessuno, si
+      # alza --parallel qui, si lancia il lavoro, e si rimette a 2. Sei ore
+      # diventano una e mezza. Una voce separata per lo stesso modello NON va
+      # bene: il 14b sta nel gruppo esclusivo «confronto», e la seconda
+      # istanza si scambierebbe con la chat scaricando 9 GB a ogni domanda.
       --ctx-size 65536
       --cache-type-k q8_0
       --cache-type-v q8_0
