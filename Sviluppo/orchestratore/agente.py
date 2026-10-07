@@ -760,7 +760,8 @@ def cerca(conn, domanda: str, gruppi: list, limite: int = 8, storia: list = None
     # gia' stato toccato).
     if SQL_AGENTE:
         messaggi.insert(1, {"role": "system",
-                            "content": mappa.mappa_dati(conn)})
+                            "content": mappa.mappa_dati(
+                                conn, gruppi, identita.aziende(gruppi))})
     stato = _compilato.invoke({
         "domanda": domanda,
         "intent": "",

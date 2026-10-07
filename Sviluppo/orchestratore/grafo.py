@@ -897,7 +897,8 @@ def _nodo_coordinatore(stato):
     # chi lavora e chi chiude. Vedi `doc/LETTURA-E-MAPPA.md`.
     messaggi = [
         {"role": "system", "content": _prompt("coordinatore", P_COORDINATORE)},
-        {"role": "system", "content": mappa.mappa_dati(_conn())
+        {"role": "system", "content": mappa.mappa_dati(
+             _conn(), stato["gruppi"], stato["aziende"])
          + "\n" + operatori.mappa_operatori(stato.get("dove") or "")},
     ]
     messaggi += stato.get("storia") or [{"role": "user",
@@ -1068,6 +1069,28 @@ def _mossa_leggi(conn, arg, gruppi, aziende) -> tuple[list, str]:
     else:
         testo += ". E' tutto, il documento finisce qui."
     return fuori, testo
+
+
+def aggiungi_righe(vecchie: list, nuove: list) -> list:
+    """Fonde le righe di due scritture, per RIFERIMENTO.
+
+    Una riga che c'e' gia' viene aggiornata al suo posto — cosi' il verdetto
+    del critico e la foto dell'osservatore restano attaccati alla riga che
+    hanno guardato, anche se nel frattempo ne sono arrivate altre. Una riga
+    nuova si accoda. Il tetto e' l'unico taglio, ed e' in fondo: quello che
+    si perde e' l'ultimo arrivato, mai il gia' giudicato.
+    """
+    if not vecchie:
+        return list(nuove or [])[:MAX_RIGHE]
+    fuori = list(vecchie)
+    dove = {r.get("_rif"): i for i, r in enumerate(fuori) if r.get("_rif")}
+    for r in (nuove or []):
+        i = dove.get(r.get("_rif"))
+        if i is None:
+            fuori.append(r)
+        else:
+            fuori[i] = r
+    return fuori[:MAX_RIGHE]
 
 
 def _numera(righe: list) -> list:
@@ -1711,6 +1734,7 @@ Ogni articolo e' una struttura, e ogni tag vuole una cosa diversa da te:
 - `<controllo>` dice se qualcuno l'ha guardato. «controllato»: presenti l'articolo e basta. «non controllato»: lo dai lo stesso, con un avviso — una riga sola lo dice per tutti.
 - `<di_anche>` e' quello che ha visto chi ha controllato, e **vince sulla descrizione**. Se dice che un attributo chiesto non e' confermato — «cuori si, blu non detto» — quella cosa deve arrivare a chi legge: nomini l'articolo per quello che e' e dici che il blu non e' specificato. Ignorarlo e scrivere che l'articolo e' come lo voleva la domanda e' il modo piu' grave di sbagliare, perche' chi legge non ha modo di accorgersene.
 - `<catalogo>` e' il nome del catalogo. Serve a te, per raggruppare, se aiuta.
+- `<un_dato_letto_nell_archivio>` non e' un articolo: e' un valore che qualcuno e' andato a leggere nell'archivio perche' la persona l'ha chiesto — un conteggio, una somma, un elenco. **E' la risposta**: la dici e basta, in una riga, senza riferimento (non c'e' una pagina da aprire) e senza aggiungere che articoli non ne hai trovati — non ne stavi cercando.
 
 I tag sono la forma in cui ti arrivano i dati: nella risposta non ne compare nessuno, e nemmeno i loro nomi.
 
@@ -2316,13 +2340,25 @@ def _schede_xml(righe, numeri=None, verdetti=None, visto: bool = False) -> str:
     fuori = []
     for i, r in enumerate(righe):
         n = numeri[i] if numeri else i + 1
-        pezzi = ["  <scrivi_questo>[[%d]]</scrivi_questo>" % n]
         testo = r.get("descrizione") or r.get("content")
         if not testo:
             testo = "; ".join(f"{c}: {v}" for c, v in r.items()
                               if not str(c).startswith("_")
                               and c not in ("id", "source_id", "documento", "page")
                               and v is not None)
+        # UNA RIGA SENZA DOCUMENTO NON E' UN PRODOTTO: e' un valore letto
+        # nell'archivio — un conteggio, una somma, un elenco di nomi. Vestirla
+        # da articolo la fa descrivere come un articolo, e poi negare che ci
+        # siano articoli: caso `archivio`, 0/3 su quattro configurazioni. E
+        # non si cita, perche' `[[n]]` diventa il collegamento a una pagina
+        # che qui non esiste.
+        if not r.get("documento"):
+            fuori.append("<un_dato_letto_nell_archivio>\n"
+                         "  <e_questo_il_valore>%s</e_questo_il_valore>\n"
+                         "</un_dato_letto_nell_archivio>"
+                         % " ".join(str(testo).split()))
+            continue
+        pezzi = ["  <scrivi_questo>[[%d]]</scrivi_questo>" % n]
         pezzi.append("  <descrivi>%s</descrivi>" % " ".join(str(testo).split()))
         if verdetti and n in verdetti:
             pezzi.append("  <controllo>%s</controllo>"
@@ -2366,7 +2402,7 @@ class Stato(TypedDict):
     oggetto: str              # il tipo di cosa cercata, dall'analista
     attributi: list           # [{valore, tipo}], dall'analista
     dove: str                 # la tabella, dall'analista
-    righe: list
+    righe: Annotated[list, aggiungi_righe]
     verdetti: dict
     confermate: list
     campione: list            # le righe su cui la guida ha costruito le strade

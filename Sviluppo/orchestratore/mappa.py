@@ -18,25 +18,43 @@ catalogo. Il modello legge, capisce e scrive la query, come farebbe io.
 from psycopg.rows import tuple_row
 
 
-def conta(conn) -> dict:
-    """I numeri delle tabelle, letti adesso.
+def conta(conn, gruppi: list, aziende: list) -> dict:
+    """I numeri delle tabelle, letti adesso e COME LI VEDE QUESTO UTENTE.
 
     Costa due millisecondi e vale un prompt che non mente: l'indicizzazione
     gira di notte e una mappa scritta a mano e' vecchia la mattina dopo.
+
+    I permessi contano. Il 7/10/2026 la mappa diceva «le 50 fonti» a un
+    utente che con `SELECT COUNT(*) FROM documenti` ne otteneva 14 — perche'
+    l'ACL la impone il codice a ogni query — e la risposta e' stata «ho
+    trovato un articolo con 14 elementi, ma non ho trovato nessun catalogo»:
+    quella di chi non si fida del proprio risultato. Un numero che la query
+    smentisce e' peggio di nessun numero.
     """
+    visibili = """SELECT id FROM sources WHERE stato = 'attiva'
+                    AND aziende && %(a)s::text[]
+                    AND acl_groups && %(g)s::text[]"""
     with conn.cursor(row_factory=tuple_row) as cur:
-        cur.execute("""SELECT (SELECT count(*) FROM immagini),
-                              (SELECT count(*) FROM chunks),
-                              (SELECT count(*) FROM documenti),
-                              (SELECT count(*) FROM indice WHERE page IS NULL),
+        cur.execute("""WITH v AS (%s)
+                       SELECT (SELECT count(*) FROM immagini
+                                WHERE source_id IN (SELECT id FROM v)),
+                              (SELECT count(*) FROM chunks
+                                WHERE source_id IN (SELECT id FROM v)),
+                              (SELECT count(*) FROM documenti
+                                WHERE source_id IN (SELECT id FROM v)),
                               (SELECT count(*) FROM indice
-                                WHERE page IS NOT NULL)""")
+                                WHERE page IS NULL
+                                  AND source_id IN (SELECT id FROM v)),
+                              (SELECT count(*) FROM indice
+                                WHERE page IS NOT NULL
+                                  AND source_id IN (SELECT id FROM v))"""
+                    % visibili, {"a": list(aziende), "g": list(gruppi)})
         foto, pezzi, fonti, doc, pag = cur.fetchone()
     return {"foto": foto, "pezzi": pezzi, "fonti": fonti,
             "indice_documenti": doc, "indice_pagine": pag}
 
 
-def mappa_dati(conn) -> str:
+def mappa_dati(conn, gruppi: list, aziende: list) -> str:
     """La mappa dei dati, da mettere nel prompt dell'agente.
 
     VOLUTAMENTE CORTA. La prima versione elencava a mano i sinonimi di
@@ -48,7 +66,7 @@ def mappa_dati(conn) -> str:
     non sono deducibili da uno sguardo e quindi stanno qui: dove stanno i dati,
     che forma hanno, che lingua hanno, e cosa significa «zero righe».
     """
-    n = conta(conn)
+    n = conta(conn, gruppi, aziende)
     # L'INDICE SI DESCRIVE PER QUELLO CHE E'. Finche' era vuoto la mappa
     # diceva «non cercare qui», e quella frase e' sopravvissuta al giorno in
     # cui si e' riempito. Adesso la decide il conteggio, non la memoria.
