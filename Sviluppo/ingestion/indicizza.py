@@ -1596,6 +1596,52 @@ def descrivi_indice(solo=None):
     return 0
 
 
+ATTRIBUTI_PER_GIRO = int(os.environ.get("ATTRIBUTI_PER_GIRO", "300"))
+
+
+def metti_in_colonne(quante=None):
+    """Gli attributi dei prodotti, in coda al giro, come le descrizioni.
+
+    Il VLM scrive la didascalia in prosa; questo la mette in colonne, una
+    volta, cosi' chi cerca filtra invece di ri-interpretare. Senza, «cuori
+    blu» obbliga il critico a capire che «light blue with white hearts» e' un
+    nastro azzurro coi cuori bianchi — e sbaglia una volta su tre.
+
+    Col tetto per giro: 12.000 didascalie non si fanno in un giro, e un giro
+    che non finisce mai non lascia ripartire Docling. Incrementale, quindi il
+    resto si fa al giro dopo.
+
+    Non alza mai, per la stessa ragione delle descrizioni: una riga che manca
+    rende la ricerca piu' povera, non rompe l'indicizzazione.
+    """
+    import attributi
+    from concurrent.futures import ThreadPoolExecutor
+    from psycopg.rows import dict_row
+    try:
+        with psycopg.connect(os.environ["DATABASE_URL"],
+                             row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute(attributi.TABELLA)
+            conn.commit()
+            righe = attributi.da_fare(conn, quante or ATTRIBUTI_PER_GIRO)
+        if not righe:
+            return 0
+        fatte = 0
+        with ThreadPoolExecutor(max_workers=max(1, attributi.PARALLELO)) as pool:
+            for (ident, _), (voci, problema) in zip(
+                    righe, pool.map(lambda r: attributi.colonne_di(r[1]),
+                                    righe)):
+                if voci is None:
+                    continue
+                with psycopg.connect(os.environ["DATABASE_URL"]) as scrittura:
+                    attributi.scrivi(scrittura, ident, voci)
+                fatte += 1
+        return fatte
+    except Exception as e:
+        print(f"attributi: non riuscito ({type(e).__name__}: {e})", flush=True)
+    return 0
+
+
 def main():
     signal.signal(signal.SIGTERM, _riavvio_voluto)
     una_volta = "--una-volta" in sys.argv or "--forza" in sys.argv
@@ -1619,6 +1665,15 @@ def main():
             # lavoro continua anche quando non arrivano documenti nuovi. A
             # mani vuote costa due SELECT.
             descritti = descrivi_indice(solo)
+            # E gli attributi in colonne, per la stessa ragione e nello
+            # stesso posto: la GPU e' libera e il modello di chat puo'
+            # scrivere. Senza questa riga la tabella `attributi` resterebbe
+            # ferma a quello che il passaggio retroattivo aveva fatto, e i
+            # documenti nuovi arriverebbero con la sola prosa.
+            in_colonne = metti_in_colonne()
+            if in_colonne:
+                print(f"attributi: {in_colonne} didascalie in colonne",
+                      flush=True)
             if cambi or completati or una_volta:
                 print(f"giro in {time.time() - inizio:.0f}s: {json.dumps(esiti, ensure_ascii=False)}"
                       + (f"; vettori aggiunti a {completati} pezzi" if completati else ""), flush=True)
