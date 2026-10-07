@@ -323,9 +323,21 @@ I_ANALISI = [{"type": "function", "function": {
         "dove": {"type": "string",
                  "enum": ["immagini", "chunks", "documenti", "nessuno"],
                  "description": "La tabella dove sta la risposta. «nessuno» "
-                                "per un saluto o una chiacchiera."}},
+                                "per un saluto o una chiacchiera."},
+        "parole": {"type": "array", "items": {"type": "string"},
+                   "description": "Le parole con cui l'ARCHIVIO chiama "
+                                  "l'oggetto e i suoi attributi, non quelle "
+                                  "della persona. In `immagini` le didascalie "
+                                  "sono in INGLESE: di «kit per decorare "
+                                  "l'albero di Natale» le parole sono "
+                                  "«christmas», «ornament», «decoration», "
+                                  "«tree» — mai «decorare» o «albero». In "
+                                  "`chunks` i documenti sono in italiano e le "
+                                  "parole si lasciano come sono. Due o tre "
+                                  "per ogni cosa, al singolare. Vuoto se non "
+                                  "c'e' un oggetto da cercare."}},
         "required": ["ambito", "manca", "impegnativa", "rispondibile",
-                     "oggetto", "attributi", "dove"]}}}]
+                     "oggetto", "attributi", "dove", "parole"]}}}]
 
 
 def _nodo_analista(stato):
@@ -361,7 +373,7 @@ def _nodo_analista(stato):
     # veloce e sbagliata, e questo e' il valore che vale anche quando
     # l'analista non decide affatto.
     ambito, manca, impegnativa, rispondibile = "", [], True, True
-    oggetto, attributi, dove = "", [], ""
+    oggetto, attributi, dove, parole = "", [], "", []
     for nome, arg in _decide(messaggi, I_ANALISI):
         ambito = str(arg.get("ambito") or "").strip()
         manca = [str(m).strip() for m in (arg.get("manca") or []) if str(m).strip()][:2]
@@ -377,8 +389,10 @@ def _nodo_analista(stato):
                      for a in (arg.get("attributi") or [])
                      if isinstance(a, dict) and str(a.get("valore") or "").strip()]
         dove = str(arg.get("dove") or "").strip()
+        parole = [str(p).strip() for p in (arg.get("parole") or [])
+                  if str(p).strip()][:8]
     return {"ambito": ambito, "manca": manca, "impegnativa": impegnativa,
-            "rispondibile": rispondibile,
+            "rispondibile": rispondibile, "parole": parole,
             "oggetto": oggetto, "attributi": attributi, "dove": dove,
             "riviste": stato.get("riviste", 0) + 1,
             "traccia": [_nota("analista", {"manca": manca,
@@ -716,6 +730,13 @@ def _pezzi_a_parole(stato, con_tabella: bool = False) -> str:
     if attributi:
         pezzi.append("gli attributi chiesti sono %s" % ", ".join(
             "«%s» (%s)" % (a["valore"], a.get("tipo") or "altro") for a in attributi))
+    parole = [str(p).strip() for p in (stato.get("parole") or [])
+              if str(p).strip()]
+    if parole:
+        # Le parole dell'archivio, non quelle della domanda: chi scrive la
+        # query non deve tradurre mentre compone.
+        pezzi.append("in archivio queste cose si chiamano %s"
+                     % ", ".join("«%s»" % p for p in parole[:8]))
     if con_tabella and stato.get("dove") and stato["dove"] != "nessuno":
         pezzi.append("la tabella e' `%s`" % stato["dove"])
     return "; ".join(pezzi)
@@ -2400,6 +2421,7 @@ class Stato(TypedDict):
     utente: str
     resa: bool                # la risposta e' gia' resa (citazioni e fonti)
     oggetto: str              # il tipo di cosa cercata, dall'analista
+    parole: list              # le parole dell'ARCHIVIO per quella cosa
     attributi: list           # [{valore, tipo}], dall'analista
     dove: str                 # la tabella, dall'analista
     righe: Annotated[list, aggiungi_righe]
