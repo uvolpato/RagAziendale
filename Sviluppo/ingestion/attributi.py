@@ -184,9 +184,14 @@ def colonne_di(descrizione: str):
 def da_fare(conn, limite=None):
     """Le didascalie non ancora messe in colonne."""
     with conn.cursor(row_factory=tuple_row) as cur:
+        # Solo le figure che il VLM ha marcato `informazione`, cioe' quelle
+        # che MOSTRANO qualcosa invece di decorare la pagina. Le 1.255
+        # `corredo` e le 804 senza verdetto non sono prodotti: metterle in
+        # colonne costa venti minuti e non le cerca nessuno.
         cur.execute("""SELECT i.id, i.descrizione FROM immagini i
                         WHERE i.descrizione IS NOT NULL
                           AND length(i.descrizione) > 20
+                          AND i.verdetto = 'informazione'
                           AND NOT EXISTS (SELECT 1 FROM attributi a
                                            WHERE a.immagine_id = i.id)
                         ORDER BY i.id""" + (" LIMIT %d" % int(limite)

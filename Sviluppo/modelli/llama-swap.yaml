@@ -65,8 +65,21 @@ models:
       ${llama}
       --model ${modelli}/ISTA-DASLab/Qwen3-8B-GGUF-GSQ/qwen3-8b-Q3_K_M.gguf
       --port ${PORT}
-      --ctx-size 16384
-      --parallel 2
+      # ALZATO IL 7/10/2026 PER IL LAVORO DI ESTRAZIONE
+      # (ingestion/attributi.py), che su questo modello gira: e' un lavoro
+      # meccanico — mettere in colonne una didascalia gia' scritta — e l'8B
+      # lo fa come il 14B sulle righe che contano (verificato sulle due
+      # pagine dei nastri Packara), a un quinto del tempo.
+      #
+      # 49152/16 = 3.072 per slot, contro ~1.900 che quel lavoro usa. La
+      # chat su questo modello non gira: il modello di chat e' il 14b.
+      --ctx-size 49152
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      --parallel 16
+      # Prima del 7/10 era `--ctx-size 16384 --parallel 2`, tarato su una
+      # chat che su questo modello non gira piu'.
+      #
       # Rete di sicurezza contro la degenerazione: llama.cpp ha
       # repeat-penalty 1.0, cioe' disattivata, e il 22/09/2026 il modello e'
       # entrato in loop ripetendo «verde foglia (FSA1050), verde acero
@@ -75,6 +88,7 @@ models:
       # senza dichiararle (prove a mano, altri strumenti).
       --repeat-penalty 1.1
       ${gpu}
+    concurrencyLimit: 16
     ttl: 0
 
   # ---- embedding -------------------------------------------------------
@@ -266,9 +280,18 @@ models:
       --ctx-size 65536
       --cache-type-k q8_0
       --cache-type-v q8_0
-      --parallel 2
+      # ALZATO A 16 PER IL LAVORO DI ESTRAZIONE (ingestion/attributi.py).
+      # 65536/16 = 4.096 per slot, contro ~1.900 che quel lavoro usa: margine
+      # doppio sulla didascalia piu' lunga dell'archivio (1.382 caratteri).
+      # VA RIMESSO A 2 QUANDO IL LAVORO E' FINITO: con 4.096 la chat tronca.
+      --parallel 16
       --repeat-penalty 1.1
       ${gpu}
+    # Quante richieste llama-swap lascia passare insieme a questo modello.
+    # E' un tetto SUO, indipendente dagli slot di llama.cpp: il 7/10/2026,
+    # con --parallel 16 e questo campo assente, il lavoro sugli attributi ha
+    # preso «429 Too Many Requests» su quasi tutte le richieste.
+    concurrencyLimit: 16
     ttl: 0
 
 routing:
