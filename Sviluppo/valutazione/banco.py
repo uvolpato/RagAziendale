@@ -114,6 +114,21 @@ BATTERIA = [
                "cercare e consegnare un elenco di cose vagamente adatte a un "
                "compleanno e' il fallimento: chi ha chiesto preferisce "
                "rispondere a una domanda che scorrere quaranta articoli."},
+    {"nome": "dopo-aver-chiesto",
+     "domanda": "qualcosa di decorativo per la casa",
+     "storia": [("user", "mi proponi qualcosa per il compleanno di mia mamma?"),
+                ("assistant", "Ci sono dei regali per il Natale, delle "
+                              "confezioni e alcuni oggetti decorativi. "
+                              "- regali per il Natale - confezioni regalo "
+                              "- oggetti decorativi")],
+     "attesa": "La persona ha RISPOSTO alla domanda che il sistema le ha "
+               "fatto, scegliendo una strada fra quelle offerte. Adesso "
+               "tocca al sistema: deve portare degli ARTICOLI, ognuno col "
+               "suo riferimento [[n]]. Chiedere di nuovo e' il fallimento — "
+               "chi ha risposto a una domanda non si aspetta un'altra "
+               "domanda, e dopo due giri di chiarimenti chiude la chat. "
+               "Se davvero in archivio non c'e' niente di decorativo per la "
+               "casa, lo dice; ma non lo si scopre chiedendo."},
     {"nome": "aperta-tema", "domanda": "cosa avete di sportivo?",
      "attesa": "Un tema, non un oggetto: «sportivo» non dice se cerca una "
                "palla, un nastro con i palloni o una decorazione. Come un "
@@ -196,6 +211,10 @@ La riga che copi deve parlare della stessa cosa di cui parla la risposta. Una ri
    Se la risposta descrive quello che ha per com'e', il campo resta vuoto, anche quando quello che ha non e' esattamente cio' che era stato chiesto.
    Una risposta che fa una domanda o che mostra delle scelte non promette niente: non sta proponendo articoli, sta orientando.
 
+3. CHIEDE DI NUOVO A CHI HA GIA' RISPOSTO. Guarda la CONVERSAZIONE: se il turno prima il sistema aveva fatto una domanda o mostrato delle scelte, e la persona ha risposto scegliendo, allora adesso tocca a lui portare qualcosa. Se invece la risposta e' un'altra domanda o un altro elenco di strade, copia la frase con cui richiede.
+   Chiedere e' giusto quando non si sa cosa cercare, ed e' per questo che esiste: al PRIMO turno, davanti a una richiesta troppo aperta, mostrare le scelte e' il comportamento corretto e questo campo resta vuoto. Diventa una colpa solo dopo che la persona ha gia' fatto la sua parte — chi risponde a una domanda e se ne sente fare un'altra, alla terza chiude la chat.
+   Non e' questa colpa una richiesta di conferma in fondo a una risposta che ha gia' portato degli articoli: li' ha consegnato, e chiede se serve altro.
+
 Il CAMPIONE serve a UNA cosa sola: capire se una NEGAZIONE era falsa. Non si usa per la seconda colpa. Non e' l'elenco di quello che la risposta avrebbe dovuto contenere, e non si confronta col numero di righe citate. Una risposta che cita tre articoli giusti va benissimo anche se il campione ne mostra dieci.
 
 Non giudicare lo stile, la lunghezza o la gentilezza. Non pretendere codici o prezzi: non e' il mestiere dei cataloghi. Non punire una risposta perche' e' secca, e non premiarla perche' e' scritta bene.
@@ -226,9 +245,21 @@ I_VERDETTO = [{"type": "function", "function": {
         "promette_prova": {"type": "string",
                            "description": "La riga che descrive una cosa "
                                           "DIVERSA da quella promessa, "
-                                          "copiata. «» se false."}},
+                                          "copiata. «» se false."},
+        "richiede": {"type": "boolean",
+                     "description": "true SOLO se la persona aveva gia' "
+                                    "risposto a una domanda del sistema e la "
+                                    "risposta di adesso le chiede un'altra "
+                                    "cosa invece di portarle qualcosa."},
+        "richiede_dove": {"type": "string",
+                          "description": "La frase con cui richiede, o «»."},
+        "richiede_prova": {"type": "string",
+                           "description": "Il turno della conversazione in "
+                                          "cui la persona aveva gia' "
+                                          "risposto, copiato. «» se false."}},
         "required": ["nega", "nega_dove", "nega_prova",
-                     "promette", "promette_dove", "promette_prova"]}}}]
+                     "promette", "promette_dove", "promette_prova",
+                     "richiede", "richiede_dove", "richiede_prova"]}}}]
 
 # Le colpe sono due, e sono tutte e due SEMANTICHE: «quello che dice e'
 # vero?». La terza — «c'e' il [[n]]?» — era meccanica, ed era l'unica che
@@ -237,7 +268,8 @@ I_VERDETTO = [{"type": "function", "function": {
 # citazione dentro la frase che riportava come prova (2/10/2026, su quasi
 # tutta la batteria). Adesso quel controllo sta dentro il flusso, nel
 # revisore, che oltre a vederlo lo puo' far correggere.
-COLPE = (("nega", "nega avendo"), ("promette", "promette senza avere"))
+COLPE = (("nega", "nega avendo"), ("promette", "promette senza avere"),
+         ("richiede", "richiede a chi aveva gia' risposto"))
 
 # Da quale tabella si pesca il CAMPIONE dell'archivio. I cataloghi
 # stanno nelle didascalie delle foto, i documenti nel testo: un giudice
