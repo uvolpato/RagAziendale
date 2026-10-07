@@ -280,11 +280,11 @@ models:
       --ctx-size 65536
       --cache-type-k q8_0
       --cache-type-v q8_0
-      # ALZATO A 16 PER IL LAVORO DI ESTRAZIONE (ingestion/attributi.py).
-      # 65536/16 = 4.096 per slot, contro ~1.900 che quel lavoro usa: margine
-      # doppio sulla didascalia piu' lunga dell'archivio (1.382 caratteri).
-      # VA RIMESSO A 2 QUANDO IL LAVORO E' FINITO: con 4.096 la chat tronca.
-      --parallel 16
+      # Due, e non si alza: il conto e' qui sopra. Il 7/10/2026 e' stato
+      # alzato a 16 per il lavoro di estrazione, poi rimesso — quel lavoro
+      # gira sull'8b, dove 16 slot stanno larghi, e questa voce serve la
+      # CHAT, che con 4.096 token di contesto tronca.
+      --parallel 2
       --repeat-penalty 1.1
       ${gpu}
     # Quante richieste llama-swap lascia passare insieme a questo modello.
