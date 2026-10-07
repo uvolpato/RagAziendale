@@ -229,14 +229,30 @@ models:
       ${llama}
       --model ${modelli}/lmstudio-community/Qwen3-14B-GGUF/Qwen3-14B-Q4_K_M.gguf
       --port ${PORT}
-      # ctx-size e' il TOTALE diviso fra gli slot: con --parallel 2 ognuno
-      # ne ha 32768, che e' quello che serve davvero (misurato l'1/10/2026:
-      # il coordinatore usa ~8.000 token di contesto piu' 8.192 di
-      # ragionamento, quindi ~16.200 per slot; con 40 righe nello stato).
-      # Con --parallel 4 servirebbe 131072 e la KV cache non entra in 16 GB:
-      # in produzione, con piu' VRAM, si alza qui e basta — l'orchestratore
-      # chiede al server quanti slot ci sono (modello.slot) e si adegua da
-      # solo, senza modifiche al codice.
+      # ctx-size e' il TOTALE diviso fra gli slot, e quello che serve e'
+      # ~16.200 per slot (misurato l'1/10/2026: il coordinatore usa ~8.000
+      # token di contesto piu' 8.192 di ragionamento, con 40 righe nello
+      # stato). Da qui il conto, rifatto il 7/10/2026 su RTX 5060 Ti 16 GB:
+      #
+      #   --parallel 2  ->  32.768 per slot, abbondante  <- qui
+      #   --parallel 3  ->  21.845 per slot: PROVATO il 7/10/2026 e TRONCA.
+      #                     Il banco dei documenti e' passato da 13/18 a 9/18
+      #                     con lo stesso codice, e quello dei cataloghi da
+      #                     24-25 a 23/33: i casi sui testi hanno venti pezzi
+      #                     nello stato e non ci stanno piu'. Nessun errore,
+      #                     solo risposte peggiori — ed e' il motivo per cui
+      #                     il margine «+35%» calcolato sul coordinatore non
+      #                     bastava: il conto va fatto sul caso peggiore, che
+      #                     e' un documento aperto, non una didascalia.
+      #   --parallel 4  ->  16.384 per slot, +1%: tronca al primo stato lungo
+      #   --parallel 6  ->  10.922 per slot, TRONCA. Servirebbero 98.304 di
+      #                     ctx-size, cioe' ~2,6 GB di KV cache in piu' di
+      #                     quanti ce ne siano liberi.
+      #
+      # Troncare non da' errore: il modello risponde su meta' delle fonti e
+      # non si vede (succedeva il 21/09/2026). In produzione, con piu' VRAM,
+      # si alzano ctx-size E parallel INSIEME — l'orchestratore chiede al
+      # server quanti slot ci sono (modello.slot) e si adegua da solo.
       --ctx-size 65536
       --cache-type-k q8_0
       --cache-type-v q8_0

@@ -1569,6 +1569,23 @@ def _critico(stato, righe, motivo: str) -> dict:
     # 18,5 a 29,4 secondi. Il numero non e' scritto qui ne' in una variabile
     # d'ambiente: lo chiede al server (`modello.slot()`), cosi' il giorno che
     # in produzione si alza `--parallel` il critico se ne accorge da solo.
+    #
+    # UNA RIGA PER CHIAMATA SAREBBE PIU' PRECISA, e non si puo' avere. Il
+    # 7/10/2026, su quattro didascalie vere e tre giri: una riga per chiamata
+    # 12/12, quattro righe insieme 6/12 — giudicare in gruppo dimezza
+    # l'accuratezza, perche' il modello confronta le righe fra loro invece di
+    # confrontare ognuna con quello che e' stato chiesto. Provato nel flusso e
+    # misurato due volte: documenti da 10 a 13/18 (`modelli` da 0/3 a 3/3),
+    # cataloghi da 26-27 a 24-25/33, con `senza-dato` da 3/3 a 0/3. Giudicando
+    # una riga DA SOLA il critico e' piu' permissivo — presa singolarmente
+    # ogni riga e' plausibile — quindi a chi scrive ne arrivano di piu' e le
+    # promesse crescono; e «nessuna di queste ha un prezzo» e' un giudizio sul
+    # MUCCHIO, che da sola non si puo' dare.
+    #
+    # Resta uno scambio aperto: i cataloghi non devono scendere. La strada
+    # buona e' tenere i due giudizi distinti — l'attributo di una riga da
+    # solo, «ce n'e' almeno una che...» sul gruppo — non scegliere fra i due.
+    # Vedi il commit «Non e' il modello: il 14b azzecca 12 su 12».
     slot = min(modello.slot(), max(1, PARALLELE))
     if slot > 1 and len(da_fare) > slot:
         quanti = -(-len(da_fare) // slot)        # righe per gruppo, arrotondate su
