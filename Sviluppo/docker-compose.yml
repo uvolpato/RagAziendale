@@ -597,6 +597,10 @@ services:
       PGUSER: postgres
       PGPASSWORD: ${POSTGRES_PASSWORD}
       COGNEE_DB: cognee
+      # `rag` in SOLA LETTURA, per chiedere la configurazione dei gruppi (la
+      # tabella `sources`): le cartelle da indicizzare non stanno scritte qui
+      # dentro, si chiedono al sistema che le amministra.
+      RAG_DB: rag
       # Il modello E gli embedding, tutti e due locali. La documentazione:
       # «configuring only one will cause the other to fall back to OpenAI».
       LLM_PROVIDER: custom

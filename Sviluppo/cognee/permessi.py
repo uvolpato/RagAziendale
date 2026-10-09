@@ -35,7 +35,8 @@ import sys
 
 sys.path.insert(0, "/app")
 
-from prova import CARTELLE, configura, prepara
+from prova import (cartelle_dei_gruppi, configura, digeriti, documenti,
+                   nel_dataset, prepara, uri_di)
 
 DOMANDA = "a che punto e' il progetto RAG aziendale?"
 
@@ -66,40 +67,24 @@ def risponde(esito) -> bool:
     return not any(v in t for v in vuote)
 
 
-async def digeriti(servizio, dataset_id):
-    """I documenti che Cognee ha GIA' portato nel grafo, per nome.
+# `digeriti()` sta in `prova.py`: e' la stessa domanda per tutti e mezzo, e
+# due copie di un controllo che decide se spendere due ore di GPU divergono.
 
-    Serve a non rifare il lavoro: un giro intero costa ~2h di GPU, e senza
-    questo controllo ogni riavvio ripagava i file del giro precedente. La
-    domanda la risponde `data.pipeline_status`, che Cognee aggiorna da solo:
-    un file e' finito quando `cognify_pipeline` per QUEL dataset dice
-    `DATA_ITEM_PROCESSING_COMPLETED`. I file falliti non lo hanno, e quindi
-    vengono rifatti — che e' il punto.
-
-    Non e' pero' una garanzia: il 05/10/2026 un file (SINTESI-SESSIONE-27-09)
-    risultava completato pur avendo segnalato l'errore, perche' il fallimento
-    e' avvenuto dopo, nella fase di sintesi. Percio' `--rifai` esiste: se un
-    file e' segnato come fatto e non lo e', si rifa quello e basta.
-    """
-    # `get_async_session` e non `get_relational_engine`: l'adapter non espone
-    # `begin()`, e la sessione e' quella che Cognee usa davvero.
-    from cognee.infrastructure.databases.relational import get_async_session
-    from sqlalchemy import text as sql
-    async with get_async_session() as c:
-        righe = (await c.execute(sql(
-            "select name, pipeline_status from data where dataset_id = :d"),
-            {"d": dataset_id})).fetchall()
-    finiti = set()
-    for nome, stato in righe:
-        segno = (stato or {}).get("cognify_pipeline", {}).get(str(dataset_id))
-        if segno == "DATA_ITEM_PROCESSING_COMPLETED":
-            finiti.add(nome)
-    return finiti
 
 
 async def principale(quanti, solo_prova=False, tutti=False, rifai=False):
     cognee = configura()
     await prepara(cognee)
+    # Le cartelle vengono dalla CONFIGURAZIONE dei gruppi (`sources`), non da
+    # qui: un percorso scritto nel codice e' il modo piu' economico di
+    # indicizzare la cartella sbagliata e non accorgersene. Sotto-cartelle
+    # comprese, e `_sorgenti`/`_bozze` escluse: lo fa `documenti()`.
+    gruppi = await cartelle_dei_gruppi()
+    if not solo_prova:
+        mancanti = [g for _, g, _ in AREE if g not in gruppi]
+        if mancanti:
+            raise SystemExit("gruppi senza cartella collegata in `sources`: %s"
+                             % ", ".join(mancanti))
     from cognee.modules.data.methods import create_authorized_dataset
     from cognee.modules.users.methods import create_user, get_user_by_email
     from cognee.modules.users.permissions.methods import (
@@ -127,18 +112,23 @@ async def principale(quanti, solo_prova=False, tutti=False, rifai=False):
             servizio = await get_user_by_email(
                 "ingestione-%s@assistente.locale" % gruppo)
             dati = {d.name: d for d in await _leggibili(servizio.id)}
+            if cartella not in dati:
+                raise SystemExit("il dataset `%s` non esiste per %s: prima "
+                                 "`permessi.py` senza --tutti"
+                                 % (cartella, servizio.email))
             d = dati[cartella]
-            files = sorted(p for p in CARTELLE[cartella].rglob("*.md")
-                           if p.is_file())
+            files = documenti(gruppi[gruppo]["cartelle"], 0)
             print("%s: %d file in tutto" % (gruppo, len(files)), flush=True)
             # I file gia' nel grafo si saltano: senza, ogni riavvio ripagava
             # da capo i documenti del giro precedente (~30 min di GPU buttati).
-            pronti = set() if rifai else await digeriti(servizio, d.id)
+            # Il confronto e' sul PERCORSO, non sul nome: vedi `digeriti()`.
+            pronti = set() if rifai else await digeriti(d.id)
+            nel = set() if rifai else await nel_dataset(d.id)
             if pronti:
                 print("   %d gia' nel grafo, li salto" % len(pronti), flush=True)
-            da_fare = [f for f in files if f.stem not in pronti]
+            da_fare = [f for f in files if uri_di(f) not in pronti]
             for n, f in enumerate(files, 1):
-                if f.stem in pronti:
+                if uri_di(f) in pronti:
                     print("  %2d/%d %-52s   gia' fatto"
                           % (n, len(files), f.name[:52]), flush=True)
             if not da_fare:
@@ -159,18 +149,24 @@ async def principale(quanti, solo_prova=False, tutti=False, rifai=False):
             # Due, per i due slot reali.
             # `raise_on_error=False`: un file che fallisce non deve impedire
             # agli altri 35 di essere digeriti.
-            print("   aggiungo %d file e faccio un solo cognify" % len(da_fare),
+            #
+            # `add` solo di quelli che NON ci sono gia': re-addere un file
+            # presente crea una riga in piu', e il dataset si empie di doppioni.
+            da_aggiungere = [f for f in da_fare if uri_di(f) not in nel]
+            print("   %d file, %d gia' nel dataset (non li ri-aggiungo), "
+                  "un solo cognify" % (len(da_fare), len(da_fare) - len(da_aggiungere)),
                   flush=True)
             t0 = time.monotonic()
-            await cognee.add([str(f) for f in da_fare], dataset_id=d.id,
-                             user=servizio)
+            if da_aggiungere:
+                await cognee.add([str(f) for f in da_aggiungere], dataset_id=d.id,
+                                 user=servizio)
             await cognee.cognify(datasets=[d.id], user=servizio,
                                  chunks_per_batch=2, data_per_batch=1,
                                  incremental_loading=True, raise_on_error=False)
             print("   giro finito in %.0fs" % (time.monotonic() - t0),
                   flush=True)
-            fatti = await digeriti(servizio, d.id)
-            mancanti = [f.name for f in da_fare if f.stem not in fatti]
+            fatti = await digeriti(d.id)
+            mancanti = [f.name for f in da_fare if uri_di(f) not in fatti]
             if mancanti:
                 print("   NON RIUSCITI (%d): %s"
                       % (len(mancanti), ", ".join(mancanti)), flush=True)
@@ -209,10 +205,7 @@ async def principale(quanti, solo_prova=False, tutti=False, rifai=False):
 
         # 3. il dataset nasce AUTORIZZATO: il creatore ha read/write/share.
         d = await create_authorized_dataset(cartella, servizio)
-        files = sorted(p for p in CARTELLE[cartella].rglob("*.md") if p.is_file())
-        if not files:
-            files = sorted(p for p in CARTELLE[cartella].rglob("*") if p.is_file())
-        files = files[:quanti]
+        files = documenti(gruppi[gruppo]["cartelle"], quanti)
         print("   %d file: %s" % (len(files), ", ".join(f.name for f in files)))
         await cognee.add([str(f) for f in files], dataset_id=d.id, user=servizio)
         await cognee.cognify(datasets=[d.id], user=servizio)
