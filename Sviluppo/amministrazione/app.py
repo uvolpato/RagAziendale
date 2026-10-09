@@ -388,7 +388,12 @@ def documenti_fonte(fid: str, s=Depends(utente)):
                    (SELECT count(*) FROM chunks c WHERE c.source_id = d.source_id AND c.documento = d.documento
                      AND c.embedding IS NULL) AS senza_vettori,
                    (SELECT count(*) FROM immagini i WHERE i.source_id = d.source_id AND i.documento = d.documento
-                     AND i.embedding IS NULL) AS senza_vettori_immagini
+                     AND i.embedding IS NULL AND i.descrizione <> '') AS senza_vettori_immagini,
+                   -- Senza descrizione non c'e' testo da cui fare il vettore: non e'
+                   -- un ritardo che il giro dopo recupera, e' una figura che il
+                   -- modello visivo non ha descritto (indicizza.descrivi_mancanti la riprova).
+                   (SELECT count(*) FROM immagini i WHERE i.source_id = d.source_id AND i.documento = d.documento
+                     AND coalesce(i.descrizione, '') = '') AS figure_non_descritte
               FROM documenti d WHERE d.source_id = %s ORDER BY d.documento""", (fid,)).fetchall()
         doppi = {r["documento"] for r in conn.execute("""
             SELECT unnest(array_agg(documento)) AS documento FROM documenti WHERE source_id = %s

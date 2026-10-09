@@ -487,8 +487,8 @@
         var l = d.documenti;
         if (d.provenienza !== 'cartella') { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Questa fonte non è una cartella: i suoi contenuti arrivano da ' + esc(PROVENIENZA[d.provenienza] || d.provenienza) + ', non file per file.</span></div>'; return false; }
         if (!l.length) { p.innerHTML = '<div class="notice notice-info">' + ic('info') + '<span>Nessun documento ancora. La cartella si legge ogni pochi minuti: se resta vuota, controlla il percorso e le anomalie.</span></div>'; return false; }
-        var n = { indicizzato: 0, errore: 0, vuoto: 0, escluso: 0 }, doppi = 0, senza = 0, pezzi = 0, inLettura = 0;
-        l.forEach(function (x) { if (x.in_lettura) inLettura++; else n[x.stato] = (n[x.stato] || 0) + 1; if (x.doppione) doppi++; if (x.senza_vettori || x.senza_vettori_immagini) senza++; pezzi += x.pezzi; });
+        var n = { indicizzato: 0, errore: 0, vuoto: 0, escluso: 0 }, doppi = 0, senza = 0, nonDescritte = 0, pezzi = 0, inLettura = 0;
+        l.forEach(function (x) { if (x.in_lettura) inLettura++; else n[x.stato] = (n[x.stato] || 0) + 1; if (x.doppione) doppi++; if (x.senza_vettori || x.senza_vettori_immagini) senza++; nonDescritte += x.figure_non_descritte || 0; pezzi += x.pezzi; });
         /* L'IMPRONTA decide se ridisegnare: la LISTA (quali file, quali stati)
            cambia di rado; l'avanzamento delle barre (pagine_fatte, figure_fatte)
            cambia ogni pochi secondi mentre un file è in lettura. Se ridisegniamo
@@ -496,7 +496,7 @@
            (difetto visto il 24/09/2026). Ridisegnamo SOLO quando la struttura
            cambia; le barre si aggiornano in-place nelle celle già esistenti. */
         var impronta = JSON.stringify(l.map(function (x) {
-          return [x.documento, x.stato, x.errore, x.doppione, x.senza_vettori, x.senza_vettori_immagini, x.pezzi, x.in_lettura ? 1 : 0,
+          return [x.documento, x.stato, x.errore, x.doppione, x.senza_vettori, x.senza_vettori_immagini, x.figure_non_descritte, x.pezzi, x.in_lettura ? 1 : 0,
                   x.pagine_totali ? 1 : 0, x.figure_totali ? 1 : 0].join('|');
         }));
         if (impronta !== improntaCorrente) {
@@ -509,9 +509,11 @@
               (n.escluso ? badge(['neut', n.escluso + ' esclusi', 'b-stato-neutro']) + ' ' : '') +
               (doppi ? badge(['warn', doppi + ' doppioni', 'b-stato-attenzione']) + ' ' : '') +
               (senza ? badge(['warn', senza + ' senza vettori', 'b-stato-attenzione']) + ' ' : '') +
+              (nonDescritte ? badge(['warn', nonDescritte + (nonDescritte === 1 ? ' figura non descritta' : ' figure non descritte'), 'b-stato-attenzione']) + ' ' : '') +
               (inLettura ? badge(['info', 'In elaborazione…', 'b-stato-info']) : '') + '</p>' +
             '<p class="ro-note">' + ic('info') + 'Non compaiono, di proposito, le sottocartelle <span class="mono">_bozze</span> e <span class="mono">_archivio</span>. I fogli di calcolo con i prezzi restano fuori («Escluso», con il motivo): i prezzi vengono dal gestionale.' +
-              (senza ? ' «Senza vettori»: il servizio dei modelli non rispondeva; si completano da soli al giro dopo, intanto la ricerca testuale li trova.' : '') + '</p>' +
+              (senza ? ' «Senza vettori»: il servizio dei modelli non rispondeva; si completano da soli al giro dopo, intanto la ricerca testuale li trova.' : '') +
+              (nonDescritte ? ' «Figure non descritte»: il modello visivo non ne ha dato una descrizione, quindi non si trovano con una domanda. Il servizio le riprova all’inizio di ogni giro, prima del materiale nuovo, senza rileggere il documento.' : '') + '</p>' +
             '<div class="table-box"><table class="tbl"><thead><tr><th scope="col">File</th><th scope="col">Stato</th><th scope="col" class="num-col">Pezzi</th><th scope="col">Elaborato</th>' +
             (can('fonti') ? '<th scope="col"></th>' : '') + '</tr></thead><tbody>' +
             l.map(function (x, riga) {
@@ -532,7 +534,8 @@
               return '<tr><td class="mono nome-file">' + esc(x.documento) + '<span class="sub">' + peso(x.dimensione) + ' · file del ' + esc(dataOra(x.modificato_il)) + '</span>' +
                 (x.errore && !x.in_lettura ? '<span class="sub"' + (x.stato === 'errore' ? ' style="color:var(--stato-critico)"' : '') + '>' + esc(x.errore) + '</span>' : '') + '</td>' +
                 '<td>' + (el || badge(STATO_DOC[x.stato]) + (x.doppione ? ' ' + badge(['warn', 'Doppione', 'b-stato-attenzione']) : '') +
-                  ((x.senza_vettori || x.senza_vettori_immagini) ? ' ' + badge(['warn', 'Senza vettori', 'b-stato-attenzione']) : '')) + '</td>' +
+                  ((x.senza_vettori || x.senza_vettori_immagini) ? ' ' + badge(['warn', 'Senza vettori', 'b-stato-attenzione']) : '') +
+                  (x.figure_non_descritte ? ' ' + badge(['warn', x.figure_non_descritte + (x.figure_non_descritte === 1 ? ' figura non descritta' : ' figure non descritte'), 'b-stato-attenzione']) : '')) + '</td>' +
                 '<td class="num-col">' + x.pezzi + '</td><td>' + esc(dataOra(x.indicizzato_il)) + '</td>' +
                 (can('fonti') ? '<td><button class="btn btn-secondary btn-sm btn-rielabora" data-doc="' + esc(x.documento) + '"' +
                   (x.in_lettura ? ' disabled' : '') + '>Rielabora</button></td>' : '') + '</tr>';
