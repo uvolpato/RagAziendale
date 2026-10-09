@@ -352,7 +352,12 @@ def _titolo_librechat(domanda, stream=True):
     titolo SENZA streaming e legge choices[0].message: a un flusso SSE
     rispondeva "Cannot read properties of undefined (reading 'message')" e la
     chat restava "New Chat" (visto il 04/10/2026)."""
-    messaggi = [{"role": "system", "content": SUFFISSO_SISTEMA},
+    # La richiesta di LibreChat e' in inglese: senza indicazione il titolo
+    # esce in inglese anche per una chat in italiano.
+    messaggi = [{"role": "system", "content":
+                 "Scrivi il titolo nella stessa lingua in cui e' scritta la "
+                 "conversazione, non nella lingua di queste istruzioni. "
+                 + SUFFISSO_SISTEMA},
                 {"role": "user", "content": domanda}]
     if not stream:
         try:
