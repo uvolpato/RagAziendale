@@ -28,6 +28,8 @@
     { "name": "sicurezza-gestori", "path": "/sicurezza-gestori",
       "attributes": { "descrizione": ["Gestiscono la cartella Sicurezza e aggiungono i colleghi al gruppo sicurezza (amministrazione/gestori.py)"] },
       "clientRoles": { "amministrazione": ["gestore-gruppo"] } },
+    { "name": "sviluppo",        "path": "/sviluppo",
+      "attributes": { "descrizione": ["Sviluppo: gruppo di prova, nessuna fonte assegnata di partenza"] } },
     { "name": "azienda-luis",       "path": "/azienda-luis",
       "attributes": { "descrizione": ["Abilita ai dati di Luis S.r.l. (asse azienda, decisione 53)"] } },
     { "name": "azienda-decobrands", "path": "/azienda-decobrands",
@@ -387,6 +389,19 @@
       "emailVerified": true,
       "realmRoles": ["default-roles-azienda"],
       "groups": ["/tutti", "/amministratori/Revisore DPO", "/azienda-luis", "/azienda-decobrands"],
+      "credentials": [
+        { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
+      ]
+    },
+    {
+      "username": "prova.sviluppo",
+      "email": "prova.sviluppo@example.com",
+      "firstName": "Prova",
+      "lastName": "Sviluppo",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["default-roles-azienda"],
+      "groups": ["/tutti", "/sviluppo"],
       "credentials": [
         { "type": "password", "value": "${TEST_USER_PASSWORD}", "temporary": false }
       ]
