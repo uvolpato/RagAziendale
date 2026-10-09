@@ -13,8 +13,7 @@ suggerisce i termini di ricerca nelle lingue dei cataloghi (it/de/en): da
 trova la stella p.219 e le palline p.221 che il vettore perde.
 
 Niente tabelle, niente liste scritte a mano che invecchiano: la mappa
-parola->termini vive nel modello multilingue (e nel glossario del corpus,
-`glossario.py`). Niente reindex: il must-match
+parola->termini vive nel modello multilingue. Niente reindex: il must-match
 lavora sul testo gia' salvato nei chunk.
 
 Se il modello fallisce non si blocca niente: si torna alla domanda senza
@@ -98,9 +97,7 @@ def _messaggio(domanda, catalogo):
     `catalogo` era un esperimento (23/09/2026): passare le descrizioni dei
     documenti al modello per fargli produrre i termini giusti. E' fallito — il
     modello, davanti all'elenco del catalogo, elencava i MATERIALI (organza,
-    jute, voile) invece dei termini dell'oggetto («nastri» -> ribbons, tapes).
-    I termini rari che il modello non sa li aggiunge il glossario del corpus
-    (`glossario.espandi`), estratto a parte dai nomi trilingue dei cataloghi."""
+    jute, voile) invece dei termini dell'oggetto («nastri» -> ribbons, tapes)."""
     return f"Richiesta: {domanda}"
 
 def _chiedi(messaggi):

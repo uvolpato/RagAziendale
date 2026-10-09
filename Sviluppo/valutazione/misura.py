@@ -42,7 +42,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 sys.path.insert(0, "/app")
-from orchestratore import glossario, recupero, vincoli      # noqa: E402
+from orchestratore import recupero, vincoli      # noqa: E402
 
 QUI = pathlib.Path(__file__).parent
 K = int(os.environ.get("VALUTAZIONE_K", "8"))       # quanti pezzi arrivano al modello
@@ -77,11 +77,10 @@ def trovata(conn, testo: str, gruppi: list, riscontri: list, documento: str, ind
 
 def arricchita(conn, domanda: str):
     """La domanda come la cerca davvero l'agente (agente.py, _nodo_capisce +
-    _esegui): i termini multilingue del modello (vincoli) piu' quelli del
-    glossario del corpus, e il vincolo regex dell'attributo enumerabile.
+    _esegui): i termini multilingue del modello (vincoli) e il vincolo regex dell'attributo enumerabile.
     Torna (query, vincolo)."""
     _, intent_termini, contesto, trovati = vincoli.estrae(domanda)
-    termini = glossario.espandi(conn, intent_termini)
+    termini = list(intent_termini)
     termini = termini + [c for c in contesto if c not in termini]
     q = domanda
     if termini:

@@ -12,7 +12,7 @@ Differenze da gestire:
 
 Due velocita', decise per chiamata:
 - `chiedi` (ragiona=False): risposta secca e veloce, per i passi MECCANICI
-  (estrazione vincoli, glossario, riscrittura, indici).
+  (estrazione vincoli, riscrittura, indici).
 - `messaggio` / `stream`: per l'agente e la risposta, dove serve di piu'.
 """
 import os

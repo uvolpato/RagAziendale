@@ -1,12 +1,11 @@
-"""Prova su IPURO col flusso VERO di ricerca: intent + glossario + cerca.
+"""Prova su IPURO col flusso VERO di ricerca: intent + cerca.
 
     docker compose cp valutazione orchestratore:/tmp/val
     docker compose exec -T orchestratore python /tmp/val/prova-ipuro.py
 
 Come l'agente (agente.py: _nodo_capisce + _esegui): dalla domanda si estraggono
-intent e termini, i termini si espandono col glossario del corpus (italiano ->
-inglese/tedesco), e si cerca con quella query arricchita. Stampa anche i termini
-espansi, cosi' si vede che cosa ha aggiunto il glossario.
+intent e termini, e si cerca con la query arricchita dai termini. Stampa anche
+i termini, cosi' si vede che cosa ha aggiunto il modello.
 
 Due misure, come prima:
     contesto   quanti riscontri stanno negli 8 pezzi mandati al modello
@@ -23,7 +22,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 sys.path.insert(0, "/app")
-from orchestratore import prompt, recupero, vincoli as v, glossario      # noqa: E402
+from orchestratore import prompt, recupero, vincoli as v      # noqa: E402
 
 QUI = pathlib.Path(__file__).parent
 K = 8
@@ -68,8 +67,6 @@ def main():
         if not testo:
             continue
         intent, termini, contesto, vincoli = v.estrae(testo)
-        termini = glossario.espandi(conn, termini)
-        contesto = glossario.espandi(conn, contesto)
         query = testo + " " + " ".join(termini) + " " + " ".join(contesto)
         righe, _ = recupero.cerca(conn, query, gruppi, qvec=recupero.embedding(query),
                                   limite=K, vincolo=v.regex(vincoli))
